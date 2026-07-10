@@ -106,6 +106,65 @@ describe('NotebookListPage', () => {
     expect(screen.queryByRole('link', { name: notebook.name })).toBeNull();
   });
 
+  it('closes the delete dialog and surfaces the error when deletion fails', async () => {
+    const deleteNotebook = vi
+      .fn()
+      .mockRejectedValue(new ApiClientError(500, 'internal_error', 'Internal server error'));
+    renderHome(
+      createTestClient({ listNotebooks: () => Promise.resolve([notebook]), deleteNotebook }),
+    );
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: `Delete ${notebook.name}` }));
+    await user.click(screen.getByRole('button', { name: 'Delete notebook' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Delete notebook?' })).toBeNull(),
+    );
+    expect(screen.getByRole('alert')).toHaveProperty('textContent', 'Internal server error');
+    expect(screen.getByRole('link', { name: notebook.name })).toBeDefined();
+  });
+
+  it('disables cancelling while a deletion is in flight', async () => {
+    const deleteNotebook = vi.fn().mockReturnValue(new Promise<never>(() => undefined));
+    renderHome(
+      createTestClient({ listNotebooks: () => Promise.resolve([notebook]), deleteNotebook }),
+    );
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: `Delete ${notebook.name}` }));
+    await user.click(screen.getByRole('button', { name: 'Delete notebook' }));
+
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveProperty('disabled', true);
+  });
+
+  it('sends a single rename request when the save button is clicked twice', async () => {
+    let resolveUpdate: (value: Notebook) => void = () => undefined;
+    const updateNotebook = vi.fn().mockReturnValue(
+      new Promise<Notebook>((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+    renderHome(
+      createTestClient({ listNotebooks: () => Promise.resolve([notebook]), updateNotebook }),
+    );
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: `Rename ${notebook.name}` }));
+    const input = screen.getByRole('textbox', { name: `New name for ${notebook.name}` });
+    await user.clear(input);
+    await user.type(input, 'Ember revised');
+    const save = screen.getByRole('button', { name: 'Save name' });
+    await user.click(save);
+    await user.click(save);
+
+    expect(updateNotebook).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveUpdate({ ...notebook, name: 'Ember revised' });
+    });
+    expect(await screen.findByRole('link', { name: 'Ember revised' })).toBeDefined();
+  });
+
   it('explains a load failure and retries it', async () => {
     const listNotebooks = vi
       .fn()

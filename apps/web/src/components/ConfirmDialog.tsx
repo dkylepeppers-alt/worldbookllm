@@ -36,7 +36,13 @@ export function ConfirmDialog({
         <h2 id="confirm-dialog-title">{title}</h2>
         <div className="dialog-copy">{children}</div>
         <div className="dialog-actions">
-          <button ref={cancelRef} type="button" className="button-secondary" onClick={onCancel}>
+          <button
+            ref={cancelRef}
+            type="button"
+            className="button-secondary"
+            disabled={busy}
+            onClick={onCancel}
+          >
             Cancel
           </button>
           <button type="button" className="button-danger" disabled={busy} onClick={onConfirm}>

@@ -28,6 +28,7 @@ export function NotebookListPage() {
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<Notebook | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [renameBusy, setRenameBusy] = useState(false);
   const [deleting, setDeleting] = useState<Notebook | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
@@ -85,7 +86,8 @@ export function NotebookListPage() {
 
   async function handleRename(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (renaming === null || renameValue.trim().length === 0) return;
+    if (renaming === null || renameBusy || renameValue.trim().length === 0) return;
+    setRenameBusy(true);
     try {
       const updated = await api.updateNotebook(renaming.id, { name: renameValue.trim() });
       replaceNotebook(updated);
@@ -94,6 +96,8 @@ export function NotebookListPage() {
       setMutationError(
         error instanceof ApiClientError ? error.message : 'Could not rename the notebook.',
       );
+    } finally {
+      setRenameBusy(false);
     }
   }
 
@@ -112,6 +116,7 @@ export function NotebookListPage() {
       );
       setDeleting(null);
     } catch (error) {
+      setDeleting(null);
       setMutationError(
         error instanceof ApiClientError ? error.message : 'Could not delete the notebook.',
       );
@@ -185,8 +190,10 @@ export function NotebookListPage() {
                     onChange={(event) => setRenameValue(event.target.value)}
                   />
                   <div className="inline-actions">
-                    <button type="submit">Save name</button>
-                    <button type="button" onClick={() => setRenaming(null)}>
+                    <button type="submit" disabled={renameBusy}>
+                      {renameBusy ? 'Saving…' : 'Save name'}
+                    </button>
+                    <button type="button" disabled={renameBusy} onClick={() => setRenaming(null)}>
                       Cancel
                     </button>
                   </div>
