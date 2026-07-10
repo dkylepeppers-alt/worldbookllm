@@ -310,6 +310,41 @@ describe('server data API', () => {
     });
   });
 
+  it('exposes provider catalog and static model routes without secret values', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/api/secrets',
+      payload: { key: 'api_key_nanogpt', value: 'provider-route-secret', label: 'Primary' },
+    });
+    const catalog = await app.inject({ method: 'GET', url: '/api/providers' });
+    expect(catalog.statusCode).toBe(200);
+    expect(catalog.body).not.toContain('provider-route-secret');
+    expect(catalog.json<Array<{ source: string; hasSecret: boolean }>>()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ source: 'nanogpt', hasSecret: true })]),
+    );
+
+    const models = await app.inject({
+      method: 'POST',
+      url: '/api/providers/models',
+      payload: { source: 'claude' },
+    });
+    expect(models.statusCode).toBe(200);
+    expect(models.json<{ models: unknown[] }>().models.length).toBeGreaterThan(0);
+  });
+
+  it('returns a configuration error when a provider key is missing', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/providers/models',
+      payload: { source: 'nanogpt' },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: 'configuration_error',
+      message: 'NanoGPT requires an API key.',
+    });
+  });
+
   it('reopens one data directory without losing persisted state', async () => {
     const notebook = await createNotebook('Persistent');
     await app.close();
