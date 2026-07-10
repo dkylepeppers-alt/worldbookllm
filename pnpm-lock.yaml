@@ -35,6 +35,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@worldbookllm/providers':
+        specifier: workspace:^
+        version: link:../../packages/providers
       '@worldbookllm/shared':
         specifier: workspace:^
         version: link:../../packages/shared
