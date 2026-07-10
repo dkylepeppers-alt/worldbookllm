@@ -31,12 +31,16 @@ export const PROVIDER_SOURCES = [
 
 export const providerSourceSchema = z.enum(PROVIDER_SOURCES);
 
-export const providerConfigSchema = z.strictObject({
+export const providerConnectionSchema = z.strictObject({
   source: providerSourceSchema,
-  model: z.string().trim().min(1).max(256),
   baseUrl: z.url().max(2048).optional(),
   extra: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const providerConfigSchema = providerConnectionSchema.extend({
+  model: z.string().trim().min(1).max(256),
+});
+
 export type ProviderSource = z.infer<typeof providerSourceSchema>;
+export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
