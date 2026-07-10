@@ -345,6 +345,83 @@ describe('server data API', () => {
     });
   });
 
+  it('creates, lists, patches, reads, and deletes chats', async () => {
+    const notebook = await createNotebook();
+    const create = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/chats`,
+      payload: {},
+    });
+    expect(create.statusCode).toBe(201);
+    const chat = create.json<{ id: string }>();
+    expect(create.json()).toMatchObject({
+      notebookId: notebook.id,
+      title: 'New chat',
+      sourceIds: [],
+      providerOverride: null,
+    });
+    const list = await app.inject({ method: 'GET', url: `/api/notebooks/${notebook.id}/chats` });
+    expect(list.json()).toEqual([create.json()]);
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/api/chats/${chat.id}`,
+      payload: { title: 'Revised', providerOverride: { source: 'nanogpt', model: 'model' } },
+    });
+    expect(patch.json()).toMatchObject({
+      title: 'Revised',
+      providerOverride: { source: 'nanogpt', model: 'model' },
+    });
+    const detail = await app.inject({ method: 'GET', url: `/api/chats/${chat.id}` });
+    expect(detail.json()).toMatchObject({ id: chat.id, messages: [] });
+    expect((await app.inject({ method: 'DELETE', url: `/api/chats/${chat.id}` })).statusCode).toBe(
+      204,
+    );
+  });
+
+  it('streams normalized chat events and persists the assistant', async () => {
+    await app.close();
+    app = buildApp({
+      dataDir,
+      logger: false,
+      fetchImpl: async () =>
+        Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"Amber"}}]}\n\ndata: [DONE]\n\n'),
+        ),
+    });
+    const notebookResponse = await app.inject({
+      method: 'POST',
+      url: '/api/notebooks',
+      payload: {
+        name: 'Atlas',
+        settings: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+      },
+    });
+    const notebook = notebookResponse.json<{ id: string }>();
+    const chatResponse = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/chats`,
+      payload: {},
+    });
+    const chat = chatResponse.json<{ id: string }>();
+    const stream = await app.inject({
+      method: 'POST',
+      url: `/api/chats/${chat.id}/messages`,
+      payload: { content: 'Question' },
+    });
+    expect(stream.statusCode).toBe(200);
+    expect(stream.headers['content-type']).toContain('text/event-stream');
+    expect(stream.body).toContain('event: delta');
+    expect(stream.body).toContain('event: done');
+    const detail = await app.inject({ method: 'GET', url: `/api/chats/${chat.id}` });
+    expect(
+      detail.json<{ messages: Array<{ role: string; content: string; status: string }> }>()
+        .messages,
+    ).toEqual([
+      expect.objectContaining({ role: 'user', content: 'Question', status: 'complete' }),
+      expect.objectContaining({ role: 'assistant', content: 'Amber', status: 'complete' }),
+    ]);
+  });
+
   it('reopens one data directory without losing persisted state', async () => {
     const notebook = await createNotebook('Persistent');
     await app.close();

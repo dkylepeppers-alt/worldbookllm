@@ -5,12 +5,16 @@ import { resolveDataDir } from './env.js';
 import { SourceFileStore } from './files/source-files.js';
 import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
+import { registerChatRoutes } from './routes/chats.js';
 import { registerNotebookRoutes } from './routes/notebooks.js';
 import { registerProviderRoutes } from './routes/providers.js';
 import { registerSecretRoutes } from './routes/secrets.js';
 import { registerSourceRoutes } from './routes/sources.js';
 import { SecretStore } from './secrets/secret-store.js';
+import { ChatService } from './services/chats.js';
+import { GenerationService } from './services/generation.js';
 import { NotebookService } from './services/notebooks.js';
+import { PromptAssembler } from './services/prompt-assembler.js';
 import { ProviderService } from './services/providers.js';
 import { SourceService } from './services/sources.js';
 
@@ -19,6 +23,8 @@ export interface AppServices {
   sources: SourceService;
   secrets: SecretStore;
   providers: ProviderService;
+  chats: ChatService;
+  generation: GenerationService;
 }
 
 declare module 'fastify' {
@@ -43,12 +49,24 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     secrets,
     new ProviderHttpClient(options.fetchImpl ?? globalThis.fetch),
   );
+  const chats = new ChatService(db);
+  const notebooks = new NotebookService(db, sourceFiles);
+  const sources = new SourceService(db, sourceFiles);
+  const generation = new GenerationService(
+    chats,
+    notebooks,
+    new PromptAssembler(sources),
+    providers,
+    (error) => app.log.error(error),
+  );
 
   app.decorate('services', {
-    notebooks: new NotebookService(db, sourceFiles),
-    sources: new SourceService(db, sourceFiles),
+    notebooks,
+    sources,
     secrets,
     providers,
+    chats,
+    generation,
   });
 
   app.addHook('onClose', () => {
@@ -63,6 +81,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerSourceRoutes(app);
   registerSecretRoutes(app);
   registerProviderRoutes(app);
+  registerChatRoutes(app);
 
   return app;
 }
