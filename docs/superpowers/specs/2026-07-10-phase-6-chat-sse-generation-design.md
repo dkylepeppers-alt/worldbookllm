@@ -141,7 +141,7 @@ Generation resolves configuration before opening SSE:
 5. If no key exists and `keyOptional` is not true, throw `ConfigurationError` without naming or exposing a value.
 6. Validate required base URL and provider extras through provider-package request construction.
 
-Provider config is a complete replacement at chat scope. Provider-specific `extra` is passed through unchanged. Secret IDs are not stored on chats, so rotating the active key affects future calls without rewriting configuration.
+Provider config is a complete replacement at chat scope. Provider-specific `extra` is passed through unchanged. Secret IDs are not stored on chats, so rotating the active key affects future calls without rewriting configuration. Static model catalogs can be listed without a key; connection tests and generation still require a key unless provider metadata declares it optional.
 
 ## Prompt Assembly
 
@@ -209,21 +209,19 @@ Optional-key providers are called without a key when none is active. CometAPI re
 
 ## Generation and SSE Lifecycle
 
-`POST /api/chats/:id/messages` performs ordinary validation and all preflight checks before hijacking the reply. Preflight includes chat lookup, effective provider config, source ownership/readability, prompt assembly, request construction, and lock acquisition.
+`POST /api/chats/:id/messages` performs ordinary validation and generation preparation before hijacking the reply. Preparation acquires the chat lock, completes chat/config/source/prompt/request preflight without mutation, then calls `beginExchange` as its final step and returns the prepared user/assistant state. Any earlier failure releases the lock and inserts no message.
 
-After preflight:
+After preparation:
 
-1. Start the exchange transaction and obtain user/assistant rows.
-2. Set application SSE headers and call `reply.hijack()`.
-3. Attach one `close` listener to `reply.raw`; closing aborts the upstream controller.
-4. Start provider `fetch` with the controller signal.
-5. Reject a non-2xx upstream response as a provider error.
-6. Parse upstream SSE events; ignore `[DONE]`, keepalives, role-only, and finish-only chunks.
-7. Normalize each provider chunk. Append text/reasoning to in-memory accumulators, persist the accumulated assistant state, then emit one application `delta`.
-8. On normal upstream completion, persist `complete` and emit `done` with the final row.
-9. On provider/network/normalization failure, persist `error` and emit one safe `error` terminal event if the client is still connected.
-10. On downstream close/abort, persist the accumulated assistant as `interrupted` and emit nothing further.
-11. Remove listeners, release the lock, and end the response in `finally` when still writable.
+1. Call `reply.hijack()`, set application SSE headers, and attach one `close` listener to `reply.raw`; closing aborts the upstream controller.
+2. Start provider `fetch` with the controller signal.
+3. Reject a non-2xx upstream response as a provider error.
+4. Parse upstream SSE events; ignore `[DONE]`, keepalives, role-only, and finish-only chunks.
+5. Normalize each provider chunk. Append text/reasoning to in-memory accumulators, persist the accumulated assistant state, then emit one application `delta`.
+6. On normal upstream completion after at least one text or reasoning delta, persist `complete` and emit `done` with the final row. A stream that ends without completion data is a provider error, not a successful empty assistant.
+7. On provider/network/normalization failure, persist `error` and emit one safe `error` terminal event if the client is still connected.
+8. On downstream close/abort, persist the accumulated assistant as `interrupted` and emit nothing further.
+9. Remove listeners, release the lock, and end the response in `finally` when still writable.
 
 Persistence occurs before each emitted delta. This favors recoverability over maximum throughput and guarantees a reload never shows less text than the browser received. SQLite writes remain synchronous and local; this can be revisited only if profiling shows it matters.
 
@@ -237,10 +235,10 @@ The server gains typed errors and error-handler mappings:
 - `404 not_found` — notebook, chat, source, or secret does not exist.
 - `409 configuration_error` — no effective provider/key or invalid provider configuration.
 - `409 generation_in_progress` — another generation holds the chat lock.
-- `502 provider_error` — provider/model/test request failed before SSE.
+- `502 provider_error` — a remote provider/model/test request failed before SSE.
 - `500 internal_error` — corrupt stored data or unexpected server failure.
 
-Once SSE starts, generation failures use the stream error event rather than changing HTTP status. Public messages are bounded and scrubbed of the active key. Unexpected errors are logged server-side through Fastify and exposed only as `Internal server error`.
+Synchronous request-plan validation errors become `409 configuration_error`; remote HTTP and response-parsing errors become `502 provider_error`. Once SSE starts, generation failures use the stream error event rather than changing HTTP status. Streamed provider failures use the fixed public message `Provider generation failed`; the detailed error is logged server-side. Unexpected errors are exposed only as `Internal server error`.
 
 ## Routes
 

@@ -156,7 +156,7 @@ Phase 7 establishes these stable routes:
 - `/notebooks/:notebookId` — notebook workspace containing source and chat regions.
 - `/settings` — provider-secret management.
 
-The notebook workspace is the long-lived composition boundary for Phases 7–9. Phase 7 implements source navigation and leaves an explicit chat region. Phase 8 adds notebook provider settings and model controls without changing routes. Phase 9 activates the chat region with chat selection, source selection, message history, streaming, and stop behavior.
+The notebook workspace is the long-lived composition boundary for Phases 7–9. Phase 7 implements source navigation and leaves an explicit chat region. Phase 8 adds notebook provider settings, model controls, and the minimal chat create/select shell needed to expose per-chat overrides without changing routes. Phase 9 activates that chat shell with source selection, message history, streaming, and stop behavior.
 
 The web client uses one typed JSON client for ordinary API calls and one fetch-reader SSE client for message generation. `EventSource` is not used because generation is a POST with a request body and requires an `AbortSignal`.
 
@@ -181,11 +181,11 @@ Implements routing, the typed JSON API client, notebook list/create/delete/renam
 
 ### Phase 8 — provider settings and keys
 
-Implements settings navigation, masked multi-key management, active-key rotation, generic provider field rendering, model discovery, connection tests, notebook provider defaults, and chat override editing. It does not implement streaming chat.
+Implements settings navigation, masked multi-key management, active-key rotation, generic provider field rendering, model discovery, connection tests, notebook provider defaults, and a minimal chat create/select shell for chat override editing. It does not implement messages or streaming chat.
 
 ### Phase 9 — streaming chat and E2E
 
-Implements chat CRUD, selected-source controls, message history, POST SSE consumption, stop/reload behavior, and the full walking-skeleton E2E. It makes no server-contract redesign unless a failing E2E exposes a contract defect.
+Extends the Phase 8 chat shell with selected-source controls, message history, POST SSE consumption, stop/reload behavior, remaining chat-management actions, and the full walking-skeleton E2E. It makes no server-contract redesign unless a failing E2E exposes a contract defect.
 
 ## Verification Contract
 
