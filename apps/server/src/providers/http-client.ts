@@ -80,6 +80,19 @@ function sanitize(message: string, request: ProviderHttpRequest): string {
 export class ProviderHttpClient {
   constructor(private readonly fetchImpl: typeof fetch) {}
 
+  private async execute(
+    source: ChatCompletionSource,
+    request: ProviderHttpRequest,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    try {
+      return await this.fetchImpl(request.url, requestInit(request, signal));
+    } catch (error) {
+      if (error instanceof ProviderError) throw error;
+      throw new ProviderError('Provider network request failed.', source);
+    }
+  }
+
   async fetchJson(
     source: ChatCompletionSource,
     request: ProviderHttpRequest,
@@ -87,7 +100,7 @@ export class ProviderHttpClient {
   ): Promise<unknown> {
     const timeout = AbortSignal.timeout(30_000);
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    const response = await this.fetchImpl(request.url, requestInit(request, combined));
+    const response = await this.execute(source, request, combined);
     const text = await readCapped(response);
     let data: unknown;
     try {
@@ -110,7 +123,7 @@ export class ProviderHttpClient {
     request: ProviderHttpRequest,
     signal: AbortSignal,
   ): Promise<ReadableStream<Uint8Array>> {
-    const response = await this.fetchImpl(request.url, requestInit(request, signal));
+    const response = await this.execute(source, request, signal);
     if (!response.ok) {
       const text = await readCapped(response);
       let data: unknown;

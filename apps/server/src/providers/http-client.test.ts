@@ -73,4 +73,12 @@ describe('ProviderHttpClient', () => {
       missing.fetchStream('nanogpt', request, new AbortController().signal),
     ).rejects.toThrow(/streaming body/u);
   });
+
+  it('normalizes fetch rejections as provider errors', async () => {
+    const client = new ProviderHttpClient(async () => Promise.reject(new Error('socket failed')));
+    await expect(client.fetchJson('nanogpt', request)).rejects.toBeInstanceOf(ProviderError);
+    await expect(
+      client.fetchStream('nanogpt', request, new AbortController().signal),
+    ).rejects.toBeInstanceOf(ProviderError);
+  });
 });
