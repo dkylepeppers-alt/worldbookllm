@@ -56,12 +56,17 @@ Conversion is best-effort and **transparent**: the user sees what was produced, 
 
 ## Provider layer (model-agnostic AI)
 
-The server exposes one internal chat interface; adapters translate it to each provider's API:
+The provider layer lives in **`packages/providers`** — a framework-free TypeScript package **ported from SillyTavern's** battle-tested backends (see ADR 0005; the project is AGPL-3.0 as a consequence). It supports all 26 of SillyTavern's chat-completion sources: OpenAI, Anthropic Claude, OpenRouter, NanoGPT, Google Gemini/Vertex, Mistral, Cohere, DeepSeek, Groq, xAI, Perplexity, Azure OpenAI, and more — plus a `custom` OpenAI-compatible source covering Ollama, LM Studio, llama.cpp, and self-hosted endpoints via a configurable base URL.
 
-- **OpenAI-compatible** adapter first (covers OpenAI, OpenRouter, Ollama, LM Studio, llama.cpp, and most self-hosted endpoints via a configurable base URL).
-- **Native adapters** (Anthropic, others) follow, where the native API offers something the compatible shim loses.
+The package is pure: no filesystem, no HTTP framework, no secret reads. It exposes:
 
-Model + provider selection is configurable **per notebook**, overridable **per chat**. Keys are stored locally (server-side, never shipped to the browser beyond masked display). Switching models never requires rebuilding a project — sources and chats are provider-independent.
+- `buildChatRequest(source, params)` → `{url, headers, body}` — per-provider request construction, including message-format conversion (from the ported `prompt-converters`)
+- stream utilities — SSE parsing plus per-provider delta normalization, so the browser only ever sees one event format
+- model-list building/parsing per provider (live endpoints where they exist, curated static lists otherwise)
+
+The server performs the actual `fetch`, injects keys from the local secret store (multiple named keys per provider with rotation, ported from SillyTavern's SecretManager; stored in `data/secrets.json`, always masked in API responses), and pipes normalized SSE events to the browser.
+
+Model + provider selection is configurable **per notebook**, overridable **per chat**. Keys never leave the server beyond masked display. Switching models never requires rebuilding a project — sources and chats are provider-independent.
 
 ## Creative response controls
 
@@ -86,3 +91,5 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0002 — React + Vite frontend, Fastify backend](decisions/0002-react-vite-fastify.md)
 - [0003 — Markdown files + SQLite index](decisions/0003-markdown-files-sqlite-index.md)
 - [0004 — pnpm workspace monorepo](decisions/0004-pnpm-monorepo.md)
+- [0005 — SillyTavern provider port; AGPL-3.0 relicense](decisions/0005-sillytavern-provider-port-agpl.md)
+- [0006 — better-sqlite3 for the index database](decisions/0006-better-sqlite3.md)

@@ -51,6 +51,12 @@ docs/             Architecture, roadmap, and decision records
 - [Roadmap](docs/ROADMAP.md) — milestones and "done when" criteria
 - [Decision records](docs/decisions/) — why the stack looks the way it does
 
-## License
+## License & attribution
 
-[MIT](LICENSE)
+worldbookllm is licensed under the [GNU AGPL-3.0](LICENSE).
+
+The multi-provider AI layer (`packages/providers`) is ported from
+[SillyTavern](https://github.com/SillyTavern/SillyTavern) (AGPL-3.0) — the
+per-provider request building, message conversion, and streaming logic there is
+derived from SillyTavern's battle-tested backends. Ported files carry
+attribution headers referencing the SillyTavern commit they derive from.

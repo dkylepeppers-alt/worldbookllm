@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "A model-agnostic creative writing and worldbuilding workspace that ingests user sources, converts them into organized Markdown, and lets writers chat with their project knowledge base.",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "engines": {
     "node": ">=20"

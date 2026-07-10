@@ -2,7 +2,7 @@
 
 Milestones are ordered so that every one ends with a working, demoable app. Each has a goal and explicit "done when" criteria.
 
-## M0 — Repository foundation ✅ (this milestone)
+## M0 — Repository foundation ✅
 
 **Goal:** a correctly set up repository: tooling, structure, CI, and design docs — no feature code.
 
@@ -13,20 +13,23 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 - `pnpm dev` boots both processes; the web shell reaches the server through the Vite proxy
 - README, ARCHITECTURE, ROADMAP, and ADRs committed
 
-## M1 — Walking skeleton
+## M1 — Walking skeleton + full provider layer (current)
 
-**Goal:** the thinnest end-to-end slice of the real product: create a notebook, add a source, chat with it.
+**Goal:** the first usable app — create a notebook, add sources, chat with them — built on genuine model agnosticism from day one, via a provider layer ported from SillyTavern (see ADR 0005).
 
 **Scope:**
 
+- Relicense to AGPL-3.0 (prerequisite for the SillyTavern port)
+- `packages/providers`: all 26 SillyTavern chat-completion sources ported as framework-free TypeScript — request building, message conversion, stream normalization, model-list fetching (chat-completions family only; no legacy text-completion backends)
+- Secret store ported from SillyTavern: multiple named keys per provider, rotation, masked display
 - Notebook CRUD (create, rename, delete, list)
-- Add a source by pasting text; stored as a Markdown file on disk + SQLite metadata row
+- Add a source by pasting text; stored as a frontmattered Markdown file on disk + SQLite metadata row (better-sqlite3, schema v1: notebooks, sources, chats, messages — see ADR 0006)
 - Source list and read-only source viewer in the UI
-- Chat with one provider — an OpenAI-compatible endpoint (configurable base URL + key) — with streaming responses
-- Sources injected into the prompt whole (no retrieval); user picks which sources are in context
-- SQLite schema v1: notebooks, sources, chats, messages
+- Streaming chat (SSE) grounded in user-selected sources, injected into the prompt whole (no retrieval yet)
+- Provider/model selection per notebook, overridable per chat; live model lists; connection test
+- Assistant messages snapshot their context (sources, provider, model) for the future inspector
 
-**Done when:** a user can create a notebook, paste in a lore document, ask "summarize this" in chat, and watch a grounded, streamed answer arrive — all data visible on disk.
+**Done when:** a user can create a notebook, paste in a lore document, pick a provider/model (e.g. NanoGPT or OpenRouter) with their own key, ask "summarize this" in chat, and watch a grounded, streamed answer arrive — all data visible on disk, keys managed in the UI.
 
 ## M2 — Source ingestion pipeline
 
@@ -41,20 +44,7 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 
 **Done when:** a user can drop in a PDF setting bible and a pasted wiki page, review the conversions, fix a mangled table, and chat over them.
 
-## M3 — Model-provider layer
-
-**Goal:** genuine model agnosticism, SillyTavern-style.
-
-**Scope:**
-
-- Provider adapters: Anthropic native, OpenAI native, OpenRouter, Ollama/local, custom OpenAI-compatible
-- Provider/key management UI (keys stored locally, masked in the UI)
-- Model selection per notebook, overridable per chat; switching models mid-project never loses data
-- Basic generation settings (temperature, max tokens) per chat
-
-**Done when:** the same notebook can run a continuity question against one model and a prose draft against another, switching in two clicks.
-
-## M4 — Knowledge-base organization
+## M3 — Knowledge-base organization
 
 **Goal:** scale from "a few documents" to "a real project bible."
 
@@ -67,7 +57,7 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 
 **Done when:** a 100-source campaign world is navigable — find every mention of a faction in seconds and pull exactly the right sources into a chat.
 
-## M5 — Creative response controls
+## M4 — Creative response controls
 
 **Goal:** the user shapes how creatively the model treats their canon.
 
@@ -80,7 +70,7 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 
 **Done when:** the same question produces a canon-faithful answer in strict mode and a wild alternative in open mode, and the user can see exactly why.
 
-## M6 — Creative outputs & exports
+## M5 — Creative outputs & exports
 
 **Goal:** results leave the app in the formats creative users need.
 
@@ -95,4 +85,4 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 
 ## Later / unscheduled
 
-Ideas that are real but not yet committed to a milestone: retrieval smarter than FTS (embeddings), contradiction detection sweeps, timeline visualization, multi-notebook cross-referencing, alternate-canon branches, collaborative/multi-user mode, desktop packaging (Tauri).
+Ideas that are real but not yet committed to a milestone: retrieval smarter than FTS (embeddings), contradiction detection sweeps, timeline visualization, multi-notebook cross-referencing, alternate-canon branches, collaborative/multi-user mode, desktop packaging (Tauri), SillyTavern legacy text-completion backends if ever needed.
