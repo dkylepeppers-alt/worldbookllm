@@ -64,4 +64,51 @@ describe('parseCompletionResponse', () => {
       new ProviderError('Provider response did not contain completion data.', 'nanogpt'),
     );
   });
+
+  it('extracts native Claude content blocks', () => {
+    expect(
+      parseCompletionResponse('claude', {
+        content: [
+          { type: 'thinking', thinking: 'Check canon.' },
+          { type: 'text', text: 'Brass' },
+        ],
+      }),
+    ).toEqual({ text: 'Brass', reasoning: 'Check canon.' });
+  });
+
+  it('extracts native Google candidate parts', () => {
+    expect(
+      parseCompletionResponse('vertexai', {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'Check canon.', thought: true }, { text: 'Brass' }],
+            },
+          },
+        ],
+      }),
+    ).toEqual({ text: 'Brass', reasoning: 'Check canon.' });
+  });
+
+  it('extracts native Cohere message content', () => {
+    expect(
+      parseCompletionResponse('cohere', {
+        message: { content: [{ type: 'text', text: 'Brass' }] },
+      }),
+    ).toEqual({ text: 'Brass' });
+  });
+
+  it('extracts Mistral thinking from complete content arrays', () => {
+    expect(
+      parseCompletionResponse('mistralai', {
+        choices: [
+          {
+            message: {
+              content: [{ thinking: [{ text: 'Check canon.' }] }, { text: 'Brass' }],
+            },
+          },
+        ],
+      }),
+    ).toEqual({ text: 'Brass', reasoning: 'Check canon.' });
+  });
 });

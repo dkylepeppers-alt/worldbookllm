@@ -63,4 +63,54 @@ describe('normalizeStreamChunk', () => {
       normalizeStreamChunk('groq', { message: 'request rejected', status: 400 }),
     ).toThrow(new ProviderError('request rejected', 'groq', 400));
   });
+
+  it('extracts Claude text and thinking deltas', () => {
+    expect(normalizeStreamChunk('claude', { delta: { text: 'Brass' } })).toEqual({
+      text: 'Brass',
+    });
+    expect(normalizeStreamChunk('claude', { delta: { thinking: 'Check canon.' } })).toEqual({
+      text: '',
+      reasoning: 'Check canon.',
+    });
+  });
+
+  it('extracts Google visible and thought parts', () => {
+    expect(
+      normalizeStreamChunk('makersuite', {
+        candidates: [
+          {
+            content: {
+              parts: [
+                { text: 'Check canon.', thought: true },
+                { text: 'Brass', thought: false },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toEqual({ text: 'Brass', reasoning: 'Check canon.' });
+  });
+
+  it('extracts Cohere content deltas', () => {
+    expect(
+      normalizeStreamChunk('cohere', {
+        type: 'content-delta',
+        delta: { message: { content: { text: 'Brass' } } },
+      }),
+    ).toEqual({ text: 'Brass' });
+  });
+
+  it('extracts Mistral content arrays and thinking', () => {
+    expect(
+      normalizeStreamChunk('mistralai', {
+        choices: [
+          {
+            delta: {
+              content: [{ thinking: [{ text: 'Check canon.' }] }, { text: 'Brass' }],
+            },
+          },
+        ],
+      }),
+    ).toEqual({ text: 'Brass', reasoning: 'Check canon.' });
+  });
 });
