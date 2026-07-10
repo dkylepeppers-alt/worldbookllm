@@ -422,6 +422,74 @@ describe('server data API', () => {
     ]);
   });
 
+  it('propagates a disconnected message stream and persists interruption', async () => {
+    await app.close();
+    let markUpstreamAborted!: () => void;
+    const upstreamAborted = new Promise<void>((resolve) => {
+      markUpstreamAborted = resolve;
+    });
+    app = buildApp({
+      dataDir,
+      logger: false,
+      fetchImpl: async (_input, init) =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    'data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n',
+                  ),
+                );
+                init?.signal?.addEventListener(
+                  'abort',
+                  () => {
+                    markUpstreamAborted();
+                    controller.error(new Error('aborted'));
+                  },
+                  { once: true },
+                );
+              },
+            }),
+          ),
+        ),
+    });
+    const notebook = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/notebooks',
+        payload: {
+          name: 'Abort',
+          settings: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+        },
+      })
+    ).json<{ id: string }>();
+    const chat = (
+      await app.inject({ method: 'POST', url: `/api/notebooks/${notebook.id}/chats`, payload: {} })
+    ).json<{ id: string }>();
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const address = app.server.address();
+    if (!address || typeof address === 'string') throw new Error('Expected TCP address');
+    const controller = new AbortController();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/chats/${chat.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: 'Question' }),
+      signal: controller.signal,
+    });
+    await response.body?.getReader().read();
+    controller.abort();
+    await upstreamAborted;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const detail = await app.inject({ method: 'GET', url: `/api/chats/${chat.id}` });
+    expect(
+      detail.json<{ messages: Array<{ content: string; status: string }> }>().messages.at(-1),
+    ).toMatchObject({
+      content: 'Partial',
+      status: 'interrupted',
+    });
+  });
+
   it('reopens one data directory without losing persisted state', async () => {
     const notebook = await createNotebook('Persistent');
     await app.close();
