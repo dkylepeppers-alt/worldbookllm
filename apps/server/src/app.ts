@@ -1,9 +1,57 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
-export function buildApp(): FastifyInstance {
-  const app = Fastify({ logger: process.env.NODE_ENV !== 'test' });
+import { openDatabase } from './db/database.js';
+import { resolveDataDir } from './env.js';
+import { SourceFileStore } from './files/source-files.js';
+import { installErrorHandler } from './routes/helpers.js';
+import { registerNotebookRoutes } from './routes/notebooks.js';
+import { registerSecretRoutes } from './routes/secrets.js';
+import { registerSourceRoutes } from './routes/sources.js';
+import { SecretStore } from './secrets/secret-store.js';
+import { NotebookService } from './services/notebooks.js';
+import { SourceService } from './services/sources.js';
+
+export interface AppServices {
+  notebooks: NotebookService;
+  sources: SourceService;
+  secrets: SecretStore;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    services: AppServices;
+  }
+}
+
+export interface BuildAppOptions {
+  dataDir?: string;
+  logger?: boolean;
+}
+
+export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
+  const app = Fastify({ logger: options.logger ?? process.env.NODE_ENV !== 'test' });
+  const dataDir = resolveDataDir(options.dataDir);
+  const db = openDatabase(dataDir);
+  const sourceFiles = new SourceFileStore(dataDir);
+  const secrets = new SecretStore(dataDir);
+
+  app.decorate('services', {
+    notebooks: new NotebookService(db, sourceFiles),
+    sources: new SourceService(db, sourceFiles),
+    secrets,
+  });
+
+  app.addHook('onClose', () => {
+    if (db.open) db.close();
+  });
+
+  installErrorHandler(app);
 
   app.get('/api/health', () => ({ status: 'ok' }));
+
+  registerNotebookRoutes(app);
+  registerSourceRoutes(app);
+  registerSecretRoutes(app);
 
   return app;
 }
