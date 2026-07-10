@@ -1,0 +1,21 @@
+{
+  "name": "@worldbookllm/providers",
+  "private": true,
+  "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "description": "Multi-provider LLM request building, message conversion, and stream normalization. Portions derived from SillyTavern (AGPL-3.0).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
