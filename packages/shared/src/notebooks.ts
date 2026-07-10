@@ -12,6 +12,8 @@ export const notebookSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
 });
 
+export const notebookListSchema = z.array(notebookSchema);
+
 export const createNotebookSchema = z.strictObject({
   name: notebookNameSchema,
   settings: providerConfigSchema.nullable().default(null),
@@ -27,5 +29,7 @@ export const patchNotebookSchema = z
   });
 
 export type Notebook = z.infer<typeof notebookSchema>;
+export type NotebookList = z.infer<typeof notebookListSchema>;
+export type CreateNotebookInput = z.input<typeof createNotebookSchema>;
 export type CreateNotebook = z.infer<typeof createNotebookSchema>;
 export type PatchNotebook = z.infer<typeof patchNotebookSchema>;
