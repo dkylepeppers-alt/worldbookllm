@@ -4,6 +4,7 @@ export interface HealthStatus {
   status: 'ok';
 }
 
+export * from './api-errors.js';
 export * from './notebooks.js';
 export * from './chats.js';
 export * from './provider-config.js';

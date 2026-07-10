@@ -15,6 +15,8 @@ export const sourceMetadataSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
 });
 
+export const sourceMetadataListSchema = z.array(sourceMetadataSchema);
+
 export const sourceDetailSchema = sourceMetadataSchema.extend({
   content: z.string().max(10_485_760),
 });
@@ -25,5 +27,6 @@ export const createSourceSchema = z.strictObject({
 });
 
 export type SourceMetadata = z.infer<typeof sourceMetadataSchema>;
+export type SourceMetadataList = z.infer<typeof sourceMetadataListSchema>;
 export type SourceDetail = z.infer<typeof sourceDetailSchema>;
 export type CreateSource = z.infer<typeof createSourceSchema>;
