@@ -1,6 +1,12 @@
 import { expect, it } from 'vitest';
 
-import { buildChatRequest, normalizeStreamChunk, parseSseStream } from './index.js';
+import {
+  buildChatRequest,
+  buildModelListPlan,
+  getStaticModels,
+  normalizeStreamChunk,
+  parseSseStream,
+} from './index.js';
 
 const apiKey = process.env.SMOKE_NANOGPT_KEY;
 const smoke = apiKey ? it : it.skip;
@@ -9,6 +15,11 @@ it('exports the Phase 3 provider API', () => {
   expect(buildChatRequest).toBeTypeOf('function');
   expect(normalizeStreamChunk).toBeTypeOf('function');
   expect(parseSseStream).toBeTypeOf('function');
+});
+
+it('exports the Phase 4 model discovery API', () => {
+  expect(buildModelListPlan).toBeTypeOf('function');
+  expect(getStaticModels).toBeTypeOf('function');
 });
 
 smoke(

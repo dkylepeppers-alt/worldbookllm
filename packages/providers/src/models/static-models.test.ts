@@ -1,0 +1,125 @@
+import { describe, expect, it } from 'vitest';
+
+import type { ChatCompletionSource } from '../types.js';
+import { getStaticModels } from './static-models.js';
+
+const expected: Partial<Record<ChatCompletionSource, string[]>> = {
+  claude: [
+    'claude-fable-5',
+    'claude-opus-4-7',
+    'claude-opus-4-6',
+    'claude-opus-4-5',
+    'claude-opus-4-5-20251101',
+    'claude-sonnet-4-6',
+    'claude-sonnet-4-5',
+    'claude-sonnet-4-5-20250929',
+    'claude-haiku-4-5',
+    'claude-haiku-4-5-20251001',
+    'claude-opus-4-1',
+    'claude-opus-4-1-20250805',
+    'claude-opus-4-0',
+    'claude-opus-4-20250514',
+    'claude-sonnet-4-0',
+    'claude-sonnet-4-20250514',
+    'claude-3-7-sonnet-latest',
+    'claude-3-7-sonnet-20250219',
+    'claude-3-5-sonnet-latest',
+    'claude-3-5-sonnet-20241022',
+    'claude-3-5-sonnet-20240620',
+    'claude-3-5-haiku-latest',
+    'claude-3-5-haiku-20241022',
+    'claude-3-opus-20240229',
+    'claude-3-haiku-20240307',
+  ],
+  ai21: [
+    'jamba-mini',
+    'jamba-large',
+    'jamba-1.7-mini',
+    'jamba-1.7-large',
+    'jamba-1.6-mini',
+    'jamba-1.6-large',
+    'jamba-1.5-mini',
+    'jamba-1.5-large',
+    'jamba-instruct-preview',
+  ],
+  vertexai: [
+    'gemini-3.5-flash',
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3.1-flash-image-preview',
+    'gemini-3-pro-preview',
+    'gemini-3-pro-image-preview',
+    'gemini-3-flash-preview',
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash-image',
+    'gemini-2.5-flash-image-preview',
+    'gemini-2.0-flash-exp',
+    'gemini-2.0-flash-preview-image-generation',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-001',
+    'gemini-2.0-flash-lite-001',
+  ],
+  perplexity: [
+    'sonar',
+    'sonar-pro',
+    'sonar-reasoning',
+    'sonar-reasoning-pro',
+    'sonar-deep-research',
+    'r1-1776',
+    'llama-3.1-sonar-small-128k-online',
+    'llama-3.1-sonar-large-128k-online',
+    'llama-3.1-sonar-huge-128k-online',
+    'llama-3.1-sonar-small-128k-chat',
+    'llama-3.1-sonar-large-128k-chat',
+  ],
+  minimax: [
+    'MiniMax-M2.7',
+    'MiniMax-M2.7-highspeed',
+    'MiniMax-M2.5',
+    'MiniMax-M2.5-highspeed',
+    'MiniMax-M2.1',
+    'MiniMax-M2.1-highspeed',
+    'MiniMax-M2',
+    'M2-her',
+  ],
+  zai: [
+    'glm-5.2',
+    'glm-5-turbo',
+    'glm-5v-turbo',
+    'glm-5.1',
+    'glm-5',
+    'glm-4.7',
+    'glm-4.7-flash',
+    'glm-4.7-flashx',
+    'glm-4.6',
+    'glm-4.6v',
+    'glm-4.6v-flash',
+    'glm-4.6v-flashx',
+    'glm-4.5v',
+    'glm-4.5',
+    'glm-4.5-air',
+    'glm-4.5-x',
+    'glm-4.5-airx',
+    'glm-4.5-flash',
+    'glm-4-32b-0414-128k',
+    'autoglm-phone-multilingual',
+  ],
+};
+
+describe('static provider model catalogs', () => {
+  it.each(Object.entries(expected))('pins the %s model IDs in source order', (source, ids) => {
+    expect(getStaticModels(source as ChatCompletionSource)?.map((model) => model.id)).toEqual(ids);
+  });
+
+  it('returns undefined for live model sources', () => {
+    expect(getStaticModels('openai')).toBeUndefined();
+  });
+
+  it('returns defensive copies', () => {
+    const first = getStaticModels('claude')!;
+    first[0]!.id = 'mutated';
+    expect(getStaticModels('claude')?.[0]?.id).toBe('claude-fable-5');
+  });
+});
