@@ -21,3 +21,19 @@ export class InvalidStoredDataError extends Error {
     super(message, options);
   }
 }
+
+export class ConfigurationError extends Error {
+  override readonly name = 'ConfigurationError';
+  readonly code = 'configuration_error';
+}
+
+export class ConflictError extends Error {
+  override readonly name = 'ConflictError';
+
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
