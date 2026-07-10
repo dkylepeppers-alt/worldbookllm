@@ -96,8 +96,10 @@ describe('notebook source workspace', () => {
         content: '# Marsh lore',
       }),
     );
-    expect(screen.getByTestId('location').textContent).toBe(
-      `/notebooks/${notebook.id}/sources/${source.id}`,
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe(
+        `/notebooks/${notebook.id}/sources/${source.id}`,
+      ),
     );
   });
 
@@ -139,7 +141,9 @@ describe('notebook source workspace', () => {
     await user.click(screen.getByRole('button', { name: 'Delete source' }));
 
     await waitFor(() => expect(deleteSource).toHaveBeenCalledWith(source.id));
-    expect(screen.getByTestId('location').textContent).toBe(`/notebooks/${notebook.id}`);
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe(`/notebooks/${notebook.id}`),
+    );
   });
 
   it('keeps notebook and source failures distinct and retryable', async () => {

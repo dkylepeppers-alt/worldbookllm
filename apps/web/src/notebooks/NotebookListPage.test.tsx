@@ -70,7 +70,9 @@ describe('NotebookListPage', () => {
     await user.click(screen.getByRole('button', { name: 'Create notebook' }));
 
     await waitFor(() => expect(createNotebook).toHaveBeenCalledWith({ name: 'Atlas of Ember' }));
-    expect(screen.getByTestId('location').textContent).toBe(`/notebooks/${notebook.id}`);
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe(`/notebooks/${notebook.id}`),
+    );
   });
 
   it('renames a notebook inline using the server response', async () => {
