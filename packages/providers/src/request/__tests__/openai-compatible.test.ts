@@ -230,9 +230,49 @@ describe('OpenAI-compatible request building', () => {
     expect(kobold.body).toHaveProperty('reasoning_effort', 'high');
   });
 
-  it('reports dedicated adapters as pending until Phase 4', () => {
-    expect(() => buildChatRequest('claude', commonParams)).toThrow(
-      new ProviderError('Anthropic Claude request building is not implemented.', 'claude'),
-    );
+  it('has an intentional dispatch result for every source', () => {
+    for (const source of [
+      'openai',
+      'claude',
+      'openrouter',
+      'ai21',
+      'makersuite',
+      'vertexai',
+      'mistralai',
+      'custom',
+      'cohere',
+      'perplexity',
+      'groq',
+      'chutes',
+      'electronhub',
+      'nanogpt',
+      'deepseek',
+      'aimlapi',
+      'xai',
+      'pollinations',
+      'moonshot',
+      'fireworks',
+      'cometapi',
+      'azure_openai',
+      'zai',
+      'siliconflow',
+      'minimax',
+      'workers_ai',
+    ] as const) {
+      try {
+        buildChatRequest(source, {
+          ...commonParams,
+          baseUrl: 'https://example.test/v1',
+          extra: {
+            accountId: 'account-id',
+            deploymentName: 'deployment',
+            apiVersion: '2025-01-01-preview',
+          },
+        });
+      } catch (error) {
+        expect(error).toBeInstanceOf(ProviderError);
+        expect((error as Error).message).not.toContain('request building is not implemented');
+      }
+    }
   });
 });

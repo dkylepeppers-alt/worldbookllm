@@ -109,6 +109,16 @@ const OPENAI_FIXED_REASONING_EFFORT: Readonly<Record<string, string>> = {
   'gpt-5.3-chat-latest': 'medium',
 };
 
+export function getOpenAiReasoningEffort(
+  model: string,
+  effort: ReasoningEffort | undefined,
+): string | undefined {
+  if (!effort || effort === 'auto' || !OPENAI_REASONING_EFFORT_MODELS.has(model)) {
+    return undefined;
+  }
+  return OPENAI_FIXED_REASONING_EFFORT[model] ?? OPENAI_REASONING_EFFORT[effort] ?? effort;
+}
+
 export function isOpenAiCompatibleSource(
   source: ChatCompletionSource,
 ): source is OpenAiCompatibleSource {
@@ -196,13 +206,9 @@ function getProviderBody(
       if (!effort) {
         return {};
       }
-      if (OPENAI_REASONING_EFFORT_MODELS.has(params.model)) {
-        return {
-          reasoning_effort:
-            OPENAI_FIXED_REASONING_EFFORT[params.model] ??
-            OPENAI_REASONING_EFFORT[effort] ??
-            effort,
-        };
+      const reasoningEffort = getOpenAiReasoningEffort(params.model, effort);
+      if (reasoningEffort) {
+        return { reasoning_effort: reasoningEffort };
       }
       return source === 'custom' && /^koboldcpp\/(.+)$/.test(params.model)
         ? { reasoning_effort: effort }
