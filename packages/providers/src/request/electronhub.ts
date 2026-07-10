@@ -30,10 +30,7 @@ export function buildElectronHubRequest(params: GenerationParams): ProviderChatR
       top_p: params.topP,
       top_k: params.topK,
       seed: params.seed,
-      reasoning_effort:
-        params.reasoningEffort && params.reasoningEffort !== 'auto'
-          ? params.reasoningEffort
-          : undefined,
+      reasoning_effort: params.reasoningEffort,
     }),
   };
 }

@@ -183,4 +183,16 @@ describe('model-list response parsing', () => {
       expect(() => parseModelListResponse(source, { unexpected: true })).toThrow(ProviderError);
     },
   );
+
+  it('rejects an Azure probe without a detected model', () => {
+    expect(() => parseModelListResponse('azure_openai', { choices: [] }, 1)).toThrow(
+      new ProviderError('Azure OpenAI deployment probe did not return a model ID.', 'azure_openai'),
+    );
+  });
+
+  it('preserves top-level provider error messages', () => {
+    expect(() => parseModelListResponse('openai', { message: 'quota exceeded' })).toThrow(
+      new ProviderError('quota exceeded', 'openai'),
+    );
+  });
 });

@@ -36,10 +36,7 @@ export function buildAimlapiRequest(params: GenerationParams): ProviderChatReque
       top_p: params.topP,
       seed: params.seed,
       stop: params.stop?.length ? params.stop : undefined,
-      reasoning_effort:
-        params.reasoningEffort && params.reasoningEffort !== 'auto'
-          ? params.reasoningEffort
-          : undefined,
+      reasoning_effort: params.reasoningEffort,
     }),
   };
 }

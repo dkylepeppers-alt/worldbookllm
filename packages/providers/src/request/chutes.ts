@@ -45,10 +45,7 @@ export function buildChutesRequest(params: GenerationParams): ProviderChatReques
       top_k: params.topK,
       seed: params.seed,
       stop: params.stop,
-      reasoning_effort:
-        params.reasoningEffort && params.reasoningEffort !== 'auto'
-          ? params.reasoningEffort
-          : undefined,
+      reasoning_effort: params.reasoningEffort,
       logit_bias: extraRecord(params, 'logitBias'),
     }),
   };

@@ -199,7 +199,19 @@ export function buildModelListPlan(
 }
 
 function providerError(source: ChatCompletionSource, data: unknown): void {
-  if (!isRecord(data) || !data.error) {
+  if (!isRecord(data)) {
+    return;
+  }
+  if (
+    !data.error &&
+    typeof data.message === 'string' &&
+    !Array.isArray(data.data) &&
+    !Array.isArray(data.models) &&
+    !Array.isArray(data.result)
+  ) {
+    throw new ProviderError(data.message, source);
+  }
+  if (!data.error) {
     return;
   }
   const error = data.error;
@@ -240,7 +252,13 @@ export function parseModelListResponse(
     return staticModels;
   }
   if (source === 'azure_openai' && step === 1 && isRecord(data)) {
-    return typeof data.model === 'string' && data.model ? [{ id: data.model }] : [];
+    if (typeof data.model !== 'string' || !data.model) {
+      throw new ProviderError(
+        'Azure OpenAI deployment probe did not return a model ID.',
+        'azure_openai',
+      );
+    }
+    return [{ id: data.model }];
   }
   if (source === 'makersuite' && isRecord(data) && Array.isArray(data.models)) {
     return modelsFromRecords(

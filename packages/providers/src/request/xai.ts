@@ -34,12 +34,11 @@ export function buildXaiRequest(params: GenerationParams): ProviderChatRequest {
       top_p: params.topP,
       seed: params.seed,
       stop: params.stop?.length ? params.stop : undefined,
-      reasoning_effort:
-        params.reasoningEffort && params.reasoningEffort !== 'auto'
-          ? params.reasoningEffort === 'high' || params.reasoningEffort === 'max'
-            ? 'high'
-            : 'low'
-          : undefined,
+      reasoning_effort: params.reasoningEffort
+        ? params.reasoningEffort === 'high' || params.reasoningEffort === 'max'
+          ? 'high'
+          : 'low'
+        : undefined,
     }),
   };
 }

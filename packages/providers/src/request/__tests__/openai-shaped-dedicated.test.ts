@@ -114,4 +114,18 @@ describe('OpenAI-shaped dedicated request builders', () => {
       new ProviderError(`${label} requires an API key.`, source),
     );
   });
+
+  it.each([
+    ['xai', 'low'],
+    ['aimlapi', 'auto'],
+    ['electronhub', 'auto'],
+    ['chutes', 'auto'],
+  ] as const)('preserves pinned auto reasoning behavior for %s', (source, expected) => {
+    const request = buildChatRequest(source, {
+      ...params,
+      reasoningEffort: 'auto',
+      extra: source === 'chutes' ? {} : undefined,
+    });
+    expect(request.body.reasoning_effort).toBe(expected);
+  });
 });
