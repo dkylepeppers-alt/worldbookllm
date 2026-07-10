@@ -148,7 +148,16 @@ export const PROVIDER_META: Record<ChatCompletionSource, ProviderMeta> = {
     family: 'dedicated',
     secretKey: 'api_key_vertexai',
     modelSource: 'static',
-    extraFields: [{ key: 'region', label: 'Region', required: false }],
+    extraFields: [
+      {
+        key: 'authMode',
+        label: 'Authentication mode',
+        required: false,
+        options: ['express', 'full'],
+      },
+      { key: 'projectId', label: 'Google Cloud project ID', required: false },
+      { key: 'region', label: 'Region', required: false },
+    ],
   },
   mistralai: {
     source: 'mistralai',

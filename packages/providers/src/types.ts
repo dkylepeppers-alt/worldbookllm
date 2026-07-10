@@ -119,6 +119,27 @@ export interface ProviderChatRequest {
   body: Record<string, unknown>;
 }
 
+/** HTTP request description for provider operations performed by a caller. */
+export interface ProviderHttpRequest {
+  url: string;
+  method: 'GET' | 'POST';
+  headers: Record<string, string>;
+  body?: Record<string, unknown> | string;
+}
+
+/** Injected connection details used to discover provider models. */
+export interface ModelListParams {
+  apiKey?: string;
+  baseUrl?: string;
+  extra?: Record<string, unknown>;
+}
+
+/** Ordered HTTP work, or a static result, needed to discover models. */
+export interface ModelListPlan {
+  requests: ProviderHttpRequest[];
+  staticModels?: ModelInfo[];
+}
+
 /** One normalized streaming increment. */
 export interface StreamDelta {
   text: string;

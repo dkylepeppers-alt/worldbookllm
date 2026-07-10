@@ -12,6 +12,8 @@ import {
   type GenerationParams,
   type ProviderChatRequest,
 } from '../types.js';
+import { buildClaudeRequest } from './claude.js';
+import { buildGoogleRequest } from './google.js';
 import { buildOpenAiCompatibleRequest, isOpenAiCompatibleSource } from './openai-compatible.js';
 
 export function buildChatRequest(
@@ -20,6 +22,14 @@ export function buildChatRequest(
 ): ProviderChatRequest {
   if (isOpenAiCompatibleSource(source)) {
     return buildOpenAiCompatibleRequest(source, params);
+  }
+
+  if (source === 'claude') {
+    return buildClaudeRequest(params);
+  }
+
+  if (source === 'makersuite' || source === 'vertexai') {
+    return buildGoogleRequest(source, params);
   }
 
   throw new ProviderError(
