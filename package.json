@@ -16,7 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "test:coverage": "pnpm -r test -- --coverage"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
