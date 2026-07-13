@@ -112,7 +112,11 @@ export function SettingsPage() {
                   <h2>{provider.label}</h2>
                 </div>
                 <span className={provider.hasSecret ? 'status-ready' : 'status-muted'}>
-                  {provider.hasSecret ? 'Configured' : provider.keyOptional ? 'Key optional' : 'No key'}
+                  {provider.hasSecret
+                    ? 'Configured'
+                    : provider.keyOptional
+                      ? 'Key optional'
+                      : 'No key'}
                 </span>
               </header>
               {provider.keyOptional ? (
@@ -154,7 +158,11 @@ export function SettingsPage() {
                   ))}
                 </ul>
               )}
-              <button type="button" className="button-secondary" onClick={() => setAdding(provider)}>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => setAdding(provider)}
+              >
                 Add key
               </button>
             </section>

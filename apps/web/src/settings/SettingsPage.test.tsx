@@ -36,7 +36,9 @@ function renderSettings(overrides = {}) {
   const client = createTestClient({
     getProviderCatalog: () => Promise.resolve([provider]),
     getSecrets: () =>
-      Promise.resolve({ [provider.secretKey]: [activeSecret, standbySecret] } satisfies SecretState),
+      Promise.resolve({
+        [provider.secretKey]: [activeSecret, standbySecret],
+      } satisfies SecretState),
     ...overrides,
   });
   render(

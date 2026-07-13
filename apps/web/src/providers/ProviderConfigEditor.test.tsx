@@ -96,7 +96,9 @@ describe('ProviderConfigEditor', () => {
     await user.type(screen.getByLabelText('Model'), 'old-model');
     await user.click(screen.getByRole('button', { name: 'Load models' }));
 
-    expect(await screen.findByRole('option', { name: 'Claude Story (claude-story)' })).toBeDefined();
+    expect(
+      await screen.findByRole('option', { name: 'Claude Story (claude-story)' }),
+    ).toBeDefined();
     expect(listModels).toHaveBeenCalledWith({ source: 'claude' }, expect.any(AbortSignal));
     await user.selectOptions(screen.getByLabelText('Provider'), 'custom');
     expect(screen.getByLabelText('Base URL')).toHaveProperty('value', '');
@@ -115,10 +117,7 @@ describe('ProviderConfigEditor', () => {
 
     await user.selectOptions(screen.getByLabelText('Provider'), 'claude');
     await user.click(screen.getByRole('button', { name: 'Load models' }));
-    expect(await screen.findByRole('alert')).toHaveProperty(
-      'textContent',
-      'Provider unavailable.',
-    );
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Provider unavailable.');
     await user.type(screen.getByLabelText('Model'), 'manual-model');
     await user.click(screen.getByRole('button', { name: 'Test connection' }));
     expect(await screen.findByText('Connection rejected.')).toBeDefined();

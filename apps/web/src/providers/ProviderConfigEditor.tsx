@@ -158,7 +158,9 @@ export function ProviderConfigEditor({
 
       {provider === null ? null : (
         <>
-          <p className={provider.hasSecret || provider.keyOptional ? 'status-ready' : 'status-muted'}>
+          <p
+            className={provider.hasSecret || provider.keyOptional ? 'status-ready' : 'status-muted'}
+          >
             {provider.hasSecret
               ? 'Provider key configured.'
               : provider.keyOptional

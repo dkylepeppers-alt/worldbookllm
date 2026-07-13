@@ -200,10 +200,10 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         signal,
       }),
     activateSecret: (key, id, signal) =>
-      request(
-        `/api/secrets/${encodeURIComponent(key)}/${encodeURIComponent(id)}/activate`,
-        { method: 'POST', signal },
-      ),
+      request(`/api/secrets/${encodeURIComponent(key)}/${encodeURIComponent(id)}/activate`, {
+        method: 'POST',
+        signal,
+      }),
     deleteSecret: (key, id, signal) =>
       request(`/api/secrets/${encodeURIComponent(key)}/${encodeURIComponent(id)}`, {
         method: 'DELETE',

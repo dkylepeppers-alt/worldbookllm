@@ -391,8 +391,7 @@ label {
   background: rgb(248 248 244 / 78%);
 }
 
-.reader-region,
-.chat-reserve {
+.reader-region {
   display: none;
 }
 
@@ -593,6 +592,8 @@ label {
 }
 
 .chat-reserve {
+  display: block;
+  border-top: 1px solid var(--ink);
   border-left: 1px solid var(--line);
 }
 
@@ -922,6 +923,10 @@ label {
     border-right: 1px solid var(--ink);
   }
 
+  .chat-reserve {
+    grid-column: 1 / -1;
+  }
+
   .mobile-tabs {
     display: none;
   }
@@ -934,6 +939,8 @@ label {
 
   .chat-reserve {
     display: block;
+    grid-column: auto;
+    border-top: 0;
   }
 
   .notebook-grid {

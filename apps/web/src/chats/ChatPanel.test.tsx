@@ -117,7 +117,7 @@ describe('ChatPanel', () => {
     renderWorkspace({ updateChat });
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole('button', { name: chat.title }));
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
     await user.click(screen.getByRole('button', { name: 'Edit provider override' }));
     const model = await screen.findByLabelText('Model');
     await user.clear(model);

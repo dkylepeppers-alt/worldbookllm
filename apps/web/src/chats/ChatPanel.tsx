@@ -9,10 +9,7 @@ import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
 import { ProviderConfigDialog } from '../providers/ProviderConfigDialog.js';
 
-type ChatsState =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'ready'; chats: Chat[] };
+type ChatsState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; chats: Chat[] };
 
 export function ChatPanel() {
   const api = useApi();
@@ -62,9 +59,7 @@ export function ChatPanel() {
   }, [api]);
 
   const selected =
-    state.status === 'ready'
-      ? (state.chats.find((chat) => chat.id === selectedId) ?? null)
-      : null;
+    state.status === 'ready' ? (state.chats.find((chat) => chat.id === selectedId) ?? null) : null;
 
   async function create() {
     if (creating) return;
@@ -137,7 +132,12 @@ export function ChatPanel() {
           <p className="coordinate-label">Chat index</p>
           <h2>Develop with AI</h2>
         </div>
-        <button type="button" className="button-primary" disabled={creating} onClick={() => void create()}>
+        <button
+          type="button"
+          className="button-primary"
+          disabled={creating}
+          onClick={() => void create()}
+        >
           {creating ? 'Creating…' : 'New chat'}
         </button>
       </div>

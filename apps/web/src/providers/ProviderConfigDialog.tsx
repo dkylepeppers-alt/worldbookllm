@@ -96,12 +96,7 @@ export function ProviderConfigDialog({
           />
         ) : null}
         {catalog === null ? null : (
-          <ProviderConfigEditor
-            catalog={catalog}
-            initial={initial}
-            busy={saving}
-            onSubmit={save}
-          />
+          <ProviderConfigEditor catalog={catalog} initial={initial} busy={saving} onSubmit={save} />
         )}
         {saveError === null ? null : <p role="alert">{saveError}</p>}
         <div className="dialog-actions provider-dialog-actions">

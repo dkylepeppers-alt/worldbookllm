@@ -71,9 +71,9 @@ describe('notebook source workspace', () => {
     expect(screen.getByText(/updated jul 10/i)).toBeDefined();
     const mobileNavigation = screen.getByRole('navigation', { name: 'Notebook workspace' });
     expect(mobileNavigation).toBeDefined();
-    expect(
-      mobileNavigation.querySelector<HTMLAnchorElement>('a[href="/"]')?.textContent,
-    ).toBe('Notebooks');
+    expect(mobileNavigation.querySelector<HTMLAnchorElement>('a[href="/"]')?.textContent).toBe(
+      'Notebooks',
+    );
     expect(screen.getByRole('link', { name: 'Sources' })).toBeDefined();
     expect(screen.getByText('Reader').getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByRole('heading', { name: 'Develop with AI' })).toBeDefined();
