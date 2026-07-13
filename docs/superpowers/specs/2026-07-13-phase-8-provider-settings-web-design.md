@@ -54,21 +54,21 @@ testConnection(config: ProviderConfig, signal?): Promise<ConnectionTestResponse>
 
 // Secrets
 getSecrets(signal?): Promise<SecretState>; // GET /api/secrets → secretStateSchema
-createSecret(input: CreateSecretInput, signal?): Promise<MaskedSecret>; // POST /api/secrets → maskedSecretSchema
+createSecret(input: z.input<typeof createSecretSchema>, signal?): Promise<MaskedSecret>; // POST /api/secrets → maskedSecretSchema
 activateSecret(key: string, id: string, signal?): Promise<void>; // POST /api/secrets/:key/:id/activate → 204
 deleteSecret(key: string, id: string, signal?): Promise<void>; // DELETE /api/secrets/:key/:id → 204
 
 // Chats
 listChats(notebookId: string, signal?): Promise<Chat[]>; // GET /api/notebooks/:id/chats → z.array(chatSchema)
-createChat(notebookId: string, input: CreateChatInput, signal?): Promise<Chat>; // POST /api/notebooks/:id/chats → chatSchema
+createChat(notebookId: string, input: z.input<typeof createChatSchema>, signal?): Promise<Chat>; // POST /api/notebooks/:id/chats → chatSchema
 getChat(id: string, signal?): Promise<ChatDetail>; // GET /api/chats/:id → chatDetailSchema
 updateChat(id: string, input: PatchChat, signal?): Promise<Chat>; // PATCH /api/chats/:id → chatSchema
 deleteChat(id: string, signal?): Promise<void>; // DELETE /api/chats/:id → 204
 ```
 
-Path segments are URI-encoded as in the existing methods. Notebook defaults reuse the existing `updateNotebook(id, { settings })`. The shared package already exports every schema; if a list wrapper (for example `chatListSchema` or `providerCatalogSchema`) is missing, the client composes `z.array(...)` locally rather than adding shared exports.
+Path segments are URI-encoded as in the existing methods. Notebook defaults reuse the existing `updateNotebook(id, { settings })`. The shared package already exports every schema; if a list wrapper (for example `chatListSchema` or `providerCatalogSchema`) is missing, the client composes `z.array(...)` locally rather than adding shared exports. Likewise, shared exports no `CreateSecretInput`/`CreateChatInput` types: the create-secret and create-chat parameters use the schema input types (`z.input<typeof createSecretSchema>`, `z.input<typeof createChatSchema>`) locally, so callers can omit defaulted fields (`label`, `title`, `sourceIds`, `providerOverride`) exactly as the server accepts them, without new shared exports.
 
-`src/test/createTestClient.ts` grows the same methods with the existing default behavior: resolve empty for reads, reject `Unexpected API call` otherwise.
+`src/test/createTestClient.ts` grows the same methods with the existing default convention: list-style reads resolve empty (`getProviderCatalog` and `listChats` as `[]`, `getSecrets` as `{}`), and every other method rejects `Unexpected API call` unless overridden.
 
 Error handling is unchanged: non-2xx responses become `ApiClientError(status, code, message, issues)` from the shared `apiErrorSchema`. The UI maps `409 configuration_error` and `502 provider_error` to inline, human-readable failures near the control that triggered them.
 
