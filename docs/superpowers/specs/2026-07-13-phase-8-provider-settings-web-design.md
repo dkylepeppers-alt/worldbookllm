@@ -18,7 +18,7 @@ This phase changes only `apps/web`. Server routes, shared schemas, and the provi
 
 - Extend the typed `ApiClient` with provider, secret, and chat operations validated by the existing shared schemas.
 - Add settings navigation and replace the `/settings` placeholder with masked multi-key management: list, add, activate (rotate), and delete keys per provider.
-- Render provider connection fields generically from `ProviderCatalogEntry` descriptors so all 26 providers work without per-provider UI code.
+- Render provider connection fields generically from `ProviderCatalogEntry` descriptors so the whole catalog works without per-provider UI code, with two documented carve-outs (CometAPI is disabled upstream; Vertex AI `full` auth is deferred past M1).
 - Provide model discovery (live and static) and a real connection test inside one reusable provider-configuration editor.
 - Persist notebook provider defaults through the existing `PATCH /api/notebooks/:id` `settings` field.
 - Replace the reserved chat region with a minimal chat shell: list, create, select, rename, and delete chats, and edit each chat's provider override.
@@ -93,11 +93,13 @@ Providers that share a `secretKey` display the same key list; this mirrors serve
 - **Provider select** — all catalog entries by `label`. Switching providers clears model, base URL, and extras.
 - **Key status** — a passive indicator from `hasSecret`, with a link to `/settings` when no key exists and `keyOptional` is not set. The editor never collects key material.
 - **Base URL** — a URL input rendered only when `needsBaseUrl` is true; required in that case.
-- **Extra fields** — one input per `extraFields` descriptor: a select when `options` is present, otherwise a text input; `required` gates submission. Values are passed through unchanged as the `extra` record.
-- **Model** — a `Load models` action calls `listModels` with the current connection fields and fills a select (`id`, with `name` shown when present, provider order preserved). Static-model providers resolve instantly through the same call. On discovery failure the editor shows the error and falls back to a free-text model input, since a reachable-but-unlisted model is still a valid configuration.
+- **Extra fields** — one input per `extraFields` descriptor: a select when `options` is present, otherwise a text input; `required` gates submission. Values are passed through unchanged as the `extra` record. One documented M1 carve-out: the Vertex AI `authMode` select omits the `full` option, because full service-account auth requires an `extra.accessToken` the catalog does not describe and Phase 6 explicitly deferred full Vertex OAuth; `express` remains the M1 path.
+- **Model** — a `Load models` action calls `listModels` with the current connection fields and fills a select (`id`, with `name` shown when present, provider order preserved). Most static-model providers resolve instantly through the same call from the bundled catalog; Azure OpenAI is the exception — despite `modelSource: 'static'` its server-side plan performs a live deployment probe requiring base URL, deployment name, API version, and an active key. The editor does not special-case this: discovery is one code path, and on failure it shows the error and falls back to a free-text model input, since a reachable-but-unlisted model is still a valid configuration.
 - **Connection test** — enabled once the form holds a complete `ProviderConfig`; calls `testConnection` and renders the returned `detail` on success or the safe error message on failure. Testing is advisory: a failed or skipped test does not block saving.
 
 The editor validates its output against `providerConfigSchema` before submitting, so callers only ever receive a wire-valid config.
+
+CometAPI remains in the catalog but is disabled inside the provider package: its model-list and chat request builders throw a pinned `CometAPI is temporarily disabled.` error. The editor adds no special casing — model discovery and connection tests for CometAPI surface that safe provider error like any other failure, and a working configuration cannot be produced until the provider package re-enables it.
 
 ## Notebook Provider Defaults
 
@@ -124,7 +126,7 @@ Patches never touch `sourceIds`, preserving any existing selection for Phase 9.
 
 - Server responses replace local state after every mutation; no optimistic secret, settings, or chat state survives a failed request.
 - Secret inputs are write-only: cleared on success, cleared on dialog close, never logged or echoed back.
-- Model discovery and connection tests are cancellable via `AbortSignal` when their dialog closes, following the workspace's `AbortController` pattern.
+- Closing a dialog aborts the browser request for in-flight model discovery or connection tests via `AbortSignal` (the workspace's `AbortController` pattern) and discards stale results. This does not cancel the server's upstream provider call, which runs to completion or its 30-second timeout — accepted M1 behavior, since the frozen routes carry no cancellation channel.
 - Validation failures (`400`) render field-level messages from `ApiClientError.issues` where they map to a field, otherwise inline alerts (`role="alert"`).
 - `409`/`502` provider failures render the server's safe message verbatim; the UI never invents provider detail and never sees keys, provider URLs, or raw provider errors.
 - Dialogs follow the `useDialogLifecycle` contract: focus on open, Escape to close, actions disabled while a request is in flight.
@@ -162,7 +164,7 @@ Repository gates run sequentially with workspace concurrency one: `lint`, `forma
 ## Acceptance Criteria
 
 - `/settings` manages masked, rotatable, deletable keys for every catalog provider without exposing secret values after submission.
-- Any of the 26 providers can be configured through descriptor-driven fields alone; model lists load live or static through one code path, with manual model entry as the failure fallback.
+- Every enabled provider can be configured through descriptor-driven fields alone (CometAPI stays listed but surfaces its pinned upstream-disabled error; Vertex AI offers only `express` auth); model lists load live or static through one code path, with manual model entry as the failure fallback.
 - Connection tests report the server's `ok`/`detail` result and safe failures.
 - Notebook defaults persist in `Notebook.settings` via the existing PATCH route and render in the workspace.
 - Chats can be created, selected, renamed, deleted, and given a complete provider override or returned to notebook inheritance, with the precedence rule visible in the UI.
