@@ -1,18 +1,38 @@
 import {
   apiErrorSchema,
+  chatDetailSchema,
+  chatSchema,
+  connectionTestResponseSchema,
+  createChatSchema,
+  createSecretSchema,
+  maskedSecretSchema,
+  modelListResponseSchema,
   notebookListSchema,
   notebookSchema,
+  providerCatalogEntrySchema,
+  secretStateSchema,
   sourceDetailSchema,
   sourceMetadataListSchema,
   sourceMetadataSchema,
   type ApiErrorIssue,
+  type Chat,
+  type ChatDetail,
+  type ConnectionTestResponse,
   type CreateNotebookInput,
   type CreateSource,
+  type MaskedSecret,
+  type ModelListResponse,
   type Notebook,
+  type PatchChat,
   type PatchNotebook,
+  type ProviderCatalogEntry,
+  type ProviderConfig,
+  type ProviderConnection,
+  type SecretState,
   type SourceDetail,
   type SourceMetadata,
 } from '@worldbookllm/shared';
+import { z } from 'zod';
 
 interface ResponseSchema<T> {
   safeParse(value: unknown): { success: true; data: T } | { success: false };
@@ -44,7 +64,22 @@ export interface ApiClient {
   ): Promise<SourceMetadata>;
   getSource(id: string, signal?: AbortSignal): Promise<SourceDetail>;
   deleteSource(id: string, signal?: AbortSignal): Promise<void>;
+  getProviderCatalog(signal?: AbortSignal): Promise<ProviderCatalogEntry[]>;
+  listModels(connection: ProviderConnection, signal?: AbortSignal): Promise<ModelListResponse>;
+  testConnection(config: ProviderConfig, signal?: AbortSignal): Promise<ConnectionTestResponse>;
+  getSecrets(signal?: AbortSignal): Promise<SecretState>;
+  createSecret(input: CreateSecretInput, signal?: AbortSignal): Promise<MaskedSecret>;
+  activateSecret(key: string, id: string, signal?: AbortSignal): Promise<void>;
+  deleteSecret(key: string, id: string, signal?: AbortSignal): Promise<void>;
+  listChats(notebookId: string, signal?: AbortSignal): Promise<Chat[]>;
+  createChat(notebookId: string, input: CreateChatInput, signal?: AbortSignal): Promise<Chat>;
+  getChat(id: string, signal?: AbortSignal): Promise<ChatDetail>;
+  updateChat(id: string, input: PatchChat, signal?: AbortSignal): Promise<Chat>;
+  deleteChat(id: string, signal?: AbortSignal): Promise<void>;
 }
+
+export type CreateSecretInput = z.input<typeof createSecretSchema>;
+export type CreateChatInput = z.input<typeof createChatSchema>;
 
 interface RequestOptions<T> {
   method?: 'POST' | 'PATCH' | 'DELETE';
@@ -58,6 +93,9 @@ function isAbortError(error: unknown): boolean {
 }
 
 export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): ApiClient {
+  const providerCatalogSchema = z.array(providerCatalogEntrySchema);
+  const chatListSchema = z.array(chatSchema);
+
   async function request<T>(path: string, options: RequestOptions<T> = {}): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -137,5 +175,62 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       request(`/api/sources/${encodeURIComponent(id)}`, { schema: sourceDetailSchema, signal }),
     deleteSource: (id, signal) =>
       request(`/api/sources/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
+    getProviderCatalog: (signal) =>
+      request('/api/providers', { schema: providerCatalogSchema, signal }),
+    listModels: (connection, signal) =>
+      request('/api/providers/models', {
+        method: 'POST',
+        body: connection,
+        schema: modelListResponseSchema,
+        signal,
+      }),
+    testConnection: (config, signal) =>
+      request('/api/providers/test', {
+        method: 'POST',
+        body: config,
+        schema: connectionTestResponseSchema,
+        signal,
+      }),
+    getSecrets: (signal) => request('/api/secrets', { schema: secretStateSchema, signal }),
+    createSecret: (input, signal) =>
+      request('/api/secrets', {
+        method: 'POST',
+        body: input,
+        schema: maskedSecretSchema,
+        signal,
+      }),
+    activateSecret: (key, id, signal) =>
+      request(`/api/secrets/${encodeURIComponent(key)}/${encodeURIComponent(id)}/activate`, {
+        method: 'POST',
+        signal,
+      }),
+    deleteSecret: (key, id, signal) =>
+      request(`/api/secrets/${encodeURIComponent(key)}/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        signal,
+      }),
+    listChats: (notebookId, signal) =>
+      request(`/api/notebooks/${encodeURIComponent(notebookId)}/chats`, {
+        schema: chatListSchema,
+        signal,
+      }),
+    createChat: (notebookId, input, signal) =>
+      request(`/api/notebooks/${encodeURIComponent(notebookId)}/chats`, {
+        method: 'POST',
+        body: input,
+        schema: chatSchema,
+        signal,
+      }),
+    getChat: (id, signal) =>
+      request(`/api/chats/${encodeURIComponent(id)}`, { schema: chatDetailSchema, signal }),
+    updateChat: (id, input, signal) =>
+      request(`/api/chats/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: input,
+        schema: chatSchema,
+        signal,
+      }),
+    deleteChat: (id, signal) =>
+      request(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
   };
 }

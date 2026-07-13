@@ -13,6 +13,18 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     createSource: unused,
     getSource: unused,
     deleteSource: unused,
+    getProviderCatalog: () => Promise.resolve([]),
+    listModels: unused,
+    testConnection: unused,
+    getSecrets: () => Promise.resolve({}),
+    createSecret: unused,
+    activateSecret: unused,
+    deleteSecret: unused,
+    listChats: () => Promise.resolve([]),
+    createChat: unused,
+    getChat: unused,
+    updateChat: unused,
+    deleteChat: unused,
     ...overrides,
   };
 }
