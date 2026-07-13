@@ -38,8 +38,6 @@ export function ProviderConfigDialog({
 
   useEffect(() => {
     const controller = new AbortController();
-    setCatalog(null);
-    setLoadError(false);
     void api
       .getProviderCatalog(controller.signal)
       .then(setCatalog)
@@ -92,7 +90,11 @@ export function ProviderConfigDialog({
           <ErrorState
             title="Could not load providers"
             message="The provider catalog could not be loaded."
-            onRetry={() => setReloadKey((value) => value + 1)}
+            onRetry={() => {
+              setCatalog(null);
+              setLoadError(false);
+              setReloadKey((value) => value + 1);
+            }}
           />
         ) : null}
         {catalog === null ? null : (

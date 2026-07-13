@@ -28,27 +28,28 @@ export function ChatPanel() {
   const [mutationError, setMutationError] = useState<string | null>(null);
 
   const loadChats = useCallback(
-    async (signal?: AbortSignal) => {
-      const chats = await api.listChats(notebookId, signal);
-      setState({ status: 'ready', chats });
-      setSelectedId((current) =>
-        current !== null && chats.some((chat) => chat.id === current) ? current : null,
-      );
-      return chats;
-    },
+    (signal?: AbortSignal) => api.listChats(notebookId, signal),
     [api, notebookId],
   );
 
+  const applyChats = useCallback((chats: Chat[]) => {
+    setState({ status: 'ready', chats });
+    setSelectedId((current) =>
+      current !== null && chats.some((chat) => chat.id === current) ? current : null,
+    );
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
-    setState({ status: 'loading' });
-    void loadChats(controller.signal).catch((error: unknown) => {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        setState({ status: 'error' });
-      }
-    });
+    void loadChats(controller.signal)
+      .then(applyChats)
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setState({ status: 'error' });
+        }
+      });
     return () => controller.abort();
-  }, [loadChats, reloadKey]);
+  }, [applyChats, loadChats, reloadKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -101,7 +102,7 @@ export function ChatPanel() {
       await api.deleteChat(target.id);
       setDeleting(null);
       if (selectedId === target.id) setSelectedId(null);
-      await loadChats();
+      applyChats(await loadChats());
     } catch (error) {
       setDeleting(null);
       setMutationError(messageFor(error, 'Could not delete this chat.'));
@@ -162,7 +163,10 @@ export function ChatPanel() {
         <ErrorState
           title="Could not load chats"
           message="The chat index could not be loaded."
-          onRetry={() => setReloadKey((value) => value + 1)}
+          onRetry={() => {
+            setState({ status: 'loading' });
+            setReloadKey((value) => value + 1);
+          }}
         />
       ) : null}
       {state.status === 'ready' && state.chats.length === 0 ? (

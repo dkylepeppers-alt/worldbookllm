@@ -1,11 +1,13 @@
-import { type RefObject, useEffect, useRef } from 'react';
+import { type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
 
 export function useDialogLifecycle(
   initialFocusRef: RefObject<HTMLElement | null>,
   onClose: () => void,
 ): void {
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useLayoutEffect(() => {
+    closeRef.current = onClose;
+  });
 
   useEffect(() => {
     const previousFocus =
