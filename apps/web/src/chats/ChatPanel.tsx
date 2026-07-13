@@ -24,6 +24,7 @@ export function ChatPanel() {
   const [configuringChat, setConfiguringChat] = useState<Chat | null>(null);
   const [deleting, setDeleting] = useState<Chat | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  const [clearingOverride, setClearingOverride] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
 
   const loadChats = useCallback(
@@ -109,6 +110,19 @@ export function ChatPanel() {
     }
   }
 
+  async function clearOverride(chat: Chat) {
+    if (clearingOverride) return;
+    setClearingOverride(true);
+    setMutationError(null);
+    try {
+      replaceChat(await api.updateChat(chat.id, { providerOverride: null }));
+    } catch (error) {
+      setMutationError(messageFor(error, 'Could not clear the provider override.'));
+    } finally {
+      setClearingOverride(false);
+    }
+  }
+
   const effectiveConfig = selected?.providerOverride ?? notebook.settings;
 
   return (
@@ -187,16 +201,10 @@ export function ChatPanel() {
             {selected.providerOverride === null ? null : (
               <button
                 type="button"
-                onClick={() =>
-                  void api
-                    .updateChat(selected.id, { providerOverride: null })
-                    .then(replaceChat)
-                    .catch((error: unknown) =>
-                      setMutationError(messageFor(error, 'Could not clear the provider override.')),
-                    )
-                }
+                disabled={clearingOverride}
+                onClick={() => void clearOverride(selected)}
               >
-                Use notebook default
+                {clearingOverride ? 'Clearing…' : 'Use notebook default'}
               </button>
             )}
             <button type="button" className="text-danger" onClick={() => setDeleting(selected)}>

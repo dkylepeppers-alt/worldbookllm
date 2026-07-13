@@ -49,7 +49,11 @@ export function SettingsPage() {
   }, [load, reloadKey]);
 
   async function refresh() {
-    await load();
+    try {
+      await load();
+    } catch {
+      setState({ status: 'error' });
+    }
   }
 
   async function activate(provider: ProviderCatalogEntry, secret: MaskedSecret) {
@@ -57,12 +61,13 @@ export function SettingsPage() {
     setMutationError(null);
     try {
       await api.activateSecret(provider.secretKey, secret.id);
-      await refresh();
     } catch (error) {
       setMutationError(messageFor(error, 'Could not activate this key.'));
-    } finally {
       setBusyId(null);
+      return;
     }
+    await refresh();
+    setBusyId(null);
   }
 
   async function removeSecret() {
@@ -71,14 +76,15 @@ export function SettingsPage() {
     setMutationError(null);
     try {
       await api.deleteSecret(deleting.provider.secretKey, deleting.secret.id);
-      setDeleting(null);
-      await refresh();
     } catch (error) {
       setDeleting(null);
       setMutationError(messageFor(error, 'Could not delete this key.'));
-    } finally {
       setBusyId(null);
+      return;
     }
+    setDeleting(null);
+    await refresh();
+    setBusyId(null);
   }
 
   if (state.status === 'loading') return <LoadingState>Loading provider settings…</LoadingState>;

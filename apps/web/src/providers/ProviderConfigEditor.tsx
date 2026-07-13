@@ -189,45 +189,39 @@ export function ProviderConfigEditor({
             </>
           ) : null}
 
-          {(provider.extraFields ?? []).map((field) => {
-            const options =
-              provider.source === 'vertexai' && field.key === 'authMode'
-                ? field.options?.filter((option) => option !== 'full')
-                : field.options;
-            return (
-              <div className="provider-extra-field" key={field.key}>
-                <label htmlFor={`provider-extra-${field.key}`}>{field.label}</label>
-                {options === undefined ? (
-                  <input
-                    id={`provider-extra-${field.key}`}
-                    required={field.required}
-                    value={extra[field.key] ?? ''}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setExtra((current) => ({ ...current, [field.key]: event.target.value }))
-                    }
-                  />
-                ) : (
-                  <select
-                    id={`provider-extra-${field.key}`}
-                    required={field.required}
-                    value={extra[field.key] ?? ''}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setExtra((current) => ({ ...current, [field.key]: event.target.value }))
-                    }
-                  >
-                    <option value="">Select {field.label.toLowerCase()}</option>
-                    {options.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            );
-          })}
+          {(provider.extraFields ?? []).map((field) => (
+            <div className="provider-extra-field" key={field.key}>
+              <label htmlFor={`provider-extra-${field.key}`}>{field.label}</label>
+              {field.options === undefined ? (
+                <input
+                  id={`provider-extra-${field.key}`}
+                  required={field.required}
+                  value={extra[field.key] ?? ''}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setExtra((current) => ({ ...current, [field.key]: event.target.value }))
+                  }
+                />
+              ) : (
+                <select
+                  id={`provider-extra-${field.key}`}
+                  required={field.required}
+                  value={extra[field.key] ?? ''}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setExtra((current) => ({ ...current, [field.key]: event.target.value }))
+                  }
+                >
+                  <option value="">Select {field.label.toLowerCase()}</option>
+                  {field.options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          ))}
 
           <div className="model-field">
             <label htmlFor="provider-model">Model</label>

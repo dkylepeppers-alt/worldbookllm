@@ -153,7 +153,7 @@ export const PROVIDER_META: Record<ChatCompletionSource, ProviderMeta> = {
         key: 'authMode',
         label: 'Authentication mode',
         required: false,
-        options: ['express', 'full'],
+        options: ['express'],
       },
       { key: 'projectId', label: 'Google Cloud project ID', required: false },
       { key: 'region', label: 'Region', required: false },
