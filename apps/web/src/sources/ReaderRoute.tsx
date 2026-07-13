@@ -25,7 +25,6 @@ export function ReaderRoute() {
     if (sourceId === undefined) return;
     setLastSourceId(sourceId);
     const controller = new AbortController();
-    setState({ status: 'loading' });
     void api
       .getSource(sourceId, controller.signal)
       .then((source) => {
@@ -65,7 +64,10 @@ export function ReaderRoute() {
       <ErrorState
         title="Could not open source"
         message="The source metadata loaded, but its Markdown file could not be read."
-        onRetry={() => setReloadKey((current) => current + 1)}
+        onRetry={() => {
+          setState({ status: 'loading' });
+          setReloadKey((current) => current + 1);
+        }}
       />
     );
   }

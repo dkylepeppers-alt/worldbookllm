@@ -1,6 +1,6 @@
 import '@fontsource-variable/archivo/wght.css';
 import '@fontsource-variable/source-serif-4/opsz.css';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, useParams } from 'react-router-dom';
 
 import './styles.css';
 
@@ -13,6 +13,11 @@ import { NotFoundPage } from './pages/NotFoundPage.js';
 import { SettingsPage } from './settings/SettingsPage.js';
 import { ReaderRoute } from './sources/ReaderRoute.js';
 
+function KeyedReaderRoute() {
+  const { sourceId } = useParams();
+  return <ReaderRoute key={sourceId} />;
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -20,7 +25,7 @@ export function AppRoutes() {
         <Route index element={<NotebookListPage />} />
         <Route path="notebooks/:notebookId" element={<NotebookWorkspace />}>
           <Route index element={<ReaderEmpty />} />
-          <Route path="sources/:sourceId" element={<ReaderRoute />} />
+          <Route path="sources/:sourceId" element={<KeyedReaderRoute />} />
         </Route>
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />

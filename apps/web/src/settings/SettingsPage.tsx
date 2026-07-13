@@ -27,30 +27,26 @@ export function SettingsPage() {
   const [mutationError, setMutationError] = useState<string | null>(null);
 
   const load = useCallback(
-    async (signal?: AbortSignal) => {
-      const [catalog, secrets] = await Promise.all([
-        api.getProviderCatalog(signal),
-        api.getSecrets(signal),
-      ]);
-      setState({ status: 'ready', catalog, secrets });
-    },
+    (signal?: AbortSignal) => Promise.all([api.getProviderCatalog(signal), api.getSecrets(signal)]),
     [api],
   );
 
   useEffect(() => {
     const controller = new AbortController();
-    setState({ status: 'loading' });
-    void load(controller.signal).catch((error: unknown) => {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        setState({ status: 'error' });
-      }
-    });
+    void load(controller.signal)
+      .then(([catalog, secrets]) => setState({ status: 'ready', catalog, secrets }))
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setState({ status: 'error' });
+        }
+      });
     return () => controller.abort();
   }, [load, reloadKey]);
 
   async function refresh() {
     try {
-      await load();
+      const [catalog, secrets] = await load();
+      setState({ status: 'ready', catalog, secrets });
     } catch {
       setState({ status: 'error' });
     }
@@ -93,7 +89,10 @@ export function SettingsPage() {
       <ErrorState
         title="Could not load provider settings"
         message="The provider catalog or masked key state could not be loaded."
-        onRetry={() => setReloadKey((value) => value + 1)}
+        onRetry={() => {
+          setState({ status: 'loading' });
+          setReloadKey((value) => value + 1);
+        }}
       />
     );
   }

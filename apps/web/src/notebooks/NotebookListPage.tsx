@@ -34,7 +34,6 @@ export function NotebookListPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setState({ status: 'loading' });
     void api
       .listNotebooks(controller.signal)
       .then((notebooks) => setState({ status: 'ready', notebooks }))
@@ -131,7 +130,10 @@ export function NotebookListPage() {
       <ErrorState
         title="Could not load notebooks"
         message="The workspace could not reach its notebook index."
-        onRetry={() => setReloadKey((value) => value + 1)}
+        onRetry={() => {
+          setState({ status: 'loading' });
+          setReloadKey((value) => value + 1);
+        }}
       />
     );
   }

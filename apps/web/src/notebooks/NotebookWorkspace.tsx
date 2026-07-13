@@ -32,7 +32,6 @@ export function NotebookWorkspace() {
   useEffect(() => {
     if (notebookId === undefined) return;
     const controller = new AbortController();
-    setNotebookState({ status: 'loading' });
     void api
       .getNotebook(notebookId, controller.signal)
       .then((notebook) => setNotebookState({ status: 'ready', notebook }))
@@ -50,7 +49,6 @@ export function NotebookWorkspace() {
   useEffect(() => {
     if (notebookId === undefined) return;
     const controller = new AbortController();
-    setSourcesState({ status: 'loading' });
     void api
       .listSources(notebookId, controller.signal)
       .then((sources) => setSourcesState({ status: 'ready', sources }))
@@ -89,7 +87,10 @@ export function NotebookWorkspace() {
       notebook: notebookState.notebook,
       notebookId,
       sourcesState,
-      retrySources: () => setSourcesReloadKey((current) => current + 1),
+      retrySources: () => {
+        setSourcesState({ status: 'loading' });
+        setSourcesReloadKey((current) => current + 1);
+      },
       addSource,
       removeSource,
       replaceNotebook,
@@ -123,7 +124,10 @@ export function NotebookWorkspace() {
       <ErrorState
         title="Could not open notebook"
         message="The notebook record could not be loaded."
-        onRetry={() => setNotebookReloadKey((current) => current + 1)}
+        onRetry={() => {
+          setNotebookState({ status: 'loading' });
+          setNotebookReloadKey((current) => current + 1);
+        }}
       />
     );
   }
