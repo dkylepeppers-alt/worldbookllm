@@ -10,7 +10,7 @@ import { AppShell } from './layout/AppShell.js';
 import { NotebookListPage } from './notebooks/NotebookListPage.js';
 import { NotebookWorkspace, ReaderEmpty } from './notebooks/NotebookWorkspace.js';
 import { NotFoundPage } from './pages/NotFoundPage.js';
-import { SettingsPlaceholder } from './pages/SettingsPlaceholder.js';
+import { SettingsPage } from './settings/SettingsPage.js';
 import { ReaderRoute } from './sources/ReaderRoute.js';
 
 export function AppRoutes() {
@@ -22,7 +22,7 @@ export function AppRoutes() {
           <Route index element={<ReaderEmpty />} />
           <Route path="sources/:sourceId" element={<ReaderRoute />} />
         </Route>
-        <Route path="settings" element={<SettingsPlaceholder />} />
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

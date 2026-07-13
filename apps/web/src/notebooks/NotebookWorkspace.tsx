@@ -4,6 +4,7 @@ import { Link, Outlet, useMatch, useParams } from 'react-router-dom';
 
 import { useApi } from '../api/useApi.js';
 import { ApiClientError } from '../api/client.js';
+import { ChatPanel } from '../chats/ChatPanel.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { SourceList } from '../sources/SourceList.js';
 import {
@@ -78,6 +79,10 @@ export function NotebookWorkspace() {
     setLastSourceId((current) => (current === sourceId ? null : current));
   }, []);
 
+  const replaceNotebook = useCallback((notebook: Notebook) => {
+    setNotebookState({ status: 'ready', notebook });
+  }, []);
+
   const value = useMemo<NotebookWorkspaceValue | null>(() => {
     if (notebookState.status !== 'ready' || notebookId === undefined) return null;
     return {
@@ -87,10 +92,19 @@ export function NotebookWorkspace() {
       retrySources: () => setSourcesReloadKey((current) => current + 1),
       addSource,
       removeSource,
+      replaceNotebook,
       lastSourceId,
       setLastSourceId,
     };
-  }, [addSource, lastSourceId, notebookId, notebookState, removeSource, sourcesState]);
+  }, [
+    addSource,
+    lastSourceId,
+    notebookId,
+    notebookState,
+    removeSource,
+    replaceNotebook,
+    sourcesState,
+  ]);
 
   if (notebookId === undefined) return null;
   if (notebookState.status === 'loading') return <LoadingState>Opening notebook…</LoadingState>;
@@ -143,10 +157,8 @@ export function NotebookWorkspace() {
           <section className="reader-region" aria-label="Reader">
             <Outlet />
           </section>
-          <aside className="chat-reserve" aria-label="Chat preview">
-            <p className="coordinate-label">Reserved bearing</p>
-            <h2>Develop with AI</h2>
-            <p>Chat workspace opens in Phase 8.</p>
+          <aside className="chat-reserve" aria-label="Chat">
+            <ChatPanel />
           </aside>
         </div>
 

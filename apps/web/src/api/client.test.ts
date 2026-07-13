@@ -160,8 +160,9 @@ describe('API client', () => {
       message: 'Invalid request',
       issues: [{ code: 'too_small', path: ['name'], message: 'Required' }],
     });
+  });
 
-    it('covers provider and secret operations', async () => {
+  it('covers provider and secret operations', async () => {
       const fetchImpl = vi
         .fn<typeof fetch>()
         .mockResolvedValueOnce(jsonResponse([provider]))
@@ -201,9 +202,9 @@ describe('API client', () => {
         '/api/providers/models',
         expect.objectContaining({ method: 'POST', body: JSON.stringify({ source: 'nanogpt' }) }),
       );
-    });
+  });
 
-    it('covers every chat operation', async () => {
+  it('covers every chat operation', async () => {
       const detail = { ...chat, messages: [] };
       const renamed = { ...chat, title: 'Renamed chat' };
       const fetchImpl = vi
@@ -233,7 +234,6 @@ describe('API client', () => {
         `/api/chats/${chat.id}`,
         expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ title: renamed.title }) }),
       );
-    });
   });
 
   it('rejects malformed successful responses', async () => {

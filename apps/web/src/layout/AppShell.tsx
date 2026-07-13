@@ -7,6 +7,10 @@ export function AppShell() {
         <Link className="wordmark" to="/">
           worldbookllm
         </Link>
+        <nav className="site-nav" aria-label="Primary">
+          <Link to="/">Notebooks</Link>
+          <Link to="/settings">Settings</Link>
+        </nav>
       </header>
       <main className="app-main">
         <Outlet />

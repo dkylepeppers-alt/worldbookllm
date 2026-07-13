@@ -69,11 +69,14 @@ describe('notebook source workspace', () => {
       `/notebooks/${notebook.id}/sources/${source.id}`,
     );
     expect(screen.getByText(/updated jul 10/i)).toBeDefined();
-    expect(screen.getByRole('navigation', { name: 'Notebook workspace' })).toBeDefined();
-    expect(screen.getByRole('link', { name: 'Notebooks' })).toBeDefined();
+    const mobileNavigation = screen.getByRole('navigation', { name: 'Notebook workspace' });
+    expect(mobileNavigation).toBeDefined();
+    expect(
+      mobileNavigation.querySelector<HTMLAnchorElement>('a[href="/"]')?.textContent,
+    ).toBe('Notebooks');
     expect(screen.getByRole('link', { name: 'Sources' })).toBeDefined();
     expect(screen.getByText('Reader').getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByText(/chat workspace opens in phase 8/i)).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Develop with AI' })).toBeDefined();
   });
 
   it('pastes a source and navigates to the server-returned reader', async () => {
