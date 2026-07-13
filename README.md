@@ -15,7 +15,7 @@ Your data stays on your machine: sources are plain Markdown files on disk, metad
 
 ## Status
 
-**Milestone 0 — repository foundation.** Tooling, structure, CI, and design docs are in place; feature work begins with the [roadmap](docs/ROADMAP.md)'s Milestone 1 walking skeleton.
+**Milestone 1 — walking skeleton (in progress).** The server API, provider layer, and notebook/source workspace are in place; provider-settings UI and streaming chat are the remaining [roadmap](docs/ROADMAP.md) phases.
 
 ## Quick start
 
