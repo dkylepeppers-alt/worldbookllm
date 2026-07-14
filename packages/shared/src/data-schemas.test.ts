@@ -79,6 +79,8 @@ describe('data API schemas', () => {
     expect(createSourceSchema.parse({ title: ' Lore ', content: '# Lore' })).toEqual({
       title: 'Lore',
       content: '# Lore',
+      origin: { type: 'paste' },
+      conversionNotes: [],
     });
     expect(() =>
       createSourceSchema.parse({ title: 'Lore', content: 'x'.repeat(10_485_761) }),
@@ -91,7 +93,8 @@ describe('data API schemas', () => {
       slug: 'lore',
       filePath:
         'notebooks/a0c7607c-b365-438b-a7e6-31b2308464b6/sources/f9942d0a-eaca-41a8-a3d8-87987cc173fd-lore.md',
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       wordCount: 2,
       contentHash: 'a'.repeat(64),
       createdAt: '2026-07-10T12:00:00.000Z',
@@ -115,7 +118,8 @@ describe('data API schemas', () => {
       title: 'Lore',
       slug: 'lore',
       filePath: `notebooks/${notebook.id}/sources/f9942d0a-eaca-41a8-a3d8-87987cc173fd-lore.md`,
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       wordCount: 2,
       contentHash: 'a'.repeat(64),
       createdAt: '2026-07-10T12:00:00.000Z',

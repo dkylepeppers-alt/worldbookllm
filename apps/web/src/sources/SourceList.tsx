@@ -27,7 +27,11 @@ export function SourceList() {
           <h2>Sources</h2>
         </div>
         <div className="source-actions">
-          <button type="button" className="button-secondary" onClick={() => setJsonImportOpen(true)}>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => setJsonImportOpen(true)}
+          >
             Import JSON
           </button>
           <button type="button" className="button-primary" onClick={() => setPasteOpen(true)}>
@@ -69,9 +73,7 @@ export function SourceList() {
       )}
 
       {pasteOpen ? <SourcePasteDialog onClose={() => setPasteOpen(false)} /> : null}
-      {jsonImportOpen ? (
-        <SourceJsonImportDialog onClose={() => setJsonImportOpen(false)} />
-      ) : null}
+      {jsonImportOpen ? <SourceJsonImportDialog onClose={() => setJsonImportOpen(false)} /> : null}
     </div>
   );
 }

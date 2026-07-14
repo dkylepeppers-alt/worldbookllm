@@ -36,8 +36,8 @@ export class ConflictError extends Error {
   ) {
     super(message);
   }
+}
 
-  export class InvalidImportError extends Error {
-    override readonly name = 'InvalidImportError';
-  }
+export class InvalidImportError extends Error {
+  override readonly name = 'InvalidImportError';
 }

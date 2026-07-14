@@ -87,81 +87,6 @@ describe('notebook source workspace', () => {
       createSource,
     });
 
-    it('reviews a lorebook import and saves each entry as a source', async () => {
-      const imported = [
-        {
-          ...source,
-          id: '94747f0e-0e09-4db4-bcb4-82cfba819cc4',
-          title: 'Amber Court',
-          origin: {
-            type: 'file' as const,
-            fileName: 'atlas.json',
-            mediaType: 'application/json',
-          },
-          conversionNotes: ['Activation metadata omitted.'],
-        },
-        {
-          ...source,
-          id: '52d09203-45d6-4f0c-bfc8-7dad55fda998',
-          title: 'Glass Marsh',
-          origin: {
-            type: 'file' as const,
-            fileName: 'atlas.json',
-            mediaType: 'application/json',
-          },
-          conversionNotes: ['Activation metadata omitted.'],
-        },
-      ];
-      const previewJsonImport = vi.fn().mockResolvedValue({
-        format: 'lorebook',
-        fileName: 'atlas.json',
-        entries: [
-          { title: 'Amber Court', markdown: 'Amber lore.' },
-          { title: 'Glass Marsh', markdown: 'Marsh lore.' },
-        ],
-        conversionNotes: ['Activation metadata omitted.'],
-      });
-      const createSources = vi.fn().mockResolvedValue(imported);
-      renderPath(`/notebooks/${notebook.id}`, {
-        listSources: () => Promise.resolve([]),
-        previewJsonImport,
-        createSources,
-      });
-      const user = userEvent.setup();
-
-      await user.click(await screen.findByRole('button', { name: 'Import JSON' }));
-      await user.upload(
-        screen.getByLabelText('JSON file'),
-        new File(['{"entries":{}}'], 'atlas.json', { type: 'application/json' }),
-      );
-      expect(await screen.findByRole('heading', { name: 'Review JSON import' })).toBeDefined();
-      const titles = screen.getAllByRole('textbox', { name: 'Source title' });
-      await user.clear(titles[0] as HTMLInputElement);
-      await user.type(titles[0] as HTMLInputElement, 'Revised Amber Court');
-      await user.click(screen.getByRole('button', { name: 'Save 2 sources' }));
-
-      await waitFor(() =>
-        expect(createSources).toHaveBeenCalledWith(notebook.id, [
-          {
-            title: 'Revised Amber Court',
-            content: 'Amber lore.',
-            origin: { type: 'file', fileName: 'atlas.json', mediaType: 'application/json' },
-            conversionNotes: ['Activation metadata omitted.'],
-          },
-          {
-            title: 'Glass Marsh',
-            content: 'Marsh lore.',
-            origin: { type: 'file', fileName: 'atlas.json', mediaType: 'application/json' },
-            conversionNotes: ['Activation metadata omitted.'],
-          },
-        ]),
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId('location').textContent).toBe(
-          `/notebooks/${notebook.id}/sources/${imported[1]?.id}`,
-        ),
-      );
-    });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: 'Paste source' }));
@@ -179,6 +104,82 @@ describe('notebook source workspace', () => {
     await waitFor(() =>
       expect(screen.getByTestId('location').textContent).toBe(
         `/notebooks/${notebook.id}/sources/${source.id}`,
+      ),
+    );
+  });
+
+  it('reviews a lorebook import and saves each entry as a source', async () => {
+    const imported = [
+      {
+        ...source,
+        id: '94747f0e-0e09-4db4-bcb4-82cfba819cc4',
+        title: 'Amber Court',
+        origin: {
+          type: 'file' as const,
+          fileName: 'atlas.json',
+          mediaType: 'application/json',
+        },
+        conversionNotes: ['Activation metadata omitted.'],
+      },
+      {
+        ...source,
+        id: '52d09203-45d6-4f0c-bfc8-7dad55fda998',
+        title: 'Glass Marsh',
+        origin: {
+          type: 'file' as const,
+          fileName: 'atlas.json',
+          mediaType: 'application/json',
+        },
+        conversionNotes: ['Activation metadata omitted.'],
+      },
+    ];
+    const previewJsonImport = vi.fn().mockResolvedValue({
+      format: 'lorebook',
+      fileName: 'atlas.json',
+      entries: [
+        { title: 'Amber Court', markdown: 'Amber lore.' },
+        { title: 'Glass Marsh', markdown: 'Marsh lore.' },
+      ],
+      conversionNotes: ['Activation metadata omitted.'],
+    });
+    const createSources = vi.fn().mockResolvedValue(imported);
+    renderPath(`/notebooks/${notebook.id}`, {
+      listSources: () => Promise.resolve([]),
+      previewJsonImport,
+      createSources,
+    });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Import JSON' }));
+    await user.upload(
+      screen.getByLabelText('JSON file'),
+      new File(['{"entries":{}}'], 'atlas.json', { type: 'application/json' }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Review JSON import' })).toBeDefined();
+    const titles = screen.getAllByRole('textbox', { name: 'Source title' });
+    await user.clear(titles[0] as HTMLInputElement);
+    await user.type(titles[0] as HTMLInputElement, 'Revised Amber Court');
+    await user.click(screen.getByRole('button', { name: 'Save 2 sources' }));
+
+    await waitFor(() =>
+      expect(createSources).toHaveBeenCalledWith(notebook.id, [
+        {
+          title: 'Revised Amber Court',
+          content: 'Amber lore.',
+          origin: { type: 'file', fileName: 'atlas.json', mediaType: 'application/json' },
+          conversionNotes: ['Activation metadata omitted.'],
+        },
+        {
+          title: 'Glass Marsh',
+          content: 'Marsh lore.',
+          origin: { type: 'file', fileName: 'atlas.json', mediaType: 'application/json' },
+          conversionNotes: ['Activation metadata omitted.'],
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe(
+        `/notebooks/${notebook.id}/sources/${imported[1]?.id}`,
       ),
     );
   });

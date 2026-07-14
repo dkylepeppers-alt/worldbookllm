@@ -43,7 +43,10 @@ function parseLorebook(root: Record<string, unknown>, fileName: string): JsonImp
     const keys = parsed.data.key ?? parsed.data.keys ?? [];
     return [
       {
-        title: cleanTitle(parsed.data.comment, keys.find((key) => key.trim() !== '') ?? `Entry ${index + 1}`),
+        title: cleanTitle(
+          parsed.data.comment,
+          keys.find((key) => key.trim() !== '') ?? `Entry ${index + 1}`,
+        ),
         markdown: parsed.data.content,
       },
     ];
@@ -76,9 +79,14 @@ function parseCharacter(root: Record<string, unknown>, fileName: string): JsonIm
   const nested = asRecord(root.data);
   const isVersioned =
     root.spec === 'chara_card_v2' || root.spec === 'chara_card_v3' || nested !== undefined;
-  const isLegacy = ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example'].every(
-    (field) => typeof root[field] === 'string',
-  );
+  const isLegacy = [
+    'name',
+    'description',
+    'personality',
+    'scenario',
+    'first_mes',
+    'mes_example',
+  ].every((field) => typeof root[field] === 'string');
   const isPygmalion = typeof root.char_name === 'string';
   if (!isVersioned && !isLegacy && !isPygmalion) return null;
 

@@ -2,15 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import { ProviderError } from '@worldbookllm/providers';
 import { ZodError } from 'zod';
 
-import {
-  ConfigurationError,
-  ConflictError,
-  InvalidImportError,
-  NotFoundError,
-} from '../errors.js';
+import { ConfigurationError, ConflictError, InvalidImportError, NotFoundError } from '../errors.js';
 
 export function installErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error, _request, reply) => {
+    if (error.statusCode === 413) {
+      return reply.status(413).send({
+        error: 'payload_too_large',
+        message: 'The uploaded file exceeds the allowed size.',
+      });
+    }
+
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: 'validation_error',

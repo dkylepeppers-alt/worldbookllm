@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import {
   type CreateSource,
+  type CreateSourceInput,
   type SourceDetail,
   type SourceMetadata,
   sourceDetailSchema,
   sourceMetadataSchema,
   sourceOriginSchema,
   conversionNotesSchema,
+  createSourceSchema,
 } from '@worldbookllm/shared';
 import type Database from 'better-sqlite3';
 
@@ -66,17 +68,18 @@ export class SourceService {
     return rows.map(mapSource);
   }
 
-  create(notebookId: string, input: CreateSource): SourceMetadata {
+  create(notebookId: string, input: CreateSourceInput): SourceMetadata {
     this.requireNotebook(notebookId);
+    const normalized = createSourceSchema.parse(input);
     const id = randomUUID();
     const timestamp = this.now();
     const stored = this.sourceFiles.write({
       id,
       notebookId,
-      title: input.title,
-      content: input.content,
-      origin: input.origin,
-      conversionNotes: input.conversionNotes,
+      title: normalized.title,
+      content: normalized.content,
+      origin: normalized.origin,
+      conversionNotes: normalized.conversionNotes,
       createdAt: timestamp,
     });
 
@@ -89,11 +92,11 @@ export class SourceService {
           .run(
             id,
             notebookId,
-            input.title,
+            normalized.title,
             stored.slug,
             stored.filePath,
-            JSON.stringify(input.origin),
-            JSON.stringify(input.conversionNotes),
+            JSON.stringify(normalized.origin),
+            JSON.stringify(normalized.conversionNotes),
             stored.wordCount,
             stored.contentHash,
             stored.createdAt,
@@ -108,18 +111,18 @@ export class SourceService {
       throw error;
     }
 
-    createMany(notebookId: string, inputs: CreateSource[]): SourceMetadata[] {
-      const created: SourceMetadata[] = [];
-      try {
-        for (const input of inputs) created.push(this.create(notebookId, input));
-        return created;
-      } catch (error) {
-        for (const source of created.reverse()) this.delete(source.id);
-        throw error;
-      }
-    }
-
     return mapSource(this.getRow(id));
+  }
+
+  createMany(notebookId: string, inputs: CreateSource[]): SourceMetadata[] {
+    const created: SourceMetadata[] = [];
+    try {
+      for (const input of inputs) created.push(this.create(notebookId, input));
+      return created;
+    } catch (error) {
+      for (const source of created.reverse()) this.delete(source.id);
+      throw error;
+    }
   }
 
   get(id: string): SourceDetail {

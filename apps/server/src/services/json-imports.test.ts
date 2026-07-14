@@ -81,5 +81,8 @@ describe('SillyTavern JSON imports', () => {
     expect(() => previewSillyTavernJson(json({ entries: {} }), 'empty.json')).toThrow(
       /no entries/u,
     );
+    expect(() => previewSillyTavernJson(Buffer.alloc(5 * 1024 * 1024 + 1), 'large.json')).toThrow(
+      /exceeds 5 MiB/u,
+    );
   });
 });
