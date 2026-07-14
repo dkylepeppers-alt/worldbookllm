@@ -77,8 +77,11 @@ const CHARACTER_FIELDS = [
 
 function parseCharacter(root: Record<string, unknown>, fileName: string): JsonImportPreview | null {
   const nested = asRecord(root.data);
+  const hasNestedCharacter =
+    typeof nested?.name === 'string' &&
+    CHARACTER_FIELDS.some(([field]) => typeof nested[field] === 'string');
   const isVersioned =
-    root.spec === 'chara_card_v2' || root.spec === 'chara_card_v3' || nested !== undefined;
+    root.spec === 'chara_card_v2' || root.spec === 'chara_card_v3' || hasNestedCharacter;
   const isLegacy = [
     'name',
     'description',

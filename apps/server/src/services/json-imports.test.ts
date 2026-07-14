@@ -24,6 +24,16 @@ describe('SillyTavern JSON imports', () => {
       { title: 'Moon Gate', markdown: 'The gate opens at dusk.' },
     ]);
     expect(JSON.stringify(preview)).not.toContain('"uid"');
+
+    expect(
+      previewSillyTavernJson(
+        json({
+          data: { name: 'Unrelated metadata' },
+          entries: [{ comment: 'Entry', content: 'Lore.' }],
+        }),
+        'array-lorebook.json',
+      ).format,
+    ).toBe('lorebook');
   });
 
   it('extracts character context while omitting card metadata', () => {
