@@ -25,13 +25,15 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 - `packages/providers`: all 26 SillyTavern chat-completion sources ported as framework-free TypeScript — request building, message conversion, stream normalization, model-list fetching (chat-completions family only; no legacy text-completion backends)
 - Secret store ported from SillyTavern: multiple named keys per provider, rotation, masked display
 - Notebook CRUD (create, rename, delete, list)
-- Add a source by pasting text; stored as a frontmattered Markdown file on disk + SQLite metadata row (the initial schema covers notebooks, sources, chats, and messages; source provenance was added in schema v2 — see ADR 0006)
+- Add a source by pasting text; stored as a frontmattered Markdown file on disk + SQLite metadata row (see ADR 0006)
 - Source list and read-only source viewer in the UI
 - Streaming chat (SSE) grounded in user-selected sources, injected into the prompt whole (no retrieval yet)
 - Provider/model selection per notebook, overridable per chat; live model lists; connection test
 - Assistant messages snapshot their context (sources, provider, model) for the future inspector
 
 **Done when:** a user can create a notebook, paste in a lore document, pick a provider/model (e.g. NanoGPT or OpenRouter) with their own key, ask "summarize this" in chat, and watch a grounded, streamed answer arrive — all data visible on disk, keys managed in the UI.
+
+The initial database schema covers notebooks, sources, chats, and messages. Source provenance was added in schema v2 during M2.
 
 ## M2 — Source ingestion pipeline
 
