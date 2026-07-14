@@ -39,4 +39,3 @@ Read `docs/superpowers/specs/2026-07-14-m2-source-ingestion-contracts.md` before
 5. Use deterministic checked-in fixtures for every supported format. Include malformed, oversized, mislabeled, empty, redirecting, and blocked-address cases.
 6. Test services and routes with local fixtures or controlled in-process HTTP servers. Tests and CI must not depend on public websites.
 7. Run server/shared/web tests for the touched contracts, then use the `verify` skill for the complete browser journey.
-

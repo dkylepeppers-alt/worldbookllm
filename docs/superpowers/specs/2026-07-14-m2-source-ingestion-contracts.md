@@ -95,4 +95,3 @@ Format acquisition and conversion live behind server-side interfaces with no bro
 Checked-in fixtures cover representative Markdown, UTF-8 text, PDF text and tables, and HTML articles and tables. Malformed, empty, oversized, mislabeled, unsupported, timeout, redirect-loop, blocked-address, and DNS-rebinding cases are also covered. Tests use controlled local inputs and in-process HTTP servers; CI never fetches public webpages.
 
 The M2 end-to-end journey uploads a PDF setting bible, previews and fixes converted Markdown, saves it, imports an HTML webpage by URL, edits a saved source, deletes and re-ingests a source, verifies provenance and Markdown on disk, and chats with the resulting sources. The repository lint, format, typecheck, test, and build gate remains mandatory.
-
