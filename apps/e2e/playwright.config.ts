@@ -13,9 +13,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 process.env.WORLDBOOKLLM_E2E_DATA_DIR ??= mkdtempSync(join(tmpdir(), 'worldbookllm-e2e-'));
 const dataDir = process.env.WORLDBOOKLLM_E2E_DATA_DIR;
 
-// Off the default 3001/5173 so a locally running `pnpm dev` is never reused.
+// Off the defaults (server 3001, vite dev 5173, vite preview 4173) so a
+// developer's own servers are never reused — reuse would skip this config's
+// DATA_DIR isolation and API_PROXY_TARGET override.
 const SERVER_PORT = 3101;
-const WEB_PORT = 4173;
+const WEB_PORT = 4273;
 
 // Sandboxed environments with a preinstalled browser can point this at its
 // chrome binary instead of downloading a build matching this Playwright
