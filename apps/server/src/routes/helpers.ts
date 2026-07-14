@@ -6,7 +6,12 @@ import { ConfigurationError, ConflictError, InvalidImportError, NotFoundError } 
 
 export function installErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error, _request, reply) => {
-    if (error.statusCode === 413) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'statusCode' in error &&
+      error.statusCode === 413
+    ) {
       return reply.status(413).send({
         error: 'payload_too_large',
         message: 'The uploaded file exceeds the allowed size.',
