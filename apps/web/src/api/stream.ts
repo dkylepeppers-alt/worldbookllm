@@ -85,24 +85,35 @@ export async function streamChatMessage(
   const decoder = new TextDecoder();
   const frameBoundary = /\r?\n\r?\n/;
   let buffer = '';
+  let sawTerminal = false;
+  const emit = (rawFrame: string) => {
+    emitFrame(rawFrame, (event) => {
+      if (event.type !== 'delta') sawTerminal = true;
+      options.onEvent(event);
+    });
+  };
   try {
     for (;;) {
       const { done, value } = await reader.read();
       buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
       let boundary = frameBoundary.exec(buffer);
       while (boundary !== null) {
-        emitFrame(buffer.slice(0, boundary.index), options.onEvent);
+        emit(buffer.slice(0, boundary.index));
         buffer = buffer.slice(boundary.index + boundary[0].length);
         boundary = frameBoundary.exec(buffer);
       }
       if (done) {
         // A stream that closes without a trailing blank line still delivered
         // its final frame.
-        if (buffer.trim().length > 0) emitFrame(buffer, options.onEvent);
+        if (buffer.trim().length > 0) emit(buffer);
         break;
       }
     }
   } finally {
     await reader.cancel().catch(() => undefined);
   }
+  // The server always closes with a `done` or `error` event; a 200 stream
+  // that ends without one was truncated (or wasn't SSE at all) and must not
+  // pass for a successful exchange.
+  if (!sawTerminal) throw invalidResponse();
 }

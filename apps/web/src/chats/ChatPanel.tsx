@@ -37,8 +37,12 @@ export function ChatPanel() {
   const [detail, setDetail] = useState<DetailState>({ status: 'idle' });
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [pending, setPending] = useState<PendingExchange | null>(null);
+  const [savingSources, setSavingSources] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Mirrors selectedId so async completions (stream cleanup, refetches) can
+  // tell whether their chat is still the selected one before writing state.
+  const selectedIdRef = useRef<string | null>(null);
 
   const loadChats = useCallback(
     (signal?: AbortSignal) => api.listChats(notebookId, signal),
@@ -102,6 +106,7 @@ export function ChatPanel() {
   // A stream belongs to the chat it was started for: abort it when the
   // selection changes or the panel unmounts.
   useEffect(() => {
+    selectedIdRef.current = selectedId;
     return () => {
       abortRef.current?.abort();
       abortRef.current = null;
@@ -109,17 +114,20 @@ export function ChatPanel() {
     };
   }, [selectedId]);
 
-  async function send(content: string) {
-    if (selectedId === null || pending !== null) return;
+  async function send(content: string): Promise<'accepted' | 'rejected'> {
+    if (selectedId === null || pending !== null) return 'rejected';
     const chatId = selectedId;
     const controller = new AbortController();
     abortRef.current = controller;
     setStreamError(null);
     setPending({ userContent: content, assistantText: '', stopping: false });
+    let sawEvent = false;
+    let rejectedBeforeStream = false;
     try {
       await api.streamMessage(chatId, content, {
         signal: controller.signal,
         onEvent: (event) => {
+          sawEvent = true;
           if (event.type === 'delta') {
             setPending((current) =>
               current === null
@@ -133,21 +141,28 @@ export function ChatPanel() {
       });
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        // No event arrived: the server rejected the send (409, validation,
+        // configuration, network) and nothing was persisted.
+        rejectedBeforeStream = !sawEvent;
         setStreamError(messageFor(error, 'Could not send the message.'));
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       // The ephemeral bubble is never trusted as final state: whatever ended
       // the stream (done, error, stop, or a dropped connection), reconstruct
-      // the history from the server before clearing it.
-      try {
-        const fresh = await api.getChat(chatId);
-        setDetail({ status: 'ready', detail: fresh });
-      } catch {
-        // Keep the last known history; the user can reselect to retry.
+      // the history from the server before clearing it — unless the user has
+      // moved on to another chat, whose own detail must not be overwritten.
+      if (selectedIdRef.current === chatId) {
+        try {
+          const fresh = await api.getChat(chatId);
+          if (selectedIdRef.current === chatId) setDetail({ status: 'ready', detail: fresh });
+        } catch {
+          // Keep the last known history; the user can reselect to retry.
+        }
+        setPending(null);
       }
-      setPending(null);
     }
+    return rejectedBeforeStream ? 'rejected' : 'accepted';
   }
 
   function stopStreaming() {
@@ -158,7 +173,9 @@ export function ChatPanel() {
   function adoptChat(updated: Chat) {
     replaceChat(updated);
     setDetail((current) =>
-      current.status === 'ready'
+      // Only merge into the same chat's detail — a slow PATCH must not
+      // clobber the detail of a chat the user has since switched to.
+      current.status === 'ready' && current.detail.id === updated.id
         ? { status: 'ready', detail: { ...current.detail, ...updated } }
         : current,
     );
@@ -335,13 +352,15 @@ export function ChatPanel() {
                 chatId={selectedDetail.id}
                 selectedSourceIds={selectedDetail.sourceIds}
                 onChatUpdated={adoptChat}
+                onSavingChange={setSavingSources}
               />
               <ChatMessages messages={selectedDetail.messages} pending={pending} />
               {streamError === null ? null : <p role="alert">{streamError}</p>}
               <MessageComposer
                 streaming={pending !== null}
                 stopping={pending?.stopping ?? false}
-                onSend={(content) => void send(content)}
+                sendDisabled={savingSources}
+                onSend={send}
                 onStop={stopStreaming}
               />
             </>

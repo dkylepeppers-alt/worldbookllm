@@ -298,6 +298,90 @@ describe('ChatPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }));
 
     expect(await screen.findByText('Generation only runs one at a time.')).toBeDefined();
+    // The server never accepted the message, so the draft is given back.
+    await waitFor(() =>
+      expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('Hi'),
+    );
+  });
+
+  it('does not clobber another chat detail with a stale stream refetch', async () => {
+    const chatB: Chat = {
+      ...chat,
+      id: '71b1c01d-142e-4a8d-8b2b-3f79552a47b7',
+      title: 'Second chat',
+    };
+    const messageB: Message = {
+      ...assistantMessage,
+      id: '4aee8b4f-7e5f-4b67-b3b5-9c9b3aa7e1d0',
+      chatId: chatB.id,
+      content: 'B history',
+    };
+    const stream = createScriptedStream();
+    const getChat = vi.fn((id: string) =>
+      Promise.resolve(id === chatB.id ? { ...chatB, messages: [messageB] } : detailWith([])),
+    );
+    renderWorkspace({
+      listChats: () => Promise.resolve([chat, chatB]),
+      getChat,
+      streamMessage: stream.streamMessage,
+    });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    await user.type(await screen.findByLabelText('Message'), 'Hi');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(stream.calls).toHaveLength(1));
+
+    // Switching chats aborts the stream; its cleanup must not refetch chat A
+    // over chat B's freshly loaded detail.
+    await user.click(screen.getByRole('button', { name: new RegExp(chatB.title) }));
+
+    expect(await screen.findByText('B history')).toBeDefined();
+    await waitFor(() =>
+      expect(getChat.mock.calls.filter(([id]) => id === chat.id)).toHaveLength(1),
+    );
+    expect(screen.queryByText('Loading messages…')).toBeNull();
+  });
+
+  it('holds Send while a source-selection save is in flight', async () => {
+    const sourceA: SourceMetadata = {
+      id: '7d55ac1e-3f0a-4b8e-8a4e-1d2f3a4b5c60',
+      notebookId: notebook.id,
+      title: 'Field notes',
+      slug: 'field-notes',
+      filePath: 'notebooks/x/sources/field-notes.md',
+      origin: 'paste',
+      wordCount: 7,
+      contentHash: 'a'.repeat(64),
+      createdAt: '2026-07-10T12:00:00.000Z',
+      updatedAt: '2026-07-10T12:00:00.000Z',
+    };
+    let resolveUpdate: (value: Chat) => void = () => undefined;
+    const updateChat = vi.fn(
+      () =>
+        new Promise<Chat>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+    renderWorkspace({
+      listSources: () => Promise.resolve([sourceA]),
+      getChat: () => Promise.resolve(detailWith([])),
+      updateChat,
+    });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Field notes' }));
+
+    const send = screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+
+    act(() => resolveUpdate({ ...chat, sourceIds: [sourceA.id] }));
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
   });
 
   it('stops a stream and reconstructs the persisted interrupted message', async () => {

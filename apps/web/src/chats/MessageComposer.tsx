@@ -3,23 +3,36 @@ import { useState, type FormEvent } from 'react';
 interface MessageComposerProps {
   streaming: boolean;
   stopping: boolean;
-  onSend: (content: string) => void;
+  /** Disables Send without a stream in flight, e.g. while a source-selection save is pending. */
+  sendDisabled?: boolean;
+  /** Resolves 'rejected' when the server never accepted the message, so the draft is restored. */
+  onSend: (content: string) => Promise<'accepted' | 'rejected'>;
   onStop: () => void;
 }
 
-export function MessageComposer({ streaming, stopping, onSend, onStop }: MessageComposerProps) {
+export function MessageComposer({
+  streaming,
+  stopping,
+  sendDisabled = false,
+  onSend,
+  onStop,
+}: MessageComposerProps) {
   const [draft, setDraft] = useState('');
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = draft.trim();
-    if (streaming || content.length === 0) return;
+    if (streaming || sendDisabled || content.length === 0) return;
     setDraft('');
-    onSend(content);
+    const outcome = await onSend(content);
+    if (outcome === 'rejected') {
+      // Give the unsent text back, unless the user already started retyping.
+      setDraft((current) => (current.length === 0 ? content : current));
+    }
   }
 
   return (
-    <form className="chat-composer" onSubmit={submit}>
+    <form className="chat-composer" onSubmit={(event) => void submit(event)}>
       <label htmlFor="chat-message-input">Message</label>
       <textarea
         id="chat-message-input"
@@ -34,7 +47,7 @@ export function MessageComposer({ streaming, stopping, onSend, onStop }: Message
             {stopping ? 'Stopping…' : 'Stop'}
           </button>
         ) : null}
-        <button type="submit" className="button-primary" disabled={streaming}>
+        <button type="submit" className="button-primary" disabled={streaming || sendDisabled}>
           Send
         </button>
       </div>

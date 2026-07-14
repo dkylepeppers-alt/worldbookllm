@@ -9,13 +9,21 @@ interface SourceSelectorProps {
   chatId: string;
   selectedSourceIds: string[];
   onChatUpdated: (chat: Chat) => void;
+  /** Reports when a selection save is in flight so the panel can hold sends
+   * until the persisted selection matches what the user sees. */
+  onSavingChange?: (saving: boolean) => void;
 }
 
 /**
  * Edits the chat-owned source selection. The server contract is a complete
  * replacement of `sourceIds`, so every toggle sends the full remaining list.
  */
-export function SourceSelector({ chatId, selectedSourceIds, onChatUpdated }: SourceSelectorProps) {
+export function SourceSelector({
+  chatId,
+  selectedSourceIds,
+  onChatUpdated,
+  onSavingChange,
+}: SourceSelectorProps) {
   const api = useApi();
   const { sourcesState } = useNotebookWorkspace();
   const [saving, setSaving] = useState(false);
@@ -37,6 +45,7 @@ export function SourceSelector({ chatId, selectedSourceIds, onChatUpdated }: Sou
       .filter((source) => next.has(source.id))
       .map((source) => source.id);
     setSaving(true);
+    onSavingChange?.(true);
     setOptimistic(sourceIds);
     setError(null);
     try {
@@ -48,6 +57,7 @@ export function SourceSelector({ chatId, selectedSourceIds, onChatUpdated }: Sou
     } finally {
       setOptimistic(null);
       setSaving(false);
+      onSavingChange?.(false);
     }
   }
 

@@ -120,7 +120,7 @@ describe('streamChatMessage', () => {
   it('emits a final frame that lacks the trailing blank line', async () => {
     const wire =
       'event: delta\ndata: {"type":"delta","text":"a"}\n\n' +
-      'event: delta\ndata: {"type":"delta","text":"b"}';
+      `event: done\ndata: ${JSON.stringify({ type: 'done', message: assistantMessage })}`;
     const fetchImpl = vi.fn().mockResolvedValue(sseResponse([wire]));
     const events: StreamEvent[] = [];
 
@@ -128,8 +128,18 @@ describe('streamChatMessage', () => {
 
     expect(events).toEqual([
       { type: 'delta', text: 'a' },
-      { type: 'delta', text: 'b' },
+      { type: 'done', message: assistantMessage },
     ]);
+  });
+
+  it('rejects a stream that closes without a terminal done/error event', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(sseResponse(['event: delta\ndata: {"type":"delta","text":"a"}\n\n']));
+
+    await expect(
+      streamChatMessage(chatId, 'Hi', { onEvent: () => undefined, fetchImpl }),
+    ).rejects.toBeInstanceOf(ApiClientError);
   });
 
   it('rejects on a frame that is not valid JSON', async () => {
