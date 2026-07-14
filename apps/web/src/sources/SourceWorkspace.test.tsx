@@ -1,7 +1,7 @@
 import type { Notebook, SourceDetail, SourceMetadata } from '@worldbookllm/shared';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AppRoutes } from '../App.js';
@@ -39,6 +39,15 @@ const detail: SourceDetail = {
 
 function LocationProbe() {
   return <output data-testid="location">{useLocation().pathname}</output>;
+}
+
+function NavigateProbe({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      Navigate probe
+    </button>
+  );
 }
 
 function renderPath(path: string, overrides = {}) {
@@ -188,6 +197,33 @@ describe('notebook source workspace', () => {
         `/notebooks/${notebook.id}/sources/${imported[1]?.id}`,
       ),
     );
+  });
+
+  it('closes the chat tab when navigating to a reader route', async () => {
+    const client = createTestClient({
+      getNotebook: () => Promise.resolve(notebook),
+      listSources: () => Promise.resolve([source]),
+      getSource: () => Promise.resolve(detail),
+    });
+    render(
+      <ApiProvider client={client}>
+        <MemoryRouter initialEntries={[`/notebooks/${notebook.id}`]}>
+          <AppRoutes />
+          <NavigateProbe to={`/notebooks/${notebook.id}/sources/${source.id}`} />
+        </MemoryRouter>
+      </ApiProvider>,
+    );
+    const user = userEvent.setup();
+
+    const chatTab = await screen.findByRole('button', { name: 'Chat' });
+    await user.click(chatTab);
+    expect(chatTab.getAttribute('aria-pressed')).toBe('true');
+
+    // Programmatic navigation (e.g. after saving an import) must reveal the reader.
+    await user.click(screen.getByRole('button', { name: 'Navigate probe' }));
+
+    await waitFor(() => expect(chatTab.getAttribute('aria-pressed')).toBe('false'));
+    expect(await screen.findByRole('heading', { name: source.title, level: 1 })).toBeDefined();
   });
 
   it('dismisses the paste dialog with Escape and restores trigger focus', async () => {

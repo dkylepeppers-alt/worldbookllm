@@ -49,10 +49,14 @@ async function convert(bytes: Buffer, fileName: string): Promise<ConversionResul
     throw new InvalidImportError('The uploaded file is not a PDF or UTF-8 text.');
   }
 
+  // Content sniffing wins over the extension hint, so a mislabeled file
+  // (for example HTML named `.json`) still converts as what it actually is.
+  if (looksLikeJson(text)) return convertJson(text, fileName);
+  if (looksLikeHtml(text)) return convertHtml(bytes, fileName);
+
   const ext = extension(fileName);
   if (ext === 'json') return convertJson(text, fileName);
-  if (ext === 'html' || ext === 'htm' || looksLikeHtml(text)) return convertHtml(bytes, fileName);
-  if (looksLikeJson(text)) return convertJson(text, fileName);
+  if (ext === 'html' || ext === 'htm') return convertHtml(bytes, fileName);
   if (ext === 'md' || ext === 'markdown') return convertMarkdown(bytes, fileName);
   return convertText(bytes, fileName);
 }

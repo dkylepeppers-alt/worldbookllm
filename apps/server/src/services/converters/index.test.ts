@@ -37,6 +37,11 @@ describe('convertUpload detection', () => {
     expect(preview.format).toBe('html');
   });
 
+  it('converts HTML content behind a .json extension as HTML', async () => {
+    const preview = await convertUpload(fixture('article.html'), 'export.json');
+    expect(preview.format).toBe('html');
+  });
+
   it('rejects an empty upload', async () => {
     await expect(convertUpload(Buffer.alloc(0), 'empty.txt')).rejects.toBeInstanceOf(
       InvalidImportError,

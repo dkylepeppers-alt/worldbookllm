@@ -30,6 +30,16 @@ export function NotebookWorkspace() {
   const [lastSourceId, setLastSourceId] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
 
+  // Navigating to a reader route (including programmatically, e.g. after
+  // saving an import) shows the reader on phones instead of leaving the
+  // chat region covering it.
+  const readerSourceId = readerMatch?.params.sourceId ?? null;
+  const [prevReaderSourceId, setPrevReaderSourceId] = useState(readerSourceId);
+  if (readerSourceId !== prevReaderSourceId) {
+    setPrevReaderSourceId(readerSourceId);
+    if (readerSourceId !== null) setChatOpen(false);
+  }
+
   useEffect(() => {
     if (notebookId === undefined) return;
     const controller = new AbortController();

@@ -19,7 +19,7 @@ Your data stays on your machine: sources are plain Markdown files on disk, metad
 
 ## Quick start
 
-Requires Node.js ≥ 20 and [pnpm](https://pnpm.io) 9.
+Requires Node.js ≥ 20.19 and [pnpm](https://pnpm.io) 9.
 
 ```bash
 pnpm install
