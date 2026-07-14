@@ -1,4 +1,4 @@
-import type { Chat, ProviderCatalogEntry, ProviderConfig } from '@worldbookllm/shared';
+import type { Chat, ChatDetail, ProviderCatalogEntry, ProviderConfig } from '@worldbookllm/shared';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiClientError } from '../api/client.js';
@@ -8,8 +8,16 @@ import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
 import { ProviderConfigDialog } from '../providers/ProviderConfigDialog.js';
+import { ChatMessages, type PendingExchange } from './ChatMessages.js';
+import { MessageComposer } from './MessageComposer.js';
+import { SourceSelector } from './SourceSelector.js';
 
 type ChatsState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; chats: Chat[] };
+
+type DetailState =
+  | { status: 'idle' }
+  | { status: 'error'; chatId: string }
+  | { status: 'ready'; detail: ChatDetail };
 
 export function ChatPanel() {
   const api = useApi();
@@ -26,6 +34,15 @@ export function ChatPanel() {
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [clearingOverride, setClearingOverride] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<DetailState>({ status: 'idle' });
+  const [detailReloadKey, setDetailReloadKey] = useState(0);
+  const [pending, setPending] = useState<PendingExchange | null>(null);
+  const [savingSources, setSavingSources] = useState(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  // Mirrors selectedId so async completions (stream cleanup, refetches) can
+  // tell whether their chat is still the selected one before writing state.
+  const selectedIdRef = useRef<string | null>(null);
 
   const loadChats = useCallback(
     (signal?: AbortSignal) => api.listChats(notebookId, signal),
@@ -62,6 +79,107 @@ export function ChatPanel() {
 
   const selected =
     state.status === 'ready' ? (state.chats.find((chat) => chat.id === selectedId) ?? null) : null;
+
+  useEffect(() => {
+    if (selectedId === null) return;
+    const controller = new AbortController();
+    api.getChat(selectedId, controller.signal).then(
+      (fresh) => {
+        setDetail({ status: 'ready', detail: fresh });
+        setStreamError(null);
+      },
+      (error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setDetail({ status: 'error', chatId: selectedId });
+        }
+      },
+    );
+    return () => controller.abort();
+  }, [api, selectedId, detailReloadKey]);
+
+  // Freshness is derived from ids rather than a loading flag so the effect
+  // never has to reset state synchronously on selection changes.
+  const selectedDetail =
+    detail.status === 'ready' && detail.detail.id === selectedId ? detail.detail : null;
+  const detailFailed = detail.status === 'error' && detail.chatId === selectedId;
+
+  // A stream belongs to the chat it was started for: abort it when the
+  // selection changes or the panel unmounts.
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setPending(null);
+    };
+  }, [selectedId]);
+
+  async function send(content: string): Promise<'accepted' | 'rejected'> {
+    if (selectedId === null || pending !== null) return 'rejected';
+    const chatId = selectedId;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStreamError(null);
+    setPending({ userContent: content, assistantText: '', stopping: false });
+    let sawEvent = false;
+    let rejectedBeforeStream = false;
+    try {
+      await api.streamMessage(chatId, content, {
+        signal: controller.signal,
+        onEvent: (event) => {
+          sawEvent = true;
+          if (event.type === 'delta') {
+            setPending((current) =>
+              current === null
+                ? current
+                : { ...current, assistantText: current.assistantText + event.text },
+            );
+          } else if (event.type === 'error') {
+            setStreamError(event.message);
+          }
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        // No event arrived: the server rejected the send (409, validation,
+        // configuration, network) and nothing was persisted.
+        rejectedBeforeStream = !sawEvent;
+        setStreamError(messageFor(error, 'Could not send the message.'));
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      // The ephemeral bubble is never trusted as final state: whatever ended
+      // the stream (done, error, stop, or a dropped connection), reconstruct
+      // the history from the server before clearing it — unless the user has
+      // moved on to another chat, whose own detail must not be overwritten.
+      if (selectedIdRef.current === chatId) {
+        try {
+          const fresh = await api.getChat(chatId);
+          if (selectedIdRef.current === chatId) setDetail({ status: 'ready', detail: fresh });
+        } catch {
+          // Keep the last known history; the user can reselect to retry.
+        }
+        setPending(null);
+      }
+    }
+    return rejectedBeforeStream ? 'rejected' : 'accepted';
+  }
+
+  function stopStreaming() {
+    abortRef.current?.abort();
+    setPending((current) => (current === null ? current : { ...current, stopping: true }));
+  }
+
+  function adoptChat(updated: Chat) {
+    replaceChat(updated);
+    setDetail((current) =>
+      // Only merge into the same chat's detail — a slow PATCH must not
+      // clobber the detail of a chat the user has since switched to.
+      current.status === 'ready' && current.detail.id === updated.id
+        ? { status: 'ready', detail: { ...current.detail, ...updated } }
+        : current,
+    );
+  }
 
   async function create() {
     if (creating) return;
@@ -215,10 +333,38 @@ export function ChatPanel() {
               Delete
             </button>
           </div>
-          <div className="chat-message-placeholder">
-            <p className="coordinate-label">Messages · Phase 9</p>
-            <p>Messages and streaming arrive in Phase 9.</p>
-          </div>
+          {selectedDetail === null && !detailFailed ? (
+            <LoadingState>Loading messages…</LoadingState>
+          ) : null}
+          {detailFailed ? (
+            <ErrorState
+              title="Could not load messages"
+              message="This chat's messages could not be loaded."
+              onRetry={() => {
+                setDetail({ status: 'idle' });
+                setDetailReloadKey((value) => value + 1);
+              }}
+            />
+          ) : null}
+          {selectedDetail === null ? null : (
+            <>
+              <SourceSelector
+                chatId={selectedDetail.id}
+                selectedSourceIds={selectedDetail.sourceIds}
+                onChatUpdated={adoptChat}
+                onSavingChange={setSavingSources}
+              />
+              <ChatMessages messages={selectedDetail.messages} pending={pending} />
+              {streamError === null ? null : <p role="alert">{streamError}</p>}
+              <MessageComposer
+                streaming={pending !== null}
+                stopping={pending?.stopping ?? false}
+                sendDisabled={savingSources}
+                onSend={send}
+                onStop={stopStreaming}
+              />
+            </>
+          )}
         </section>
       )}
 

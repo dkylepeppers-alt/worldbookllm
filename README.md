@@ -15,7 +15,7 @@ Your data stays on your machine: sources are plain Markdown files on disk, metad
 
 ## Status
 
-**Milestone 1 — walking skeleton (in progress).** The server API, provider layer, notebook/source workspace, and provider-settings UI are in place; the streaming chat UI is the remaining [roadmap](docs/ROADMAP.md) phase.
+**Milestone 1 — walking skeleton (code complete).** Create a notebook, paste a source, pick a provider, and watch a grounded answer stream into the chat — the whole journey, including stop/interrupt and reload persistence, runs end-to-end in CI against a stub provider. Final [roadmap](docs/ROADMAP.md) sign-off awaits the live-provider verification run, which needs an operator key.
 
 ## Quick start
 

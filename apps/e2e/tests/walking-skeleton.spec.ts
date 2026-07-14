@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { STUB_MODEL_ID, STUB_MODEL_NAME } from '../stub-provider/stub-provider.js';
+import { STUB_MODEL_ID, STUB_MODEL_NAME, STUB_REPLY } from '../stub-provider/stub-provider.js';
 
 const NOTEBOOK_NAME = 'Ember Coast Atlas';
 const SOURCE_TITLE = 'Field notes';
@@ -12,10 +12,9 @@ const CUSTOM_PROVIDER_LABEL = 'Custom (OpenAI-compatible)';
 
 // The M1 walking skeleton (contracts spec: docs/superpowers/specs/
 // 2026-07-10-m1-phases-6-9-contracts-design.md, "M1 User Journey"), driven
-// against the keyless `custom` provider backed by the local stub. Steps 5b–6
-// (send a message, watch the stream, stop it) are Phase 9 scope and get
-// inserted at the PHASE 9 marker below.
-test('M1 walking skeleton (through phase 8)', async ({ page }) => {
+// against the keyless `custom` provider backed by the local stub. The stop
+// half of step 6 lives in stop-generation.spec.ts.
+test('M1 walking skeleton', async ({ page }) => {
   const stubUrl = process.env.E2E_STUB_URL;
   expect(stubUrl, 'global-setup must publish the stub provider URL').toBeTruthy();
   const dataDir = process.env.WORLDBOOKLLM_E2E_DATA_DIR;
@@ -76,10 +75,17 @@ test('M1 walking skeleton (through phase 8)', async ({ page }) => {
     const chatDetail = page.getByRole('region', { name: 'Selected chat' });
     await expect(chatDetail).toBeVisible();
     await expect(chatDetail).toContainText('New chat');
-    // PHASE 9: replace this placeholder assertion with the streaming steps —
-    // select the pasted source, send a message, watch the stubbed reply
-    // stream in, and assert the persisted assistant message after reload.
-    await expect(chatDetail).toContainText('Messages and streaming arrive in Phase 9.');
+  });
+
+  await test.step('select the pasted source and stream a grounded reply', async () => {
+    const chatDetail = page.getByRole('region', { name: 'Selected chat' });
+    await chatDetail.getByRole('checkbox', { name: SOURCE_TITLE }).check();
+    await expect(chatDetail).toContainText('1 of 1 sources selected');
+    await page.getByLabel('Message').fill('What is the required reply word?');
+    await chatDetail.getByRole('button', { name: 'Send' }).click();
+    await expect(chatDetail).toContainText(STUB_REPLY);
+    await expect(chatDetail.getByText('Interrupted')).toHaveCount(0);
+    await expect(chatDetail.getByText('Error')).toHaveCount(0);
   });
 
   await test.step('everything survives a reload', async () => {
@@ -87,6 +93,19 @@ test('M1 walking skeleton (through phase 8)', async ({ page }) => {
     await expect(page.getByRole('link', { name: SOURCE_TITLE })).toBeVisible();
     await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText(STUB_MODEL_ID);
     await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText('New chat');
+
+    // The streamed exchange was persisted server-side: reselecting the chat
+    // reconstructs it from GET /api/chats/:id with a complete (unbadged)
+    // assistant message and the source still selected.
+    await page
+      .locator('.chat-list')
+      .getByRole('button', { name: /New chat/ })
+      .click();
+    const chatDetail = page.getByRole('region', { name: 'Selected chat' });
+    await expect(chatDetail).toContainText(STUB_REPLY);
+    await expect(chatDetail).toContainText('1 of 1 sources selected');
+    await expect(chatDetail.getByText('Interrupted')).toHaveCount(0);
+    await expect(chatDetail.getByText('Error')).toHaveCount(0);
   });
 
   await test.step('the source is a Markdown file on disk', async () => {

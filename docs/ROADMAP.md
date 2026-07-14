@@ -17,7 +17,7 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 
 **Goal:** the first usable app — create a notebook, add sources, chat with them — built on genuine model agnosticism from day one, via a provider layer ported from SillyTavern (see ADR 0005).
 
-**Status (2026-07-14):** the server side is complete — AGPL relicense, the ported provider layer and secret store, notebook/source CRUD, persisted chats, and streaming grounded generation (phases 4–6) — the web notebook/source workspace has shipped (phase 7), and so have the provider settings, key-management UI, and chat shell (phase 8). Remaining: the streaming chat UI with the end-to-end walking-skeleton test (phase 9); the Playwright scaffold and stub-provider journey through phase 8 already run in CI. See `docs/superpowers/specs/2026-07-10-m1-phases-6-9-contracts-design.md` for the phase contracts.
+**Status (2026-07-14):** all nine phases are implemented. The server side (phases 4–6), the web notebook/source workspace (phase 7), and the provider settings and chat shell (phase 8) shipped earlier; phase 9 added the streaming chat UI — message history, POST-SSE streaming with stop/interrupt, and chat-owned source selection — and the complete M1 walking-skeleton E2E, which runs in CI against a stub provider (including the stop/interrupted journey). M1 sign-off still requires the mandatory live NanoGPT verification runs (`SMOKE_NANOGPT_KEY=… pnpm --filter @worldbookllm/e2e test:e2e` and the server smoke test), which need an operator key — a skip is not verification. See `docs/superpowers/specs/2026-07-10-m1-phases-6-9-contracts-design.md` for the phase contracts.
 
 **Scope:**
 

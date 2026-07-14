@@ -31,8 +31,11 @@ import {
   type SecretState,
   type SourceDetail,
   type SourceMetadata,
+  type StreamEvent,
 } from '@worldbookllm/shared';
 import { z } from 'zod';
+
+import { streamChatMessage } from './stream.js';
 
 interface ResponseSchema<T> {
   safeParse(value: unknown): { success: true; data: T } | { success: false };
@@ -76,6 +79,12 @@ export interface ApiClient {
   getChat(id: string, signal?: AbortSignal): Promise<ChatDetail>;
   updateChat(id: string, input: PatchChat, signal?: AbortSignal): Promise<Chat>;
   deleteChat(id: string, signal?: AbortSignal): Promise<void>;
+  streamMessage(chatId: string, content: string, options: StreamMessageOptions): Promise<void>;
+}
+
+export interface StreamMessageOptions {
+  onEvent: (event: StreamEvent) => void;
+  signal?: AbortSignal;
 }
 
 export type CreateSecretInput = z.input<typeof createSecretSchema>;
@@ -232,5 +241,7 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       }),
     deleteChat: (id, signal) =>
       request(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
+    streamMessage: (chatId, content, options) =>
+      streamChatMessage(chatId, content, { ...options, fetchImpl }),
   };
 }

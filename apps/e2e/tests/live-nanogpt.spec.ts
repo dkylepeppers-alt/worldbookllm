@@ -10,7 +10,8 @@ const model = process.env.SMOKE_NANOGPT_MODEL ?? 'gpt-4o-mini';
 
 test.skip(apiKey === undefined, 'SMOKE_NANOGPT_KEY not set — live NanoGPT e2e skipped');
 
-test('M1 walking skeleton against live NanoGPT (through phase 8)', async ({ page }) => {
+test('M1 walking skeleton against live NanoGPT', async ({ page }) => {
+  test.slow(); // live provider latency: triple the default timeout
   await test.step('create a notebook with a source', async () => {
     await page.goto('/');
     await page.getByLabel('Notebook name').fill('Live Smoke Atlas');
@@ -48,12 +49,28 @@ test('M1 walking skeleton against live NanoGPT (through phase 8)', async ({ page
     await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText(model);
   });
 
-  await test.step('create a chat against the live provider', async () => {
+  await test.step('stream a grounded reply and persist it', async () => {
     await page.getByRole('button', { name: 'New chat' }).click();
     const chatDetail = page.getByRole('region', { name: 'Selected chat' });
     await expect(chatDetail).toBeVisible();
-    // PHASE 9: send "Reply with exactly: brass" and assert the grounded,
-    // streamed answer arrives and persists (mirrors the server smoke test).
-    await expect(chatDetail).toContainText('Messages and streaming arrive in Phase 9.');
+
+    // The reply-word contract, mirroring the server smoke test: the source
+    // names the required word and the streamed answer must contain it.
+    await chatDetail.getByRole('checkbox', { name: 'Smoke notes' }).check();
+    await expect(chatDetail).toContainText('1 of 1 sources selected');
+    await page
+      .getByLabel('Message')
+      .fill('What is the required reply word? Reply with exactly that single word.');
+    await chatDetail.getByRole('button', { name: 'Send' }).click();
+    const messages = chatDetail.getByRole('list', { name: 'Messages' });
+    await expect(messages).toContainText(/brass/i, { timeout: 60_000 });
+    await expect(chatDetail.getByText('Error')).toHaveCount(0);
+
+    await page.reload();
+    await page
+      .locator('.chat-list')
+      .getByRole('button', { name: /New chat/ })
+      .click();
+    await expect(chatDetail).toContainText(/brass/i);
   });
 });

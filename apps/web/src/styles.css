@@ -790,15 +790,79 @@ label {
   font-size: 1.25rem;
 }
 
-.chat-message-placeholder {
-  margin-top: 1rem;
-  border: 1px dashed var(--line);
+.source-selector {
+  margin: 1rem 0 0;
+  border: 1px solid var(--line);
   padding: 0.8rem;
+}
+
+.source-selector legend {
+  padding: 0 0.35rem;
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.source-selector-list {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.source-selector-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+
+.chat-messages {
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-message {
+  margin-bottom: 1rem;
+}
+
+.chat-message-user {
+  border-left: 2px solid var(--line);
+  padding-left: 0.8rem;
+}
+
+.chat-message-text {
+  margin: 0.25rem 0 0;
+  white-space: pre-wrap;
+}
+
+.chat-message .markdown-body > :first-child {
+  margin-top: 0.25rem;
+}
+
+.message-badge {
+  margin-left: 0.5rem;
+  border: 1px solid currentcolor;
+  border-radius: 2px;
+  padding: 0.05rem 0.3rem;
   color: var(--muted);
 }
 
-.chat-message-placeholder p:last-child {
-  margin-bottom: 0;
+.chat-composer {
+  margin-top: 1rem;
+}
+
+.chat-composer textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.chat-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 .mobile-tabs {
