@@ -15,7 +15,9 @@ test('M1 walking skeleton against live NanoGPT (through phase 8)', async ({ page
     await page.goto('/');
     await page.getByLabel('Notebook name').fill('Live Smoke Atlas');
     await page.getByRole('button', { name: 'Create notebook' }).click();
-    await page.getByRole('link', { name: 'Live Smoke Atlas' }).click();
+    // Creation navigates straight into the new notebook's workspace.
+    await expect(page).toHaveURL(/\/notebooks\/[0-9a-f-]+$/);
+    await expect(page.getByRole('heading', { name: 'Live Smoke Atlas' })).toBeVisible();
     await page.getByRole('button', { name: 'Paste source' }).click();
     await page.getByLabel('Source title').fill('Smoke notes');
     await page.getByLabel('Markdown content').fill('The required reply word is brass.');
