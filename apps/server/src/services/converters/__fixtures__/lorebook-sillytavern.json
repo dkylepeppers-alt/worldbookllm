@@ -1,0 +1,30 @@
+{
+  "name": "Glass Marsh Atlas",
+  "entries": {
+    "0": {
+      "uid": 0,
+      "comment": "Amber Court",
+      "key": ["amber court", "court"],
+      "keysecondary": [],
+      "content": "The Amber Court rules the eastern fen from a hall of fossilized resin.",
+      "constant": false,
+      "selective": true,
+      "order": 100,
+      "position": 0,
+      "disable": false
+    },
+    "1": {
+      "uid": 1,
+      "comment": "Glass Marsh",
+      "key": ["glass marsh", "marsh"],
+      "content": "A vast wetland of mirror-still pools that swallow every road built across it.",
+      "order": 100
+    },
+    "2": {
+      "uid": 2,
+      "comment": "Empty Entry",
+      "key": ["ignore me"],
+      "content": ""
+    }
+  }
+}

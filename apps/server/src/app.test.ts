@@ -8,6 +8,19 @@ import matter from 'gray-matter';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
+import { fixture } from './services/converters/__fixtures__/load.js';
+
+function multipartUpload(fileName: string, body: Buffer, contentType = 'application/octet-stream') {
+  const boundary = 'worldbookllm-boundary';
+  const head = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: ${contentType}\r\n\r\n`,
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return {
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.concat([head, body, tail]),
+  };
+}
 
 describe('server data API', () => {
   let app: FastifyInstance;
@@ -178,29 +191,33 @@ describe('server data API', () => {
 
   it('previews lorebook JSON and saves reviewed entries as individual sources', async () => {
     const notebook = await createNotebook();
-    const boundary = 'worldbookllm-boundary';
-    const lorebook = JSON.stringify({
-      entries: {
-        0: { uid: 0, comment: 'Amber Court', key: ['amber'], content: 'Amber rules here.' },
-        1: { uid: 1, key: ['Glass Marsh'], content: 'The marsh reflects stars.' },
-      },
-    });
-    const payload = Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="lorebook.json"\r\nContent-Type: application/json\r\n\r\n${lorebook}\r\n--${boundary}--\r\n`,
+    const lorebook = Buffer.from(
+      JSON.stringify({
+        entries: {
+          0: { uid: 0, comment: 'Amber Court', key: ['amber'], content: 'Amber rules here.' },
+          1: { uid: 1, key: ['Glass Marsh'], content: 'The marsh reflects stars.' },
+        },
+      }),
     );
     const previewResponse = await app.inject({
       method: 'POST',
-      url: `/api/notebooks/${notebook.id}/source-previews/json`,
-      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
-      payload,
+      url: `/api/notebooks/${notebook.id}/source-previews/file`,
+      ...multipartUpload('lorebook.json', lorebook, 'application/json'),
     });
 
     expect(previewResponse.statusCode).toBe(200);
     const preview = previewResponse.json<{
-      fileName: string;
+      format: string;
+      origin: { type: string; fileName: string; mediaType: string };
       entries: Array<{ title: string; markdown: string }>;
       conversionNotes: string[];
     }>();
+    expect(preview.format).toBe('lorebook');
+    expect(preview.origin).toEqual({
+      type: 'file',
+      fileName: 'lorebook.json',
+      mediaType: 'application/json',
+    });
     expect(preview.entries).toEqual([
       { title: 'Amber Court', markdown: 'Amber rules here.' },
       { title: 'Glass Marsh', markdown: 'The marsh reflects stars.' },
@@ -212,7 +229,7 @@ describe('server data API', () => {
       payload: preview.entries.map((entry) => ({
         title: entry.title,
         content: entry.markdown,
-        origin: { type: 'file', fileName: preview.fileName, mediaType: 'application/json' },
+        origin: preview.origin,
         conversionNotes: preview.conversionNotes,
       })),
     });
@@ -227,31 +244,101 @@ describe('server data API', () => {
     expect(readFileSync(join(dataDir, sources[0]?.filePath ?? ''), 'utf8')).not.toContain('"uid"');
   });
 
-  it('rejects malformed or unsupported JSON imports without creating sources', async () => {
+  it('previews and saves a Markdown upload with a text/markdown origin', async () => {
     const notebook = await createNotebook();
-    const boundary = 'invalid-boundary';
-    const payload = Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="other.json"\r\nContent-Type: application/json\r\n\r\n{"hello":"world"}\r\n--${boundary}--\r\n`,
-    );
+    const previewResponse = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-previews/file`,
+      ...multipartUpload('glass-marsh.md', fixture('sample.md'), 'text/markdown'),
+    });
+    expect(previewResponse.statusCode).toBe(200);
+    const preview = previewResponse.json<{
+      format: string;
+      origin: { type: string; fileName: string; mediaType: string };
+      entries: Array<{ title: string; markdown: string }>;
+      conversionNotes: string[];
+    }>();
+    expect(preview.format).toBe('markdown');
+    expect(preview.origin.mediaType).toBe('text/markdown');
+    expect(preview.entries[0]?.title).toBe('Glass Marsh');
+
+    const save = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/sources/batch`,
+      payload: [
+        {
+          title: preview.entries[0]?.title,
+          content: preview.entries[0]?.markdown,
+          origin: preview.origin,
+          conversionNotes: preview.conversionNotes,
+        },
+      ],
+    });
+    expect(save.statusCode).toBe(201);
+    const sources = save.json<Array<{ filePath: string; origin: { mediaType: string } }>>();
+    expect(sources[0]?.origin.mediaType).toBe('text/markdown');
+    const stored = matter(readFileSync(join(dataDir, sources[0]?.filePath ?? ''), 'utf8'));
+    expect(stored.content).toContain('The marsh swallows every road');
+  });
+
+  it('previews a PDF upload into best-effort Markdown', async () => {
+    const notebook = await createNotebook();
+    const previewResponse = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-previews/file`,
+      ...multipartUpload('setting-bible.pdf', fixture('sample.pdf'), 'application/pdf'),
+    });
+    expect(previewResponse.statusCode).toBe(200);
+    const preview = previewResponse.json<{
+      format: string;
+      origin: { mediaType: string };
+      entries: Array<{ markdown: string }>;
+      conversionNotes: string[];
+    }>();
+    expect(preview.format).toBe('pdf');
+    expect(preview.origin.mediaType).toBe('application/pdf');
+    expect(preview.entries[0]?.markdown).toContain('Glass Marsh Setting Bible');
+    expect(preview.conversionNotes[0]).toMatch(/PDF/u);
+  });
+
+  it('accepts unfamiliar JSON as a best-effort generic import', async () => {
+    const notebook = await createNotebook();
     const response = await app.inject({
       method: 'POST',
-      url: `/api/notebooks/${notebook.id}/source-previews/json`,
-      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
-      payload,
+      url: `/api/notebooks/${notebook.id}/source-previews/file`,
+      ...multipartUpload(
+        'other.json',
+        Buffer.from('{"hello":"world of the drowned fen and its wardens"}'),
+      ),
     });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ format: string }>().format).toBe('json');
+  });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toMatchObject({ error: 'invalid_import' });
+  it('rejects unreadable uploads and an over-long file name without creating sources', async () => {
+    const notebook = await createNotebook();
 
-    const longName = `${'a'.repeat(255)}.json`;
-    const longNamePayload = Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${longName}"\r\nContent-Type: application/json\r\n\r\n{"entries":{"0":{"content":"x"}}}\r\n--${boundary}--\r\n`,
-    );
+    const malformed = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-previews/file`,
+      ...multipartUpload('atlas.json', Buffer.from('{"entries": [ broken'), 'application/json'),
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json()).toMatchObject({ error: 'invalid_import' });
+
+    const binary = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-previews/file`,
+      ...multipartUpload('mystery.bin', fixture('binary.bin')),
+    });
+    expect(binary.statusCode).toBe(400);
+    expect(binary.json()).toMatchObject({ error: 'invalid_import' });
+
+    const longName = `${'a'.repeat(255)}.md`;
     const longNameResponse = await app.inject({
       method: 'POST',
-      url: `/api/notebooks/${notebook.id}/source-previews/json`,
-      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
-      payload: longNamePayload,
+      url: `/api/notebooks/${notebook.id}/source-previews/file`,
+      ...multipartUpload(longName, Buffer.from('# Long name')),
     });
     expect(longNameResponse.statusCode).toBe(400);
     expect(longNameResponse.json()).toMatchObject({ error: 'invalid_import' });

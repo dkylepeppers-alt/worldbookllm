@@ -139,10 +139,10 @@ describe('API client', () => {
     ]);
   });
 
-  it('uploads JSON previews as multipart and saves reviewed sources in a batch', async () => {
+  it('uploads file previews as multipart and saves reviewed sources in a batch', async () => {
     const preview = {
       format: 'lorebook' as const,
-      fileName: 'atlas.json',
+      origin: { type: 'file' as const, fileName: 'atlas.json', mediaType: 'application/json' },
       entries: [{ title: 'Lore', markdown: 'Lore body.' }],
       conversionNotes: ['Activation metadata omitted.'],
     };
@@ -153,7 +153,7 @@ describe('API client', () => {
     const client = createApiClient(fetchImpl);
     const file = new File(['{"entries":{}}'], 'atlas.json', { type: 'application/json' });
 
-    await expect(client.previewJsonImport(notebook.id, file)).resolves.toEqual(preview);
+    await expect(client.previewFileImport(notebook.id, file)).resolves.toEqual(preview);
     await expect(
       client.createSources(notebook.id, [{ title: 'Lore', content: 'Lore body.' }]),
     ).resolves.toEqual([source]);

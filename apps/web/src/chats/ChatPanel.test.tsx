@@ -6,7 +6,7 @@ import type {
   ProviderCatalogEntry,
   SourceMetadata,
 } from '@worldbookllm/shared';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -71,7 +71,7 @@ function detailWith(messages: Message[], sourceIds: string[] = []): ChatDetail {
   return { ...chat, sourceIds, messages };
 }
 
-function renderWorkspace(overrides = {}, value: Notebook = notebook) {
+async function renderWorkspace(overrides = {}, value: Notebook = notebook) {
   const client = createTestClient({
     getNotebook: () => Promise.resolve(value),
     listSources: () => Promise.resolve([]),
@@ -87,6 +87,9 @@ function renderWorkspace(overrides = {}, value: Notebook = notebook) {
       </MemoryRouter>
     </ApiProvider>,
   );
+  // The chat region is behind the mobile Chat tab; jsdom applies only the
+  // mobile-first base styles, so open it to make the panel visible in tests.
+  fireEvent.click(await screen.findByRole('button', { name: 'Chat' }));
   return client;
 }
 
@@ -98,7 +101,7 @@ describe('ChatPanel', () => {
     const updateChat = vi.fn().mockResolvedValue(renamed);
     const deleteChat = vi.fn().mockResolvedValue(undefined);
     const listChats = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
-    renderWorkspace({ createChat, updateChat, deleteChat, listChats });
+    await renderWorkspace({ createChat, updateChat, deleteChat, listChats });
     const user = userEvent.setup();
 
     expect(await screen.findByText('No chats yet.')).toBeDefined();
@@ -124,7 +127,7 @@ describe('ChatPanel', () => {
   it('persists notebook defaults and updates their visible summary', async () => {
     const unconfigured = { ...notebook, settings: null };
     const updateNotebook = vi.fn().mockResolvedValue(notebook);
-    renderWorkspace({ listChats: () => Promise.resolve([]), updateNotebook }, unconfigured);
+    await renderWorkspace({ listChats: () => Promise.resolve([]), updateNotebook }, unconfigured);
     const user = userEvent.setup();
 
     expect(await screen.findByText('Not configured')).toBeDefined();
@@ -150,7 +153,7 @@ describe('ChatPanel', () => {
       .fn()
       .mockResolvedValueOnce(overridden)
       .mockResolvedValueOnce({ ...chat, providerOverride: null });
-    renderWorkspace({ updateChat });
+    await renderWorkspace({ updateChat });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
@@ -192,7 +195,7 @@ describe('ChatPanel', () => {
       seq: 2,
       content: 'Go on.',
     };
-    renderWorkspace({
+    await renderWorkspace({
       getChat: () => Promise.resolve(detailWith([interrupted, errored, later, userMessage])),
     });
     const user = userEvent.setup();
@@ -212,7 +215,7 @@ describe('ChatPanel', () => {
   });
 
   it('shows an inviting empty state for a chat without messages', async () => {
-    renderWorkspace();
+    await renderWorkspace();
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
@@ -226,7 +229,7 @@ describe('ChatPanel', () => {
       .fn()
       .mockResolvedValueOnce(detailWith([]))
       .mockResolvedValue(detailWith([userMessage, assistantMessage]));
-    renderWorkspace({ getChat, streamMessage: stream.streamMessage });
+    await renderWorkspace({ getChat, streamMessage: stream.streamMessage });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
@@ -262,7 +265,7 @@ describe('ChatPanel', () => {
       .fn()
       .mockResolvedValueOnce(detailWith([]))
       .mockResolvedValue(detailWith([userMessage, errored]));
-    renderWorkspace({ getChat, streamMessage: stream.streamMessage });
+    await renderWorkspace({ getChat, streamMessage: stream.streamMessage });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
@@ -290,7 +293,7 @@ describe('ChatPanel', () => {
       .mockRejectedValue(
         new ApiClientError(409, 'generation_in_progress', 'Generation only runs one at a time.'),
       );
-    renderWorkspace({ streamMessage });
+    await renderWorkspace({ streamMessage });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
@@ -320,7 +323,7 @@ describe('ChatPanel', () => {
     const getChat = vi.fn((id: string) =>
       Promise.resolve(id === chatB.id ? { ...chatB, messages: [messageB] } : detailWith([])),
     );
-    renderWorkspace({
+    await renderWorkspace({
       listChats: () => Promise.resolve([chat, chatB]),
       getChat,
       streamMessage: stream.streamMessage,
@@ -364,7 +367,7 @@ describe('ChatPanel', () => {
           resolveUpdate = resolve;
         }),
     );
-    renderWorkspace({
+    await renderWorkspace({
       listSources: () => Promise.resolve([sourceA]),
       getChat: () => Promise.resolve(detailWith([])),
       updateChat,
@@ -392,7 +395,7 @@ describe('ChatPanel', () => {
       .fn()
       .mockResolvedValueOnce(detailWith([]))
       .mockResolvedValue(detailWith([userMessage, interrupted]));
-    renderWorkspace({ getChat, streamMessage: stream.streamMessage });
+    await renderWorkspace({ getChat, streamMessage: stream.streamMessage });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
@@ -415,7 +418,7 @@ describe('ChatPanel', () => {
       .fn()
       .mockResolvedValueOnce(detailWith([]))
       .mockResolvedValue(detailWith([userMessage, interrupted]));
-    renderWorkspace({ getChat, streamMessage: stream.streamMessage });
+    await renderWorkspace({ getChat, streamMessage: stream.streamMessage });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
@@ -454,7 +457,7 @@ describe('ChatPanel', () => {
       .fn()
       .mockResolvedValueOnce({ ...chat, sourceIds: [sourceB.id] })
       .mockResolvedValueOnce({ ...chat, sourceIds: [sourceA.id, sourceB.id] });
-    renderWorkspace({
+    await renderWorkspace({
       listSources: () => Promise.resolve([sourceA, sourceB]),
       getChat: () => Promise.resolve(detailWith([], [sourceA.id, sourceB.id])),
       updateChat,
@@ -484,7 +487,7 @@ describe('ChatPanel', () => {
       .fn()
       .mockRejectedValueOnce(new ApiClientError(500, 'internal_error', 'Failed'))
       .mockResolvedValueOnce([]);
-    renderWorkspace({ listChats });
+    await renderWorkspace({ listChats });
     const user = userEvent.setup();
 
     expect(await screen.findByRole('heading', { name: 'Could not load chats' })).toBeDefined();

@@ -17,6 +17,7 @@ import { GenerationService } from './services/generation.js';
 import { NotebookService } from './services/notebooks.js';
 import { PromptAssembler } from './services/prompt-assembler.js';
 import { ProviderService } from './services/providers.js';
+import { UPLOAD_LIMIT_BYTES } from './services/converters/limits.js';
 import { SourceService } from './services/sources.js';
 
 export interface AppServices {
@@ -78,7 +79,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.register(multipart, {
     limits: {
       files: 1,
-      fileSize: 5 * 1024 * 1024,
+      fileSize: UPLOAD_LIMIT_BYTES,
       fields: 0,
       parts: 1,
     },

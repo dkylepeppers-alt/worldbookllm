@@ -77,7 +77,11 @@ describe('notebook source workspace', () => {
     );
     expect(screen.getByRole('link', { name: 'Sources' })).toBeDefined();
     expect(screen.getByText('Reader').getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByRole('heading', { name: 'Develop with AI' })).toBeDefined();
+
+    // Chat is reachable through its own tab; opening it reveals the chat region.
+    const chatTab = screen.getByRole('button', { name: 'Chat' });
+    await userEvent.setup().click(chatTab);
+    expect(await screen.findByRole('heading', { name: 'Develop with AI' })).toBeDefined();
   });
 
   it('pastes a source and navigates to the server-returned reader', async () => {
@@ -133,9 +137,9 @@ describe('notebook source workspace', () => {
         conversionNotes: ['Activation metadata omitted.'],
       },
     ];
-    const previewJsonImport = vi.fn().mockResolvedValue({
+    const previewFileImport = vi.fn().mockResolvedValue({
       format: 'lorebook',
-      fileName: 'atlas.json',
+      origin: { type: 'file', fileName: 'atlas.json', mediaType: 'application/json' },
       entries: [
         { title: 'Amber Court', markdown: 'Amber lore.' },
         { title: 'Glass Marsh', markdown: 'Marsh lore.' },
@@ -143,19 +147,21 @@ describe('notebook source workspace', () => {
       conversionNotes: ['Activation metadata omitted.'],
     });
     const createSources = vi.fn().mockResolvedValue(imported);
-    renderPath(`/notebooks/${notebook.id}`, {
+    const { container } = renderPath(`/notebooks/${notebook.id}`, {
       listSources: () => Promise.resolve([]),
-      previewJsonImport,
+      previewFileImport,
       createSources,
     });
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole('button', { name: 'Import JSON' }));
+    await user.click(await screen.findByRole('button', { name: 'Import file' }));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (fileInput === null) throw new Error('file input not found');
     await user.upload(
-      screen.getByLabelText('JSON file'),
+      fileInput,
       new File(['{"entries":{}}'], 'atlas.json', { type: 'application/json' }),
     );
-    expect(await screen.findByRole('heading', { name: 'Review JSON import' })).toBeDefined();
+    expect(await screen.findByRole('heading', { name: 'Review import' })).toBeDefined();
     const titles = screen.getAllByRole('textbox', { name: 'Source title' });
     await user.clear(titles[0] as HTMLInputElement);
     await user.type(titles[0] as HTMLInputElement, 'Revised Amber Court');

@@ -3,3 +3,6 @@ dist/
 coverage/
 pnpm-lock.yaml
 data/
+
+# Converter test fixtures are deliberate raw/malformed inputs; keep them verbatim.
+apps/server/src/services/converters/__fixtures__/

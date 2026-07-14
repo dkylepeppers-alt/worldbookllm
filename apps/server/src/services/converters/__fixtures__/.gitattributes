@@ -1,0 +1,3 @@
+# Converter fixtures are byte-exact test inputs (CRLF, BOM, PDF bytes, malformed
+# JSON). Never normalize line endings or treat them as text.
+* -text

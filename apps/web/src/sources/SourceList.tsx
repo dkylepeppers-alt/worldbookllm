@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
 import { SourcePasteDialog } from './SourcePasteDialog.js';
-import { SourceJsonImportDialog } from './SourceJsonImportDialog.js';
+import { SourceImportDialog } from './SourceImportDialog.js';
+
+const IMPORT_ACCEPT =
+  '.md,.markdown,.txt,.json,.pdf,.html,.htm,text/markdown,text/plain,application/json,application/pdf,text/html';
 
 function formatUpdated(value: string): string {
   return new Intl.DateTimeFormat('en', {
@@ -17,7 +20,8 @@ function formatUpdated(value: string): string {
 export function SourceList() {
   const { notebookId, sourcesState, retrySources } = useNotebookWorkspace();
   const [pasteOpen, setPasteOpen] = useState(false);
-  const [jsonImportOpen, setJsonImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="source-index">
@@ -27,12 +31,24 @@ export function SourceList() {
           <h2>Sources</h2>
         </div>
         <div className="source-actions">
+          <input
+            ref={fileInputRef}
+            type="file"
+            aria-label="Source file"
+            accept={IMPORT_ACCEPT}
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file !== undefined) setImportFile(file);
+              event.target.value = '';
+            }}
+          />
           <button
             type="button"
             className="button-secondary"
-            onClick={() => setJsonImportOpen(true)}
+            onClick={() => fileInputRef.current?.click()}
           >
-            Import JSON
+            Import file
           </button>
           <button type="button" className="button-primary" onClick={() => setPasteOpen(true)}>
             Paste source
@@ -51,7 +67,7 @@ export function SourceList() {
       ) : sourcesState.sources.length === 0 ? (
         <div className="empty-map">
           <p className="coordinate-label">No sources plotted</p>
-          <p>Paste a Markdown document to establish the first reference point.</p>
+          <p>Paste or import your first source to establish a reference point.</p>
         </div>
       ) : (
         <ol className="source-list">
@@ -73,7 +89,9 @@ export function SourceList() {
       )}
 
       {pasteOpen ? <SourcePasteDialog onClose={() => setPasteOpen(false)} /> : null}
-      {jsonImportOpen ? <SourceJsonImportDialog onClose={() => setJsonImportOpen(false)} /> : null}
+      {importFile !== null ? (
+        <SourceImportDialog file={importFile} onClose={() => setImportFile(null)} />
+      ) : null}
     </div>
   );
 }

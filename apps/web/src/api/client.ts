@@ -14,7 +14,7 @@ import {
   sourceDetailSchema,
   sourceMetadataListSchema,
   sourceMetadataSchema,
-  jsonImportPreviewSchema,
+  sourcePreviewSchema,
   type ApiErrorIssue,
   type Chat,
   type ChatDetail,
@@ -22,7 +22,6 @@ import {
   type CreateNotebookInput,
   type CreateSourceInput,
   type CreateSourcesInput,
-  type JsonImportPreview,
   type MaskedSecret,
   type ModelListResponse,
   type Notebook,
@@ -34,6 +33,7 @@ import {
   type SecretState,
   type SourceDetail,
   type SourceMetadata,
+  type SourcePreview,
   type StreamEvent,
 } from '@worldbookllm/shared';
 import { z } from 'zod';
@@ -73,11 +73,7 @@ export interface ApiClient {
     input: CreateSourcesInput,
     signal?: AbortSignal,
   ): Promise<SourceMetadata[]>;
-  previewJsonImport(
-    notebookId: string,
-    file: File,
-    signal?: AbortSignal,
-  ): Promise<JsonImportPreview>;
+  previewFileImport(notebookId: string, file: File, signal?: AbortSignal): Promise<SourcePreview>;
   getSource(id: string, signal?: AbortSignal): Promise<SourceDetail>;
   deleteSource(id: string, signal?: AbortSignal): Promise<void>;
   getProviderCatalog(signal?: AbortSignal): Promise<ProviderCatalogEntry[]>;
@@ -205,13 +201,13 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: sourceMetadataListSchema,
         signal,
       }),
-    previewJsonImport: (notebookId, file, signal) => {
+    previewFileImport: (notebookId, file, signal) => {
       const formData = new FormData();
       formData.append('file', file);
-      return request(`/api/notebooks/${encodeURIComponent(notebookId)}/source-previews/json`, {
+      return request(`/api/notebooks/${encodeURIComponent(notebookId)}/source-previews/file`, {
         method: 'POST',
         formData,
-        schema: jsonImportPreviewSchema,
+        schema: sourcePreviewSchema,
         signal,
       });
     },

@@ -28,6 +28,7 @@ export function NotebookWorkspace() {
   const [notebookReloadKey, setNotebookReloadKey] = useState(0);
   const [sourcesReloadKey, setSourcesReloadKey] = useState(0);
   const [lastSourceId, setLastSourceId] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     if (notebookId === undefined) return;
@@ -141,7 +142,9 @@ export function NotebookWorkspace() {
   return (
     <NotebookWorkspaceContext.Provider value={value}>
       <section
-        className={`workspace${readerMatch === null ? '' : ' reader-open'}`}
+        className={`workspace${readerMatch === null ? '' : ' reader-open'}${
+          chatOpen ? ' chat-open' : ''
+        }`}
         aria-labelledby="workspace-title"
       >
         <header className="workspace-header">
@@ -167,13 +170,22 @@ export function NotebookWorkspace() {
         </div>
 
         <nav className="mobile-tabs" aria-label="Notebook workspace">
-          <Link to="/">Notebooks</Link>
-          <Link to={`/notebooks/${notebookId}`}>Sources</Link>
+          <Link to="/" onClick={() => setChatOpen(false)}>
+            Notebooks
+          </Link>
+          <Link to={`/notebooks/${notebookId}`} onClick={() => setChatOpen(false)}>
+            Sources
+          </Link>
           {readerHref === null ? (
             <span aria-disabled="true">Reader</span>
           ) : (
-            <Link to={readerHref}>Reader</Link>
+            <Link to={readerHref} onClick={() => setChatOpen(false)}>
+              Reader
+            </Link>
           )}
+          <button type="button" aria-pressed={chatOpen} onClick={() => setChatOpen(true)}>
+            Chat
+          </button>
         </nav>
       </section>
     </NotebookWorkspaceContext.Provider>
