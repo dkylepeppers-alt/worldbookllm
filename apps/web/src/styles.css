@@ -391,6 +391,11 @@ label {
   background: rgb(248 248 244 / 78%);
 }
 
+.source-region {
+  position: relative;
+  z-index: 1;
+}
+
 .reader-region {
   display: none;
 }
@@ -488,6 +493,7 @@ label {
 
 .reader-empty {
   margin: 1rem;
+  pointer-events: none;
 }
 
 .source-viewer {
