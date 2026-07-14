@@ -13,7 +13,10 @@ function invalidResponse(): ApiClientError {
 }
 
 function dataOf(rawFrame: string): string | null {
-  const lines = rawFrame.split('\n').filter((line) => line.startsWith('data:'));
+  const lines = rawFrame
+    .split('\n')
+    .map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line))
+    .filter((line) => line.startsWith('data:'));
   if (lines.length === 0) return null;
   return lines.map((line) => line.slice('data:'.length).trimStart()).join('\n');
 }
@@ -80,18 +83,24 @@ export async function streamChatMessage(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  const frameBoundary = /\r?\n\r?\n/;
   let buffer = '';
   try {
     for (;;) {
       const { done, value } = await reader.read();
       buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-      let boundary = buffer.indexOf('\n\n');
-      while (boundary !== -1) {
-        emitFrame(buffer.slice(0, boundary), options.onEvent);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf('\n\n');
+      let boundary = frameBoundary.exec(buffer);
+      while (boundary !== null) {
+        emitFrame(buffer.slice(0, boundary.index), options.onEvent);
+        buffer = buffer.slice(boundary.index + boundary[0].length);
+        boundary = frameBoundary.exec(buffer);
       }
-      if (done) break;
+      if (done) {
+        // A stream that closes without a trailing blank line still delivered
+        // its final frame.
+        if (buffer.trim().length > 0) emitFrame(buffer, options.onEvent);
+        break;
+      }
     }
   } finally {
     await reader.cancel().catch(() => undefined);

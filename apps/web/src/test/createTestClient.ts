@@ -59,6 +59,12 @@ export function createScriptedStream(): ScriptedStream {
     streamMessage: (chatId, content, options) => {
       calls.push({ chatId, content });
       return new Promise<void>((resolve, reject) => {
+        // Like real fetch: an already-aborted signal rejects immediately
+        // instead of leaving the promise pending forever.
+        if (options.signal?.aborted === true) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
         options.signal?.addEventListener('abort', () => {
           active = null;
           reject(new DOMException('Aborted', 'AbortError'));

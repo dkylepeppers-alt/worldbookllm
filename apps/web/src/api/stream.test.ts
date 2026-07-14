@@ -102,6 +102,36 @@ describe('streamChatMessage', () => {
     ]);
   });
 
+  it('parses CRLF-delimited frames', async () => {
+    const wire =
+      `event: delta\r\ndata: {"type":"delta","text":"a"}\r\n\r\n` +
+      `event: done\r\ndata: ${JSON.stringify({ type: 'done', message: assistantMessage })}\r\n\r\n`;
+    const fetchImpl = vi.fn().mockResolvedValue(sseResponse([wire]));
+    const events: StreamEvent[] = [];
+
+    await streamChatMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
+
+    expect(events).toEqual([
+      { type: 'delta', text: 'a' },
+      { type: 'done', message: assistantMessage },
+    ]);
+  });
+
+  it('emits a final frame that lacks the trailing blank line', async () => {
+    const wire =
+      'event: delta\ndata: {"type":"delta","text":"a"}\n\n' +
+      'event: delta\ndata: {"type":"delta","text":"b"}';
+    const fetchImpl = vi.fn().mockResolvedValue(sseResponse([wire]));
+    const events: StreamEvent[] = [];
+
+    await streamChatMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
+
+    expect(events).toEqual([
+      { type: 'delta', text: 'a' },
+      { type: 'delta', text: 'b' },
+    ]);
+  });
+
   it('rejects on a frame that is not valid JSON', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(sseResponse(['event: delta\ndata: {nope\n\n']));
 
