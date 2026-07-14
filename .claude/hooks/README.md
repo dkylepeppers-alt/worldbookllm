@@ -11,6 +11,7 @@ Installs workspace dependencies at session start on Claude Code on the web (guar
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "startup",
         "hooks": [
           {
             "type": "command",
@@ -36,4 +37,6 @@ Installs workspace dependencies at session start on Claude Code on the web (guar
 }
 ```
 
-Optional allowlist additions that go with the hooks: `"Bash(pnpm exec prettier:*)"` and `"Bash(pnpm dev)"`.
+The `"matcher": "startup"` keeps the install off resume/`/clear`/compaction — it only runs when a fresh session (and on the web, a fresh container) starts.
+
+Hook commands run directly and do not consult the permissions allowlist — the allowlist governs commands the agent itself runs via the Bash tool. Two entries are still worth adding so the agent can format files and boot the app without prompting: `"Bash(pnpm exec prettier:*)"` and `"Bash(pnpm dev)"`.

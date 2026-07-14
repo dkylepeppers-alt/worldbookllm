@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "test:coverage": "pnpm -r test -- --coverage"
+    "test:coverage": "pnpm -r test -- --coverage",
+    "test:e2e": "pnpm --filter @worldbookllm/e2e test:e2e"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
