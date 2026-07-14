@@ -1,3 +1,5 @@
+import type { StreamEvent } from '@worldbookllm/shared';
+
 import type { ApiClient } from '../api/client.js';
 
 const unused = () => Promise.reject(new Error('Unexpected API call'));
@@ -25,6 +27,57 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     getChat: unused,
     updateChat: unused,
     deleteChat: unused,
+    streamMessage: unused,
     ...overrides,
+  };
+}
+
+export interface ScriptedStream {
+  streamMessage: ApiClient['streamMessage'];
+  calls: { chatId: string; content: string }[];
+  /** Delivers an event to the in-flight stream; terminal events resolve it. */
+  emit(event: StreamEvent): void;
+  /** Rejects the in-flight stream, e.g. with a network error. */
+  fail(error: unknown): void;
+}
+
+/**
+ * A scriptable stand-in for ApiClient.streamMessage: each call stays pending
+ * until the test emits events (a `done`/`error` event resolves it, mirroring
+ * the real client) or fails it; aborting the passed signal rejects with an
+ * AbortError like a real aborted fetch.
+ */
+export function createScriptedStream(): ScriptedStream {
+  let active: {
+    onEvent: (event: StreamEvent) => void;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  } | null = null;
+  const calls: { chatId: string; content: string }[] = [];
+  return {
+    calls,
+    streamMessage: (chatId, content, options) => {
+      calls.push({ chatId, content });
+      return new Promise<void>((resolve, reject) => {
+        options.signal?.addEventListener('abort', () => {
+          active = null;
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+        active = { onEvent: options.onEvent, resolve, reject };
+      });
+    },
+    emit(event) {
+      if (active === null) throw new Error('No stream in flight');
+      active.onEvent(event);
+      if (event.type !== 'delta') {
+        active.resolve();
+        active = null;
+      }
+    },
+    fail(error) {
+      if (active === null) throw new Error('No stream in flight');
+      active.reject(error);
+      active = null;
+    },
   };
 }
