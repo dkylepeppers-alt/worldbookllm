@@ -17,11 +17,11 @@ export function migrateToVersion2(db: Database.Database): void {
     );
 
     INSERT INTO sources_v2 (
-      id, notebook_id, title, slug, file_path, origin_json, word_count,
+      id, notebook_id, title, slug, file_path, origin_json, conversion_notes_json, word_count,
       content_hash, created_at, updated_at
     )
     SELECT
-      id, notebook_id, title, slug, file_path, '{"type":"paste"}', word_count,
+      id, notebook_id, title, slug, file_path, '{"type":"paste"}', '[]', word_count,
       content_hash, created_at, updated_at
     FROM sources;
 

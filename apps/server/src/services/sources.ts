@@ -116,11 +116,14 @@ export class SourceService {
 
   createMany(notebookId: string, inputs: CreateSource[]): SourceMetadata[] {
     const created: SourceMetadata[] = [];
-    try {
+    const createAll = this.db.transaction(() => {
       for (const input of inputs) created.push(this.create(notebookId, input));
+    });
+    try {
+      createAll();
       return created;
     } catch (error) {
-      for (const source of created.reverse()) this.delete(source.id);
+      for (const source of created) this.sourceFiles.remove(source.filePath);
       throw error;
     }
   }

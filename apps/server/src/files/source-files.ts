@@ -24,6 +24,7 @@ const frontmatterSchema = z.strictObject({
   id: z.uuid(),
   notebookId: z.uuid(),
   title: z.string().trim().min(1).max(300),
+  // Database migrations cannot rewrite legacy source-of-truth Markdown files.
   origin: z
     .union([sourceOriginSchema, z.literal('paste')])
     .transform((origin): SourceOrigin => (origin === 'paste' ? { type: 'paste' } : origin)),
