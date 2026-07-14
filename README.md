@@ -15,7 +15,7 @@ Your data stays on your machine: sources are plain Markdown files on disk, metad
 
 ## Status
 
-**Milestone 1 — walking skeleton (code complete).** Create a notebook, paste a source, pick a provider, and watch a grounded answer stream into the chat — the whole journey, including stop/interrupt and reload persistence, runs end-to-end in CI against a stub provider. Final [roadmap](docs/ROADMAP.md) sign-off awaits the live-provider verification run, which needs an operator key.
+**Milestone 1 — walking skeleton (complete).** Create a notebook, paste a source, pick a provider, and watch a grounded answer stream into the chat — the whole journey, including stop/interrupt and reload persistence, runs end-to-end in CI against a stub provider and has been operator-verified against NanoGPT. Milestone 2 source ingestion is in progress; see the [roadmap](docs/ROADMAP.md) for current scope.
 
 ## Quick start
 
@@ -41,6 +41,8 @@ pnpm format     # format with prettier
 ```
 apps/server/      Fastify API server — owns files, SQLite, and AI provider calls
 apps/web/         React + Vite web UI
+apps/e2e/         Playwright end-to-end tests and stub provider
+packages/providers/  Framework-free multi-provider request and streaming layer
 packages/shared/  Types and schemas shared between server and web
 docs/             Architecture, roadmap, and decision records
 ```

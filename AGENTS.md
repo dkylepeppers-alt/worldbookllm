@@ -15,6 +15,7 @@ All from the repo root (pnpm 9, Node ≥ 20.19):
 
 - `apps/server` — Fastify API (TypeScript, ESM with NodeNext — relative imports need `.js` extensions). Owns all state: data dir, SQLite, provider calls. `src/app.ts` builds the app (testable via `fastify.inject()`); `src/index.ts` listens.
 - `apps/web` — React 19 + Vite SPA. Talks to the server only via `/api` (proxied in dev). Tests use vitest + jsdom + testing-library.
+- `apps/e2e` — Playwright browser journeys backed by a deterministic local stub provider.
 - `packages/providers` — framework-free provider core ported from SillyTavern. Builds requests and normalizes responses; callers inject keys/config and perform network I/O.
 - `packages/shared` — types/schemas shared across both; imported as `@worldbookllm/shared` (exports raw TS from `src/`, no build step).
 

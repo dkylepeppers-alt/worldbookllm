@@ -25,7 +25,7 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 - `packages/providers`: all 26 SillyTavern chat-completion sources ported as framework-free TypeScript — request building, message conversion, stream normalization, model-list fetching (chat-completions family only; no legacy text-completion backends)
 - Secret store ported from SillyTavern: multiple named keys per provider, rotation, masked display
 - Notebook CRUD (create, rename, delete, list)
-- Add a source by pasting text; stored as a frontmattered Markdown file on disk + SQLite metadata row (better-sqlite3, schema v1: notebooks, sources, chats, messages — see ADR 0006)
+- Add a source by pasting text; stored as a frontmattered Markdown file on disk + SQLite metadata row (see ADR 0006)
 - Source list and read-only source viewer in the UI
 - Streaming chat (SSE) grounded in user-selected sources, injected into the prompt whole (no retrieval yet)
 - Provider/model selection per notebook, overridable per chat; live model lists; connection test
@@ -33,16 +33,21 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 
 **Done when:** a user can create a notebook, paste in a lore document, pick a provider/model (e.g. NanoGPT or OpenRouter) with their own key, ask "summarize this" in chat, and watch a grounded, streamed answer arrive — all data visible on disk, keys managed in the UI.
 
+The initial database schema covers notebooks, sources, chats, and messages. Source provenance was added in schema v2 during M2.
+
 ## M2 — Source ingestion pipeline
 
 **Goal:** get real-world source material in, not just pasted text.
 
+**Status (2026-07-14):** in progress. Local file upload and conversion are implemented for Markdown, text, PDF, HTML, and SillyTavern lorebook and character-card JSON, including editable previews, batch save, provenance metadata, and deletion. Webpage acquisition by URL and editing or re-ingesting existing sources remain.
+
 **Scope:**
 
-- File upload: `.md`, `.txt` direct; PDF and HTML/webpage (by URL) converted to Markdown; SillyTavern lorebook and character-card JSON extracted into focused sources
-- Conversion review step: user sees and can edit the produced Markdown before it is saved
-- Origin metadata recorded (file name, URL, conversion notes)
-- Source editing after ingestion; delete/re-ingest
+- ✅ File upload: `.md`, `.txt`, PDF, and HTML converted to Markdown; SillyTavern lorebook and character-card JSON extracted into focused sources
+- ⏳ Webpage acquisition by URL and conversion to Markdown
+- ✅ Conversion review step: user sees and can edit the produced Markdown before it is saved
+- ⏳ Origin metadata recorded (file name and conversion notes are implemented; URL provenance awaits URL acquisition)
+- ⏳ Source editing after ingestion and re-ingestion; delete is implemented
 
 **Done when:** a user can drop in a PDF setting bible and a pasted wiki page, review the conversions, fix a mangled table, and chat over them.
 
