@@ -61,7 +61,7 @@ export function SourceJsonImportDialog({ onClose }: SourceJsonImportDialogProps)
 
   async function saveImport() {
     if (preview === null) return;
-    if (preview.entries.some((entry) => entry.title.trim() === '' || entry.markdown === '')) {
+    if (preview.entries.some((entry) => entry.title.trim() === '' || entry.markdown.trim() === '')) {
       setError('Every imported source needs a title and Markdown content.');
       return;
     }
