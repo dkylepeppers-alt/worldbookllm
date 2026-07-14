@@ -130,7 +130,8 @@ describe('server data API', () => {
       filePath: string;
       wordCount: number;
       contentHash: string;
-      origin: string;
+      origin: { type: string };
+      conversionNotes: string[];
       createdAt: string;
       updatedAt: string;
     }>();
@@ -140,7 +141,8 @@ describe('server data API', () => {
       title: 'Amber Court',
       slug: 'amber-court',
       filePath: expect.stringMatching(/\.md$/u),
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       wordCount: 5,
       contentHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
       createdAt: expect.any(String),
@@ -152,7 +154,8 @@ describe('server data API', () => {
       id: source.id,
       notebookId: notebook.id,
       title: 'Amber Court',
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
     });
 
     const list = await app.inject({
@@ -171,6 +174,82 @@ describe('server data API', () => {
     const columns = db.prepare('PRAGMA table_info(sources)').all() as Array<{ name: string }>;
     expect(columns.map((column) => column.name)).not.toContain('content');
     db.close();
+  });
+
+  it('previews lorebook JSON and saves reviewed entries as individual sources', async () => {
+    const notebook = await createNotebook();
+    const boundary = 'worldbookllm-boundary';
+    const lorebook = JSON.stringify({
+      entries: {
+        0: { uid: 0, comment: 'Amber Court', key: ['amber'], content: 'Amber rules here.' },
+        1: { uid: 1, key: ['Glass Marsh'], content: 'The marsh reflects stars.' },
+      },
+    });
+    const payload = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="lorebook.json"\r\nContent-Type: application/json\r\n\r\n${lorebook}\r\n--${boundary}--\r\n`,
+    );
+    const previewResponse = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-previews/json`,
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload,
+    });
+
+    expect(previewResponse.statusCode).toBe(200);
+    const preview = previewResponse.json<{
+      fileName: string;
+      entries: Array<{ title: string; markdown: string }>;
+      conversionNotes: string[];
+    }>();
+    expect(preview.entries).toEqual([
+      { title: 'Amber Court', markdown: 'Amber rules here.' },
+      { title: 'Glass Marsh', markdown: 'The marsh reflects stars.' },
+    ]);
+
+    const save = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/sources/batch`,
+      payload: preview.entries.map((entry) => ({
+        title: entry.title,
+        content: entry.markdown,
+        origin: { type: 'file', fileName: preview.fileName, mediaType: 'application/json' },
+        conversionNotes: preview.conversionNotes,
+      })),
+    });
+    expect(save.statusCode).toBe(201);
+    const sources = save.json<Array<{ filePath: string; origin: unknown }>>();
+    expect(sources).toHaveLength(2);
+    expect(sources[0]?.origin).toEqual({
+      type: 'file',
+      fileName: 'lorebook.json',
+      mediaType: 'application/json',
+    });
+    expect(readFileSync(join(dataDir, sources[0]?.filePath ?? ''), 'utf8')).not.toContain('"uid"');
+  });
+
+  it('rejects malformed or unsupported JSON imports without creating sources', async () => {
+    const notebook = await createNotebook();
+    const boundary = 'invalid-boundary';
+    const payload = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="other.json"\r\nContent-Type: application/json\r\n\r\n{"hello":"world"}\r\n--${boundary}--\r\n`,
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-previews/json`,
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: 'invalid_import' });
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/notebooks/${notebook.id}/sources`,
+        })
+      ).json(),
+    ).toEqual([]);
   });
 
   it('reconciles source title, body metadata, and timestamp after external edits', async () => {
@@ -503,7 +582,7 @@ describe('server data API', () => {
     expect(response.json()).toMatchObject({ id: notebook.id, name: 'Persistent' });
 
     const db = new Database(join(dataDir, 'worldbookllm.db'), { readonly: true });
-    expect(db.pragma('user_version', { simple: true })).toBe(1);
+    expect(db.pragma('user_version', { simple: true })).toBe(2);
     db.close();
   });
 });

@@ -2,7 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { ProviderError } from '@worldbookllm/providers';
 import { ZodError } from 'zod';
 
-import { ConfigurationError, ConflictError, NotFoundError } from '../errors.js';
+import {
+  ConfigurationError,
+  ConflictError,
+  InvalidImportError,
+  NotFoundError,
+} from '../errors.js';
 
 export function installErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error, _request, reply) => {
@@ -20,6 +25,10 @@ export function installErrorHandler(app: FastifyInstance): void {
 
     if (error instanceof NotFoundError) {
       return reply.status(404).send({ error: 'not_found', message: error.message });
+    }
+
+    if (error instanceof InvalidImportError) {
+      return reply.status(400).send({ error: 'invalid_import', message: error.message });
     }
 
     if (error instanceof ConfigurationError) {

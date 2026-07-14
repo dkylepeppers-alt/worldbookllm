@@ -30,14 +30,15 @@ function setup() {
   ];
   for (const [id, notebookId] of sources) {
     db.prepare(
-      'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin_json, conversion_notes_json, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ).run(
       id,
       notebookId,
       'Lore',
       'lore',
       `notebooks/${notebookId}/sources/${id}-lore.md`,
-      'paste',
+      '{"type":"paste"}',
+      '[]',
       1,
       'a'.repeat(64),
       now,

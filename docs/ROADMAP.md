@@ -39,7 +39,7 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 
 **Scope:**
 
-- File upload: `.md`, `.txt` direct; PDF and HTML/webpage (by URL) converted to Markdown
+- File upload: `.md`, `.txt` direct; PDF and HTML/webpage (by URL) converted to Markdown; SillyTavern lorebook and character-card JSON extracted into focused sources
 - Conversion review step: user sees and can edit the produced Markdown before it is saved
 - Origin metadata recorded (file name, URL, conversion notes)
 - Source editing after ingestion; delete/re-ingest

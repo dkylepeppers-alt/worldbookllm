@@ -16,13 +16,18 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import matter from 'gray-matter';
 import { z } from 'zod';
 
+import { conversionNotesSchema, sourceOriginSchema, type SourceOrigin } from '@worldbookllm/shared';
+
 import { InvalidStoredDataError, UnsafePathError } from '../errors.js';
 
 const frontmatterSchema = z.strictObject({
   id: z.uuid(),
   notebookId: z.uuid(),
   title: z.string().trim().min(1).max(300),
-  origin: z.literal('paste'),
+  origin: z
+    .union([sourceOriginSchema, z.literal('paste')])
+    .transform((origin): SourceOrigin => (origin === 'paste' ? { type: 'paste' } : origin)),
+  conversionNotes: conversionNotesSchema.default([]),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -32,7 +37,8 @@ export interface SourceFileInput {
   notebookId: string;
   title: string;
   content: string;
-  origin: 'paste';
+  origin: SourceOrigin;
+  conversionNotes: string[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -50,7 +56,8 @@ export interface ReadSourceFile {
   id: string;
   notebookId: string;
   title: string;
-  origin: 'paste';
+  origin: SourceOrigin;
+  conversionNotes: string[];
   createdAt: string;
   updatedAt: string;
   content: string;
@@ -111,6 +118,7 @@ export class SourceFileStore {
       notebookId: input.notebookId,
       title: input.title,
       origin: input.origin,
+      conversionNotes: input.conversionNotes,
       createdAt: input.createdAt,
       updatedAt,
     });

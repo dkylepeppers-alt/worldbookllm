@@ -407,6 +407,11 @@ label {
   padding: 1rem;
 }
 
+.source-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
 .region-header,
 .source-viewer-header,
 .viewer-toolbar {
@@ -932,6 +937,27 @@ label {
 
 .source-dialog label:not(:first-of-type) {
   margin-top: 1rem;
+}
+
+.json-import-dialog {
+  max-height: min(90vh, 900px);
+  overflow: auto;
+  width: min(760px, calc(100vw - 2rem));
+}
+
+.conversion-notes {
+  color: var(--ink-muted);
+  padding-left: 1.25rem;
+}
+
+.json-import-entries {
+  display: grid;
+  gap: 1rem;
+}
+
+.json-import-entries fieldset {
+  border: 1px solid var(--line);
+  padding: 1rem;
 }
 
 @media (min-width: 620px) {

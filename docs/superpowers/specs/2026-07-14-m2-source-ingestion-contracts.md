@@ -8,7 +8,7 @@
 
 ## Goal and boundaries
 
-M2 accepts Markdown, text, PDF, and webpage sources, converts them to inspectable Markdown, requires review before persistence, and supports later editing, deletion, and re-ingestion. It does not add categories, tags, FTS, retained original binaries, background jobs, OCR, or general-purpose web crawling.
+M2 accepts Markdown, text, PDF, webpage, SillyTavern lorebook JSON, and SillyTavern character-card JSON sources, converts them to inspectable Markdown, requires review before persistence, and supports later editing, deletion, and re-ingestion. It does not add categories, tags, FTS, retained original binaries, background jobs, OCR, or general-purpose web crawling.
 
 All formats follow one boundary:
 
@@ -48,9 +48,15 @@ Markdown is decoded and returned without semantic rewriting. Plain text receives
 
 `POST /api/notebooks/:id/source-previews/url` accepts `{ url }`. The server performs a guarded fetch and returns a `SourcePreview` only for supported HTML responses. It extracts the primary document content where practical, converts it to Markdown, records the final public URL after redirects, and reports removals or ambiguities in conversion notes.
 
+### Preview SillyTavern JSON
+
+`POST /api/notebooks/:id/source-previews/json` accepts one bounded multipart `.json` file. A native lorebook preview contains one editable source per non-empty entry and omits activation settings. A V1, V2, V3, or Pygmalion-style character card preview contains the character context fields in one Markdown source and omits card specification, creator, tags, and UI metadata. Empty, malformed, unrelated, and oversized JSON is rejected.
+
 ### Save a reviewed preview
 
 `POST /api/notebooks/:id/sources` continues to create a source and accepts reviewed `title`, `content`, structured `origin`, and `conversionNotes`. Paste creation supplies `{ type: 'paste' }` and an empty notes list. Preview responses are not trusted capabilities: save validates the complete payload again.
+
+`POST /api/notebooks/:id/sources/batch` accepts one or more reviewed source payloads for multi-entry imports. If any source cannot be saved, sources already created by that request are removed.
 
 ### Edit or replace a source
 

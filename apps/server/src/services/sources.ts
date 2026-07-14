@@ -6,6 +6,8 @@ import {
   type SourceMetadata,
   sourceDetailSchema,
   sourceMetadataSchema,
+  sourceOriginSchema,
+  conversionNotesSchema,
 } from '@worldbookllm/shared';
 import type Database from 'better-sqlite3';
 
@@ -15,13 +17,16 @@ import { type ReadSourceFile, SourceFileStore } from '../files/source-files.js';
 
 function mapSource(row: SourceRow): SourceMetadata {
   try {
+    const origin = sourceOriginSchema.parse(JSON.parse(row.origin_json));
+    const conversionNotes = conversionNotesSchema.parse(JSON.parse(row.conversion_notes_json));
     return sourceMetadataSchema.parse({
       id: row.id,
       notebookId: row.notebook_id,
       title: row.title,
       slug: row.slug,
       filePath: row.file_path,
-      origin: row.origin,
+      origin,
+      conversionNotes,
       wordCount: row.word_count,
       contentHash: row.content_hash,
       createdAt: row.created_at,
@@ -70,7 +75,8 @@ export class SourceService {
       notebookId,
       title: input.title,
       content: input.content,
-      origin: 'paste',
+      origin: input.origin,
+      conversionNotes: input.conversionNotes,
       createdAt: timestamp,
     });
 
@@ -78,7 +84,7 @@ export class SourceService {
       this.db.transaction(() => {
         this.db
           .prepare(
-            'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin_json, conversion_notes_json, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           )
           .run(
             id,
@@ -86,7 +92,8 @@ export class SourceService {
             input.title,
             stored.slug,
             stored.filePath,
-            'paste',
+            JSON.stringify(input.origin),
+            JSON.stringify(input.conversionNotes),
             stored.wordCount,
             stored.contentHash,
             stored.createdAt,
@@ -99,6 +106,17 @@ export class SourceService {
     } catch (error) {
       this.sourceFiles.remove(stored.filePath);
       throw error;
+    }
+
+    createMany(notebookId: string, inputs: CreateSource[]): SourceMetadata[] {
+      const created: SourceMetadata[] = [];
+      try {
+        for (const input of inputs) created.push(this.create(notebookId, input));
+        return created;
+      } catch (error) {
+        for (const source of created.reverse()) this.delete(source.id);
+        throw error;
+      }
     }
 
     return mapSource(this.getRow(id));
@@ -139,7 +157,8 @@ export class SourceService {
     if (
       file.id !== row.id ||
       file.notebookId !== row.notebook_id ||
-      file.origin !== row.origin ||
+      JSON.stringify(file.origin) !== row.origin_json ||
+      JSON.stringify(file.conversionNotes) !== row.conversion_notes_json ||
       file.createdAt !== row.created_at
     ) {
       throw new InvalidStoredDataError(`Source file ${row.file_path} does not match its index row`);

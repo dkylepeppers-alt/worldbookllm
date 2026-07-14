@@ -27,12 +27,12 @@ describe('database startup', () => {
     expect(resolveDataDir('./fixture-data')).toBe(resolve('./fixture-data'));
   });
 
-  it('enables required pragmas and creates schema v1', () => {
+  it('enables required pragmas and creates the latest schema', () => {
     const db = openDatabase(makeTempDir());
 
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
-    expect(db.pragma('user_version', { simple: true })).toBe(1);
+    expect(db.pragma('user_version', { simple: true })).toBe(2);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -48,7 +48,7 @@ describe('database startup', () => {
     openDatabase(dataDir).close();
 
     const reopened = openDatabase(dataDir);
-    expect(reopened.pragma('user_version', { simple: true })).toBe(1);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(2);
     expect(reopened.prepare('SELECT count(*) FROM notebooks').pluck().get()).toBe(0);
     reopened.close();
   });
@@ -60,14 +60,15 @@ describe('database startup', () => {
       'INSERT INTO notebooks (id, name, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
     ).run('notebook', 'Atlas', 'null', now, now);
     db.prepare(
-      'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin_json, conversion_notes_json, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ).run(
       'source',
       'notebook',
       'Lore',
       'lore',
       'notebooks/notebook/sources/source-lore.md',
-      'paste',
+      '{"type":"paste"}',
+      '[]',
       1,
       'a'.repeat(64),
       now,
@@ -106,13 +107,13 @@ describe('database startup', () => {
     const dataDir = makeTempDir();
     const file = join(dataDir, 'worldbookllm.db');
     const future = new Database(file);
-    future.pragma('user_version = 2');
+    future.pragma('user_version = 3');
     future.close();
 
-    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 2/u);
+    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 3/u);
 
     const unchanged = new Database(file);
-    expect(unchanged.pragma('user_version', { simple: true })).toBe(2);
+    expect(unchanged.pragma('user_version', { simple: true })).toBe(3);
     unchanged.close();
   });
 });
