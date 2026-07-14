@@ -15,7 +15,7 @@ Your data stays on your machine: sources are plain Markdown files on disk, metad
 
 ## Status
 
-**Milestone 1 — walking skeleton (in progress).** The server API, provider layer, and notebook/source workspace are in place; provider-settings UI and streaming chat are the remaining [roadmap](docs/ROADMAP.md) phases.
+**Milestone 1 — walking skeleton (in progress).** The server API, provider layer, notebook/source workspace, and provider-settings UI are in place; the streaming chat UI is the remaining [roadmap](docs/ROADMAP.md) phase.
 
 ## Quick start
 
