@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 import {
   type CreateSource,
@@ -160,11 +161,21 @@ export class SourceService {
   }
 
   private assertFileIdentity(row: SourceRow, file: ReadSourceFile): void {
+    let rowOrigin: unknown;
+    let rowConversionNotes: unknown;
+    try {
+      rowOrigin = JSON.parse(row.origin_json);
+      rowConversionNotes = JSON.parse(row.conversion_notes_json);
+    } catch (error) {
+      throw new InvalidStoredDataError(`Source ${row.id} has invalid stored metadata`, {
+        cause: error,
+      });
+    }
     if (
       file.id !== row.id ||
       file.notebookId !== row.notebook_id ||
-      JSON.stringify(file.origin) !== row.origin_json ||
-      JSON.stringify(file.conversionNotes) !== row.conversion_notes_json ||
+      !isDeepStrictEqual(file.origin, rowOrigin) ||
+      !isDeepStrictEqual(file.conversionNotes, rowConversionNotes) ||
       file.createdAt !== row.created_at
     ) {
       throw new InvalidStoredDataError(`Source file ${row.file_path} does not match its index row`);

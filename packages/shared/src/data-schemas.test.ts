@@ -12,6 +12,7 @@ import {
   secretStateSchema,
   sourceDetailSchema,
   sourceMetadataListSchema,
+  sourceOriginSchema,
 } from './index.js';
 
 describe('data API schemas', () => {
@@ -102,6 +103,26 @@ describe('data API schemas', () => {
       content: '# Lore',
     };
     expect(sourceDetailSchema.parse(detail)).toEqual(detail);
+  });
+
+  it('accepts every documented source origin variant and rejects unsafe URLs', () => {
+    expect(sourceOriginSchema.parse({ type: 'paste' })).toEqual({ type: 'paste' });
+    expect(
+      sourceOriginSchema.parse({
+        type: 'file',
+        fileName: 'lorebook.json',
+        mediaType: 'application/json',
+      }),
+    ).toEqual({ type: 'file', fileName: 'lorebook.json', mediaType: 'application/json' });
+    const urlOrigin = {
+      type: 'url',
+      url: 'https://example.com/lore',
+      fetchedAt: '2026-07-14T12:00:00.000Z',
+      mediaType: 'text/html',
+    };
+    expect(sourceOriginSchema.parse(urlOrigin)).toEqual(urlOrigin);
+    expect(() => sourceOriginSchema.parse({ ...urlOrigin, url: 'javascript:alert(1)' })).toThrow();
+    expect(() => sourceOriginSchema.parse({ ...urlOrigin, url: 'ftp://example.com' })).toThrow();
   });
 
   it('validates collection responses and stable API errors', () => {

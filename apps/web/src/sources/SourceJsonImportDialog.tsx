@@ -146,6 +146,7 @@ export function SourceJsonImportDialog({ onClose }: SourceJsonImportDialogProps)
                   <input
                     id={`json-source-title-${index}`}
                     maxLength={300}
+                    autoFocus={index === 0}
                     value={entry.title}
                     onChange={(event) => updateEntry(index, 'title', event.target.value)}
                   />

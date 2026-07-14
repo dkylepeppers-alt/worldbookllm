@@ -22,10 +22,14 @@ export function registerSourceRoutes(app: FastifyInstance): void {
 
   app.post('/api/notebooks/:id/source-previews/json', async (request, reply) => {
     const { id } = resourceIdParamsSchema.parse(request.params);
-    app.services.sources.list(id);
+    app.services.notebooks.get(id);
     const upload = await request.file();
     if (upload === undefined) throw new InvalidImportError('Upload one JSON file.');
-    if (!upload.filename.toLowerCase().endsWith('.json')) {
+    const fileName = upload.filename.trim();
+    if (fileName === '' || fileName.length > 255) {
+      throw new InvalidImportError('The uploaded file name must be between 1 and 255 characters.');
+    }
+    if (!fileName.toLowerCase().endsWith('.json')) {
       throw new InvalidImportError('The uploaded file must use the .json extension.');
     }
     if (!['application/json', 'text/json', 'application/octet-stream'].includes(upload.mimetype)) {
@@ -35,7 +39,7 @@ export function registerSourceRoutes(app: FastifyInstance): void {
     if (upload.file.truncated) {
       throw new InvalidImportError('The uploaded JSON file exceeds 5 MiB.');
     }
-    return reply.send(previewSillyTavernJson(bytes, upload.filename));
+    return reply.send(previewSillyTavernJson(bytes, fileName));
   });
 
   app.post('/api/notebooks/:id/sources/batch', async (request, reply) => {

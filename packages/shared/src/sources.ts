@@ -9,6 +9,12 @@ export const sourceOriginSchema = z.discriminatedUnion('type', [
     fileName: z.string().trim().min(1).max(255),
     mediaType: z.string().trim().min(1).max(255),
   }),
+  z.strictObject({
+    type: z.literal('url'),
+    url: z.url({ protocol: /^https?$/u }).max(2048),
+    fetchedAt: z.iso.datetime(),
+    mediaType: z.string().trim().min(1).max(255),
+  }),
 ]);
 
 export const conversionNotesSchema = z.array(z.string().trim().min(1).max(500)).max(20);
