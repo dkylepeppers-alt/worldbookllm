@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/multipart": "10.1.0",
     "@worldbookllm/providers": "workspace:*",
     "@worldbookllm/shared": "workspace:*",
     "better-sqlite3": "12.11.1",

@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 import {
   type CreateSource,
+  type CreateSourceInput,
   type SourceDetail,
   type SourceMetadata,
   sourceDetailSchema,
   sourceMetadataSchema,
+  sourceOriginSchema,
+  conversionNotesSchema,
+  createSourceSchema,
 } from '@worldbookllm/shared';
 import type Database from 'better-sqlite3';
 
@@ -15,13 +20,16 @@ import { type ReadSourceFile, SourceFileStore } from '../files/source-files.js';
 
 function mapSource(row: SourceRow): SourceMetadata {
   try {
+    const origin = sourceOriginSchema.parse(JSON.parse(row.origin_json));
+    const conversionNotes = conversionNotesSchema.parse(JSON.parse(row.conversion_notes_json));
     return sourceMetadataSchema.parse({
       id: row.id,
       notebookId: row.notebook_id,
       title: row.title,
       slug: row.slug,
       filePath: row.file_path,
-      origin: row.origin,
+      origin,
+      conversionNotes,
       wordCount: row.word_count,
       contentHash: row.content_hash,
       createdAt: row.created_at,
@@ -61,16 +69,18 @@ export class SourceService {
     return rows.map(mapSource);
   }
 
-  create(notebookId: string, input: CreateSource): SourceMetadata {
+  create(notebookId: string, input: CreateSourceInput): SourceMetadata {
     this.requireNotebook(notebookId);
+    const normalized = createSourceSchema.parse(input);
     const id = randomUUID();
     const timestamp = this.now();
     const stored = this.sourceFiles.write({
       id,
       notebookId,
-      title: input.title,
-      content: input.content,
-      origin: 'paste',
+      title: normalized.title,
+      content: normalized.content,
+      origin: normalized.origin,
+      conversionNotes: normalized.conversionNotes,
       createdAt: timestamp,
     });
 
@@ -78,15 +88,16 @@ export class SourceService {
       this.db.transaction(() => {
         this.db
           .prepare(
-            'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin_json, conversion_notes_json, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           )
           .run(
             id,
             notebookId,
-            input.title,
+            normalized.title,
             stored.slug,
             stored.filePath,
-            'paste',
+            JSON.stringify(normalized.origin),
+            JSON.stringify(normalized.conversionNotes),
             stored.wordCount,
             stored.contentHash,
             stored.createdAt,
@@ -102,6 +113,20 @@ export class SourceService {
     }
 
     return mapSource(this.getRow(id));
+  }
+
+  createMany(notebookId: string, inputs: CreateSource[]): SourceMetadata[] {
+    const created: SourceMetadata[] = [];
+    const createAll = this.db.transaction(() => {
+      for (const input of inputs) created.push(this.create(notebookId, input));
+    });
+    try {
+      createAll();
+      return created;
+    } catch (error) {
+      for (const source of created) this.sourceFiles.remove(source.filePath);
+      throw error;
+    }
   }
 
   get(id: string): SourceDetail {
@@ -136,10 +161,21 @@ export class SourceService {
   }
 
   private assertFileIdentity(row: SourceRow, file: ReadSourceFile): void {
+    let rowOrigin: unknown;
+    let rowConversionNotes: unknown;
+    try {
+      rowOrigin = JSON.parse(row.origin_json);
+      rowConversionNotes = JSON.parse(row.conversion_notes_json);
+    } catch (error) {
+      throw new InvalidStoredDataError(`Source ${row.id} has invalid stored metadata`, {
+        cause: error,
+      });
+    }
     if (
       file.id !== row.id ||
       file.notebookId !== row.notebook_id ||
-      file.origin !== row.origin ||
+      !isDeepStrictEqual(file.origin, rowOrigin) ||
+      !isDeepStrictEqual(file.conversionNotes, rowConversionNotes) ||
       file.createdAt !== row.created_at
     ) {
       throw new InvalidStoredDataError(`Source file ${row.file_path} does not match its index row`);

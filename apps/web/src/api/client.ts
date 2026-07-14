@@ -14,12 +14,15 @@ import {
   sourceDetailSchema,
   sourceMetadataListSchema,
   sourceMetadataSchema,
+  jsonImportPreviewSchema,
   type ApiErrorIssue,
   type Chat,
   type ChatDetail,
   type ConnectionTestResponse,
   type CreateNotebookInput,
-  type CreateSource,
+  type CreateSourceInput,
+  type CreateSourcesInput,
+  type JsonImportPreview,
   type MaskedSecret,
   type ModelListResponse,
   type Notebook,
@@ -62,9 +65,19 @@ export interface ApiClient {
   listSources(notebookId: string, signal?: AbortSignal): Promise<SourceMetadata[]>;
   createSource(
     notebookId: string,
-    input: CreateSource,
+    input: CreateSourceInput,
     signal?: AbortSignal,
   ): Promise<SourceMetadata>;
+  createSources(
+    notebookId: string,
+    input: CreateSourcesInput,
+    signal?: AbortSignal,
+  ): Promise<SourceMetadata[]>;
+  previewJsonImport(
+    notebookId: string,
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<JsonImportPreview>;
   getSource(id: string, signal?: AbortSignal): Promise<SourceDetail>;
   deleteSource(id: string, signal?: AbortSignal): Promise<void>;
   getProviderCatalog(signal?: AbortSignal): Promise<ProviderCatalogEntry[]>;
@@ -93,6 +106,7 @@ export type CreateChatInput = z.input<typeof createChatSchema>;
 interface RequestOptions<T> {
   method?: 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
+  formData?: FormData;
   signal?: AbortSignal;
   schema?: ResponseSchema<T>;
 }
@@ -114,7 +128,11 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       response = await fetchImpl(path, {
         ...(options.method === undefined ? {} : { method: options.method }),
         headers,
-        ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+        ...(options.formData !== undefined
+          ? { body: options.formData }
+          : options.body === undefined
+            ? {}
+            : { body: JSON.stringify(options.body) }),
         signal: options.signal,
       });
     } catch (error) {
@@ -180,6 +198,23 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: sourceMetadataSchema,
         signal,
       }),
+    createSources: (notebookId, input, signal) =>
+      request(`/api/notebooks/${encodeURIComponent(notebookId)}/sources/batch`, {
+        method: 'POST',
+        body: input,
+        schema: sourceMetadataListSchema,
+        signal,
+      }),
+    previewJsonImport: (notebookId, file, signal) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return request(`/api/notebooks/${encodeURIComponent(notebookId)}/source-previews/json`, {
+        method: 'POST',
+        formData,
+        schema: jsonImportPreviewSchema,
+        signal,
+      });
+    },
     getSource: (id, signal) =>
       request(`/api/sources/${encodeURIComponent(id)}`, { schema: sourceDetailSchema, signal }),
     deleteSource: (id, signal) =>

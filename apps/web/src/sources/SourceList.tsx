@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
 import { SourcePasteDialog } from './SourcePasteDialog.js';
+import { SourceJsonImportDialog } from './SourceJsonImportDialog.js';
 
 function formatUpdated(value: string): string {
   return new Intl.DateTimeFormat('en', {
@@ -16,6 +17,7 @@ function formatUpdated(value: string): string {
 export function SourceList() {
   const { notebookId, sourcesState, retrySources } = useNotebookWorkspace();
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [jsonImportOpen, setJsonImportOpen] = useState(false);
 
   return (
     <div className="source-index">
@@ -24,9 +26,18 @@ export function SourceList() {
           <p className="coordinate-label">Source bearings</p>
           <h2>Sources</h2>
         </div>
-        <button type="button" className="button-primary" onClick={() => setPasteOpen(true)}>
-          Paste source
-        </button>
+        <div className="source-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => setJsonImportOpen(true)}
+          >
+            Import JSON
+          </button>
+          <button type="button" className="button-primary" onClick={() => setPasteOpen(true)}>
+            Paste source
+          </button>
+        </div>
       </header>
 
       {sourcesState.status === 'loading' ? (
@@ -62,6 +73,7 @@ export function SourceList() {
       )}
 
       {pasteOpen ? <SourcePasteDialog onClose={() => setPasteOpen(false)} /> : null}
+      {jsonImportOpen ? <SourceJsonImportDialog onClose={() => setJsonImportOpen(false)} /> : null}
     </div>
   );
 }

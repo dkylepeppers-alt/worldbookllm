@@ -12,7 +12,8 @@ export interface SourceRow {
   title: string;
   slug: string;
   file_path: string;
-  origin: 'paste';
+  origin_json: string;
+  conversion_notes_json: string;
   word_count: number;
   content_hash: string;
   created_at: string;

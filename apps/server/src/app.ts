@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import multipart from '@fastify/multipart';
 
 import { openDatabase } from './db/database.js';
 import { resolveDataDir } from './env.js';
@@ -74,6 +75,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   installErrorHandler(app);
+  app.register(multipart, {
+    limits: {
+      files: 1,
+      fileSize: 5 * 1024 * 1024,
+      fields: 0,
+      parts: 1,
+    },
+  });
 
   app.get('/api/health', () => ({ status: 'ok' }));
 

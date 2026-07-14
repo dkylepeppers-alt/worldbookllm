@@ -13,6 +13,8 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     deleteNotebook: unused,
     listSources: () => Promise.resolve([]),
     createSource: unused,
+    createSources: unused,
+    previewJsonImport: unused,
     getSource: unused,
     deleteSource: unused,
     getProviderCatalog: () => Promise.resolve([]),

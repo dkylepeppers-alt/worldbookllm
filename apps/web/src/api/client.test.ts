@@ -24,7 +24,8 @@ const source: SourceMetadata = {
   title: 'First light',
   slug: 'first-light',
   filePath: `notebooks/${notebook.id}/sources/f9942d0a-eaca-41a8-a3d8-87987cc173fd-first-light.md`,
-  origin: 'paste',
+  origin: { type: 'paste' },
+  conversionNotes: [],
   wordCount: 4,
   contentHash: 'a'.repeat(64),
   createdAt: '2026-07-10T12:00:00.000Z',
@@ -136,6 +137,37 @@ describe('API client', () => {
       `/api/sources/${source.id}`,
       `/api/sources/${source.id}`,
     ]);
+  });
+
+  it('uploads JSON previews as multipart and saves reviewed sources in a batch', async () => {
+    const preview = {
+      format: 'lorebook' as const,
+      fileName: 'atlas.json',
+      entries: [{ title: 'Lore', markdown: 'Lore body.' }],
+      conversionNotes: ['Activation metadata omitted.'],
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(preview))
+      .mockResolvedValueOnce(jsonResponse([source], { status: 201 }));
+    const client = createApiClient(fetchImpl);
+    const file = new File(['{"entries":{}}'], 'atlas.json', { type: 'application/json' });
+
+    await expect(client.previewJsonImport(notebook.id, file)).resolves.toEqual(preview);
+    await expect(
+      client.createSources(notebook.id, [{ title: 'Lore', content: 'Lore body.' }]),
+    ).resolves.toEqual([source]);
+
+    const uploadInit = fetchImpl.mock.calls[0]?.[1];
+    expect(uploadInit?.headers).toEqual({ Accept: 'application/json' });
+    expect(uploadInit?.body).toBeInstanceOf(FormData);
+    expect((uploadInit?.body as FormData).get('file')).toBe(file);
+    expect(fetchImpl.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify([{ title: 'Lore', content: 'Lore body.' }]),
+      }),
+    );
   });
 
   it('normalizes server error responses', async () => {

@@ -44,7 +44,8 @@ describe('SourceFileStore', () => {
       notebookId: NOTEBOOK_ID,
       title: 'The Amber Court',
       content,
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       createdAt: CREATED_AT,
     });
 
@@ -63,7 +64,8 @@ describe('SourceFileStore', () => {
       id: SOURCE_ID,
       notebookId: NOTEBOOK_ID,
       title: 'The Amber Court',
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       createdAt: CREATED_AT,
       updatedAt: CREATED_AT,
     });
@@ -81,7 +83,8 @@ describe('SourceFileStore', () => {
       notebookId: NOTEBOOK_ID,
       title: 'Old title',
       content: 'old body',
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       createdAt: CREATED_AT,
     });
     const absolutePath = join(dataDir, stored.filePath);
@@ -97,7 +100,8 @@ describe('SourceFileStore', () => {
       id: SOURCE_ID,
       notebookId: NOTEBOOK_ID,
       title: 'Externally renamed',
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       createdAt: CREATED_AT,
       updatedAt: editedAt,
       content: editedContent,
@@ -113,7 +117,8 @@ describe('SourceFileStore', () => {
       notebookId: NOTEBOOK_ID,
       title: '日本語',
       content: 'body',
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       createdAt: CREATED_AT,
     });
 
@@ -131,7 +136,8 @@ describe('SourceFileStore', () => {
       notebookId: NOTEBOOK_ID,
       title: 'Valid first',
       content: 'body',
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       createdAt: CREATED_AT,
     });
     const realPath = join(dataDir, `notebooks/${NOTEBOOK_ID}/sources/${SOURCE_ID}-valid-first.md`);
@@ -148,7 +154,8 @@ describe('SourceFileStore', () => {
       notebookId: NOTEBOOK_ID,
       title: 'Lore',
       content: 'body',
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       createdAt: CREATED_AT,
     });
 
@@ -159,7 +166,8 @@ describe('SourceFileStore', () => {
       notebookId: NOTEBOOK_ID,
       title: 'Lore',
       content: 'body',
-      origin: 'paste',
+      origin: { type: 'paste' },
+      conversionNotes: [],
       createdAt: CREATED_AT,
     });
     expect(() => store.removeNotebook(NOTEBOOK_ID)).not.toThrow();

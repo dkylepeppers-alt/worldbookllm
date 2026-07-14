@@ -36,9 +36,32 @@ The directory tree, SQLite database, and `secrets.json` are created lazily on fi
 
 The Playwright MCP server is configured in `.mcp.json`. Use `browser_navigate` to http://localhost:5173, then `browser_snapshot` / `browser_click` / `browser_type` to exercise the flow, and `browser_take_screenshot` for visual confirmation. Check `browser_console_messages` for React errors after each significant interaction.
 
-The M1 walking-skeleton flow to exercise: create a notebook → add a pasted source → open it → (once phase 9 lands) chat against it with a configured provider.
+The M1 walking-skeleton flow to exercise: create a notebook → add a pasted source → open it → chat against it with a configured provider.
 
 Provider API keys are managed at runtime via the settings UI / `POST /api/secrets` and stored in `<data-dir>/secrets.json` — there is no `.env` for provider keys. Real-provider chat needs a real key; everything up to generation can be verified without one.
+
+## M2 ingestion journey
+
+Use deterministic checked-in fixtures for Markdown, text, PDF, and HTML. Do not verify conversion against a public website: serve the HTML fixture from a controlled local HTTP server that exercises the same guarded URL-fetch path.
+
+Drive this complete flow:
+
+1. Create a notebook and upload the PDF setting-bible fixture.
+2. Wait for conversion, inspect the origin and conversion notes, edit a deliberately mangled table in the Markdown review, and save.
+3. Import the controlled HTML fixture by URL, review the conversion, and save it.
+4. Edit a saved source and confirm the same source ID now returns the revised Markdown.
+5. Delete one imported source, re-ingest it, review again, and save. For replacement re-ingestion, verify a failed or cancelled preview leaves the current source unchanged.
+6. Chat with the converted source selected and confirm the grounded response uses its reviewed content.
+
+After UI verification, inspect the throwaway data directory:
+
+- every saved source is readable frontmattered Markdown;
+- origin metadata and conversion notes are present in the file and SQLite index;
+- reviewed edits, hashes, word counts, slugs, and timestamps agree;
+- no cancelled preview created a source;
+- no converter temporary files or orphaned old source paths remain.
+
+Also check browser console messages and server logs after conversion failures. Exercise malformed/unsupported upload and blocked URL cases in integration tests rather than attempting unsafe network destinations during browser verification.
 
 ## Test commands
 
