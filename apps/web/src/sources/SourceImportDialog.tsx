@@ -1,5 +1,5 @@
-import type { JsonImportPreview } from '@worldbookllm/shared';
-import { type ChangeEvent, useRef, useState } from 'react';
+import type { SourcePreview, SourcePreviewFormat } from '@worldbookllm/shared';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { ApiClientError } from '../api/client.js';
@@ -7,43 +7,56 @@ import { useApi } from '../api/useApi.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
 
-interface SourceJsonImportDialogProps {
+interface SourceImportDialogProps {
+  file: File;
   onClose: () => void;
 }
 
-export function SourceJsonImportDialog({ onClose }: SourceJsonImportDialogProps) {
+const FORMAT_LABELS: Record<SourcePreviewFormat, string> = {
+  markdown: 'Markdown file',
+  text: 'Plain text',
+  pdf: 'PDF',
+  html: 'HTML page',
+  lorebook: 'Lorebook',
+  character: 'Character card',
+  json: 'JSON file',
+};
+
+export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
   const api = useApi();
   const navigate = useNavigate();
   const { notebookId, addSource, setLastSourceId } = useNotebookWorkspace();
-  const [preview, setPreview] = useState<JsonImportPreview | null>(null);
+  const [preview, setPreview] = useState<SourcePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [converting, setConverting] = useState(false);
+  const [converting, setConverting] = useState(true);
   const [saving, setSaving] = useState(false);
   const [modified, setModified] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   function requestClose() {
     if (modified && !window.confirm('Discard your changes to this import?')) return;
     onClose();
   }
 
-  useDialogLifecycle(fileRef, requestClose);
+  useDialogLifecycle(cancelRef, requestClose);
 
-  async function handleFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (file === undefined) return;
-    setConverting(true);
-    setError(null);
-    try {
-      setPreview(await api.previewJsonImport(notebookId, file));
-      setModified(false);
-    } catch (value) {
-      setError(value instanceof ApiClientError ? value.message : 'Could not read the JSON import.');
-    } finally {
-      setConverting(false);
-      event.target.value = '';
-    }
-  }
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .previewFileImport(notebookId, file, controller.signal)
+      .then((result) => {
+        setPreview(result);
+        setModified(false);
+      })
+      .catch((value: unknown) => {
+        if (value instanceof DOMException && value.name === 'AbortError') return;
+        setError(
+          value instanceof ApiClientError ? value.message : 'Could not read the imported file.',
+        );
+      })
+      .finally(() => setConverting(false));
+    return () => controller.abort();
+  }, [api, file, notebookId]);
 
   function updateEntry(index: number, field: 'title' | 'markdown', value: string) {
     setPreview((current) =>
@@ -75,11 +88,7 @@ export function SourceJsonImportDialog({ onClose }: SourceJsonImportDialogProps)
         preview.entries.map((entry) => ({
           title: entry.title.trim(),
           content: entry.markdown,
-          origin: {
-            type: 'file' as const,
-            fileName: preview.fileName,
-            mediaType: 'application/json',
-          },
+          origin: preview.origin,
           conversionNotes: preview.conversionNotes,
         })),
       );
@@ -98,61 +107,46 @@ export function SourceJsonImportDialog({ onClose }: SourceJsonImportDialogProps)
     }
   }
 
-  const dialogTitle = preview === null ? 'Import SillyTavern JSON' : 'Review JSON import';
+  const originName = preview?.origin.type === 'file' ? preview.origin.fileName : file.name;
 
   return (
     <div className="dialog-backdrop">
       <section
-        className="dialog-card source-dialog json-import-dialog"
+        className="dialog-card source-dialog import-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="json-import-title"
+        aria-labelledby="import-title"
       >
-        <p className="coordinate-label">New sources · JSON import</p>
-        <h2 id="json-import-title">{dialogTitle}</h2>
+        <p className="coordinate-label">New sources · File import</p>
+        <h2 id="import-title">Review import</h2>
         {preview === null ? (
-          <>
-            <p>
-              Choose a SillyTavern lorebook or character card. Lorebook entries become separate
-              sources; card metadata is left behind.
-            </p>
-            <label htmlFor="json-import-file">JSON file</label>
-            <input
-              ref={fileRef}
-              id="json-import-file"
-              type="file"
-              accept=".json,application/json"
-              disabled={converting}
-              onChange={(event) => void handleFile(event)}
-            />
-            {converting ? <p role="status">Extracting source material…</p> : null}
-          </>
+          <p role="status">{converting ? `Converting ${file.name}…` : 'Preparing the import…'}</p>
         ) : (
           <>
             <p>
-              {preview.format === 'lorebook' ? 'Lorebook' : 'Character card'} · {preview.fileName} ·{' '}
-              {preview.entries.length} {preview.entries.length === 1 ? 'source' : 'sources'}
+              {FORMAT_LABELS[preview.format]} · {originName} · {preview.entries.length}{' '}
+              {preview.entries.length === 1 ? 'source' : 'sources'}
             </p>
             <ul className="conversion-notes" aria-label="Conversion notes">
               {preview.conversionNotes.map((note) => (
                 <li key={note}>{note}</li>
               ))}
             </ul>
-            <div className="json-import-entries">
+            <div className="import-entries">
               {preview.entries.map((entry, index) => (
                 <fieldset key={index}>
                   <legend>Source {index + 1}</legend>
-                  <label htmlFor={`json-source-title-${index}`}>Source title</label>
+                  <label htmlFor={`import-source-title-${index}`}>Source title</label>
                   <input
-                    id={`json-source-title-${index}`}
+                    id={`import-source-title-${index}`}
                     maxLength={300}
                     autoFocus={index === 0}
                     value={entry.title}
                     onChange={(event) => updateEntry(index, 'title', event.target.value)}
                   />
-                  <label htmlFor={`json-source-content-${index}`}>Markdown content</label>
+                  <label htmlFor={`import-source-content-${index}`}>Markdown content</label>
                   <textarea
-                    id={`json-source-content-${index}`}
+                    id={`import-source-content-${index}`}
                     rows={10}
                     maxLength={10_485_760}
                     value={entry.markdown}
@@ -165,7 +159,7 @@ export function SourceJsonImportDialog({ onClose }: SourceJsonImportDialogProps)
         )}
         {error === null ? null : <p role="alert">{error}</p>}
         <div className="dialog-actions">
-          <button type="button" className="button-secondary" onClick={requestClose}>
+          <button ref={cancelRef} type="button" className="button-secondary" onClick={requestClose}>
             Cancel
           </button>
           {preview === null ? null : (

@@ -1,7 +1,7 @@
 import type { Notebook, SourceDetail, SourceMetadata } from '@worldbookllm/shared';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AppRoutes } from '../App.js';
@@ -41,6 +41,15 @@ function LocationProbe() {
   return <output data-testid="location">{useLocation().pathname}</output>;
 }
 
+function NavigateProbe({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      Navigate probe
+    </button>
+  );
+}
+
 function renderPath(path: string, overrides = {}) {
   const client = createTestClient({
     getNotebook: () => Promise.resolve(notebook),
@@ -77,7 +86,11 @@ describe('notebook source workspace', () => {
     );
     expect(screen.getByRole('link', { name: 'Sources' })).toBeDefined();
     expect(screen.getByText('Reader').getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByRole('heading', { name: 'Develop with AI' })).toBeDefined();
+
+    // Chat is reachable through its own tab; opening it reveals the chat region.
+    const chatTab = screen.getByRole('button', { name: 'Chat' });
+    await userEvent.setup().click(chatTab);
+    expect(await screen.findByRole('heading', { name: 'Develop with AI' })).toBeDefined();
   });
 
   it('pastes a source and navigates to the server-returned reader', async () => {
@@ -133,9 +146,9 @@ describe('notebook source workspace', () => {
         conversionNotes: ['Activation metadata omitted.'],
       },
     ];
-    const previewJsonImport = vi.fn().mockResolvedValue({
+    const previewFileImport = vi.fn().mockResolvedValue({
       format: 'lorebook',
-      fileName: 'atlas.json',
+      origin: { type: 'file', fileName: 'atlas.json', mediaType: 'application/json' },
       entries: [
         { title: 'Amber Court', markdown: 'Amber lore.' },
         { title: 'Glass Marsh', markdown: 'Marsh lore.' },
@@ -143,19 +156,21 @@ describe('notebook source workspace', () => {
       conversionNotes: ['Activation metadata omitted.'],
     });
     const createSources = vi.fn().mockResolvedValue(imported);
-    renderPath(`/notebooks/${notebook.id}`, {
+    const { container } = renderPath(`/notebooks/${notebook.id}`, {
       listSources: () => Promise.resolve([]),
-      previewJsonImport,
+      previewFileImport,
       createSources,
     });
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole('button', { name: 'Import JSON' }));
+    await user.click(await screen.findByRole('button', { name: 'Import file' }));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (fileInput === null) throw new Error('file input not found');
     await user.upload(
-      screen.getByLabelText('JSON file'),
+      fileInput,
       new File(['{"entries":{}}'], 'atlas.json', { type: 'application/json' }),
     );
-    expect(await screen.findByRole('heading', { name: 'Review JSON import' })).toBeDefined();
+    expect(await screen.findByRole('heading', { name: 'Review import' })).toBeDefined();
     const titles = screen.getAllByRole('textbox', { name: 'Source title' });
     await user.clear(titles[0] as HTMLInputElement);
     await user.type(titles[0] as HTMLInputElement, 'Revised Amber Court');
@@ -182,6 +197,33 @@ describe('notebook source workspace', () => {
         `/notebooks/${notebook.id}/sources/${imported[1]?.id}`,
       ),
     );
+  });
+
+  it('closes the chat tab when navigating to a reader route', async () => {
+    const client = createTestClient({
+      getNotebook: () => Promise.resolve(notebook),
+      listSources: () => Promise.resolve([source]),
+      getSource: () => Promise.resolve(detail),
+    });
+    render(
+      <ApiProvider client={client}>
+        <MemoryRouter initialEntries={[`/notebooks/${notebook.id}`]}>
+          <AppRoutes />
+          <NavigateProbe to={`/notebooks/${notebook.id}/sources/${source.id}`} />
+        </MemoryRouter>
+      </ApiProvider>,
+    );
+    const user = userEvent.setup();
+
+    const chatTab = await screen.findByRole('button', { name: 'Chat' });
+    await user.click(chatTab);
+    expect(chatTab.getAttribute('aria-pressed')).toBe('true');
+
+    // Programmatic navigation (e.g. after saving an import) must reveal the reader.
+    await user.click(screen.getByRole('button', { name: 'Navigate probe' }));
+
+    await waitFor(() => expect(chatTab.getAttribute('aria-pressed')).toBe('false'));
+    expect(await screen.findByRole('heading', { name: source.title, level: 1 })).toBeDefined();
   });
 
   it('dismisses the paste dialog with Escape and restores trigger focus', async () => {

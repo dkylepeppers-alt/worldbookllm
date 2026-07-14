@@ -2,7 +2,7 @@
 
 Canonical agent guidance lives in [`AGENTS.md`](../AGENTS.md) — read it first. Key points:
 
-- pnpm 9 monorepo, Node ≥ 20. Verify changes with `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm build` from the repo root.
+- pnpm 9 monorepo, Node ≥ 20.19. Verify changes with `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm build` from the repo root.
 - `apps/server` is ESM with NodeNext resolution: relative imports need explicit `.js` extensions.
 - ESLint flat config and Prettier live at the root only — never add per-package lint/format configs.
 - Strict TypeScript everywhere (`strict` + `noUncheckedIndexedAccess` from `tsconfig.base.json`).

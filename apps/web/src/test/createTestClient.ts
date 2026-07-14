@@ -14,7 +14,7 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     listSources: () => Promise.resolve([]),
     createSource: unused,
     createSources: unused,
-    previewJsonImport: unused,
+    previewFileImport: unused,
     getSource: unused,
     deleteSource: unused,
     getProviderCatalog: () => Promise.resolve([]),

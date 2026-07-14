@@ -40,17 +40,19 @@ Stored source metadata gains `origin` and `conversionNotes`. The same structured
 
 ### Preview a local file
 
-`POST /api/notebooks/:id/source-previews/file` accepts one multipart file. Supported inputs are `.md`, `.txt`, and PDF. The server validates notebook ownership, declared media type, detected format, and configured limits before returning `SourcePreview`.
+`POST /api/notebooks/:id/source-previews/file` accepts one multipart file and is the single dispatch point for every local upload. Supported inputs are Markdown, plain text, PDF, HTML, and SillyTavern JSON (lorebook and character card). The server validates notebook ownership and configured limits, then detects the format from content — magic bytes and structure — using the file name only as a hint, never as proof. It returns `SourcePreview`.
 
-Markdown is decoded and returned without semantic rewriting. Plain text receives minimal deterministic Markdown normalization. PDF extraction and Markdown conversion are best effort and report warnings such as omitted images or uncertain table structure.
+Markdown is decoded and returned without semantic rewriting. Plain text receives minimal deterministic Markdown normalization. PDF extraction and Markdown conversion are best effort and report warnings such as omitted images or uncertain table structure. HTML is reduced to its primary content where practical and converted to Markdown, recording removals or ambiguities in conversion notes.
+
+JSON dispatch is described below.
 
 ### Preview a webpage
 
 `POST /api/notebooks/:id/source-previews/url` accepts `{ url }`. The server performs a guarded fetch and returns a `SourcePreview` only for supported HTML responses. It extracts the primary document content where practical, converts it to Markdown, records the final public URL after redirects, and reports removals or ambiguities in conversion notes.
 
-### Preview SillyTavern JSON
+### JSON dispatch within the file preview
 
-`POST /api/notebooks/:id/source-previews/json` accepts one bounded multipart `.json` file. A native lorebook preview contains one editable source per non-empty entry and omits activation settings. A V1, V2, V3, or Pygmalion-style character card preview contains the character context fields in one Markdown source and omits card specification, creator, tags, and UI metadata. Empty, malformed, unrelated, and oversized JSON is rejected.
+JSON is a dispatch target of `/source-previews/file`, detected by structure. A native lorebook preview contains one editable source per non-empty entry and omits activation settings; entry container and field names are matched loosely so schema variants are accepted. A V1, V2, V3, or Pygmalion-style character card preview contains the character context fields in one Markdown source and omits card specification, creator, tags, and UI metadata. Structurally valid JSON that matches no known lorebook or character shape is not rejected: it is converted best effort into an editable Markdown source with a conversion note, so import never fails on unfamiliar-but-valid JSON. Empty, malformed (unparseable), and oversized JSON is still rejected.
 
 ### Save a reviewed preview
 
