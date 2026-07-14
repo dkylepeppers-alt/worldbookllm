@@ -47,9 +47,19 @@ export const createSourceSchema = z.strictObject({
 });
 export const createSourcesSchema = z.array(createSourceSchema).min(1).max(1_000);
 
-export const jsonImportPreviewSchema = z.strictObject({
-  format: z.enum(['lorebook', 'character']),
-  fileName: z.string().trim().min(1).max(255),
+export const sourcePreviewFormatSchema = z.enum([
+  'markdown',
+  'text',
+  'pdf',
+  'html',
+  'lorebook',
+  'character',
+  'json',
+]);
+
+export const sourcePreviewSchema = z.strictObject({
+  format: sourcePreviewFormatSchema,
+  origin: sourceOriginSchema,
   entries: z
     .array(
       z.strictObject({
@@ -69,4 +79,5 @@ export type SourceDetail = z.infer<typeof sourceDetailSchema>;
 export type CreateSource = z.output<typeof createSourceSchema>;
 export type CreateSourceInput = z.input<typeof createSourceSchema>;
 export type CreateSourcesInput = z.input<typeof createSourcesSchema>;
-export type JsonImportPreview = z.infer<typeof jsonImportPreviewSchema>;
+export type SourcePreviewFormat = z.infer<typeof sourcePreviewFormatSchema>;
+export type SourcePreview = z.infer<typeof sourcePreviewSchema>;
