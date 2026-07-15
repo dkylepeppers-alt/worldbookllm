@@ -59,6 +59,7 @@ describe('ChatService', () => {
       title: 'Continuity',
       sourceIds: ['f9942d0a-eaca-41a8-a3d8-87987cc173fd'],
       providerOverride: null,
+      presetId: null,
     };
     const created = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', input);
     expect(created).toEqual({
@@ -90,12 +91,14 @@ describe('ChatService', () => {
         title: 'Missing',
         sourceIds: [],
         providerOverride: null,
+        presetId: null,
       }),
     ).toThrow(NotFoundError);
     const created = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
+      presetId: null,
     });
     expect(() =>
       chats.patch(created.id, { sourceIds: ['81c27453-f02c-4177-8414-dc644e6d1757'] }),
@@ -109,6 +112,7 @@ describe('ChatService', () => {
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
+      presetId: null,
     });
     db.prepare('UPDATE chats SET source_ids_json = ? WHERE id = ?').run('{broken', created.id);
     expect(() => chats.get(created.id)).toThrow(InvalidStoredDataError);
@@ -121,6 +125,7 @@ describe('ChatService', () => {
       title: 'Chat',
       sourceIds: ['f9942d0a-eaca-41a8-a3d8-87987cc173fd'],
       providerOverride: null,
+      presetId: null,
     });
     const context: GenerationContext = {
       sourceIds: chat.sourceIds,
@@ -162,6 +167,7 @@ describe('ChatService', () => {
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
+      presetId: null,
     });
     chats.beginExchange(chat.id, 'Question', {
       sourceIds: [],
@@ -172,6 +178,35 @@ describe('ChatService', () => {
     chats.delete(chat.id);
     expect(db.prepare('SELECT count(*) FROM messages').pluck().get()).toBe(0);
     expect(() => chats.get(chat.id)).toThrow(NotFoundError);
+    db.close();
+  });
+
+  it('persists nullable preset inheritance and validates explicit preset IDs', () => {
+    const { db, chats } = setup();
+    const defaultPresetId = db
+      .prepare('SELECT default_preset_id FROM app_settings WHERE id = 1')
+      .pluck()
+      .get() as string;
+    const explicit = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      title: 'Explicit',
+      sourceIds: [],
+      providerOverride: null,
+      presetId: defaultPresetId,
+    });
+    expect(explicit.presetId).toBe(defaultPresetId);
+
+    expect(chats.patch(explicit.id, { presetId: null }).presetId).toBeNull();
+    const missing = '62455a02-2fe1-4b6d-a6ce-4517bf06ada7';
+    expect(() =>
+      chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+        title: 'Missing preset',
+        sourceIds: [],
+        providerOverride: null,
+        presetId: missing,
+      }),
+    ).toThrow(NotFoundError);
+    expect(() => chats.patch(explicit.id, { presetId: missing })).toThrow(NotFoundError);
+    expect(chats.get(explicit.id).presetId).toBeNull();
     db.close();
   });
 });

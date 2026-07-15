@@ -26,8 +26,22 @@ export interface ChatRow {
   title: string;
   source_ids_json: string;
   provider_override_json: string;
+  preset_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PresetRow {
+  id: string;
+  name: string;
+  definition_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppSettingsRow {
+  id: 1;
+  default_preset_id: string;
 }
 
 export interface MessageRow {

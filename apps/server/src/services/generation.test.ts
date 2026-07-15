@@ -40,6 +40,7 @@ function setup(fetchImpl: typeof fetch, withConfig = true) {
     title: 'Chat',
     sourceIds: [source.id],
     providerOverride: null,
+    presetId: null,
   });
   const generation = new GenerationService(
     chats,
