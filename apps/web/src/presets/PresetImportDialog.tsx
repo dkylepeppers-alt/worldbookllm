@@ -1,5 +1,6 @@
 import { createPresetSchema, type CreatePreset } from '@worldbookllm/shared';
 import { useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 
@@ -106,7 +107,7 @@ export function PresetImportDialog({ onClose, onSave, externalError = null }: Pr
             <p>
               {review.modules.length} {review.modules.length === 1 ? 'module' : 'modules'}
             </p>
-            <a href="/docs/PRESET_SCHEMA.md">Preset JSON schema</a>
+            <Link to="/preset-schema">Preset JSON schema</Link>
           </section>
         )}
         <div className="dialog-actions">

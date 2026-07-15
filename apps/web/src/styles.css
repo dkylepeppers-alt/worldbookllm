@@ -634,6 +634,18 @@ label {
   padding: clamp(2rem, 6vw, 5rem) 0;
 }
 
+.schema-page {
+  width: min(100% - 2rem, 900px);
+  margin: clamp(1rem, 5vw, 3rem) auto;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  box-shadow: 5px 5px 0 rgb(36 87 197 / 15%);
+}
+
+.schema-page .markdown-body {
+  max-width: 82ch;
+}
+
 .preset-toolbar,
 .preset-actions {
   display: flex;

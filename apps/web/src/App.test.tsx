@@ -44,4 +44,12 @@ describe('application routes', () => {
     expect(screen.getByRole('link', { name: 'Presets' }).getAttribute('href')).toBe('/presets');
     expect(await screen.findByRole('heading', { name: 'Preset studio' })).toBeDefined();
   });
+
+  it('renders the normative preset schema Markdown at its offline route', () => {
+    renderRoute('/preset-schema');
+
+    expect(screen.getByRole('heading', { name: 'Preset schema version 1' })).toBeDefined();
+    expect(screen.getByText(/A preset must contain exactly one Sources module/)).toBeDefined();
+    expect(screen.getByText(/Unknown fields are rejected/)).toBeDefined();
+  });
 });

@@ -254,7 +254,7 @@ describe('Preset studio', () => {
     expect(screen.getByText('Assistant prefill (provider-dependent) Opening')).toBeDefined();
     expect(screen.getByText('1 module')).toBeDefined();
     expect(screen.getByRole('link', { name: 'Preset JSON schema' }).getAttribute('href')).toBe(
-      '/docs/PRESET_SCHEMA.md',
+      '/preset-schema',
     );
     await user.click(screen.getByRole('button', { name: 'Save imported preset' }));
     expect(createPreset).toHaveBeenCalledTimes(1);
@@ -299,6 +299,21 @@ describe('Preset studio', () => {
     await waitFor(() => expect(createPreset).toHaveBeenCalledWith(valid));
     expect(await screen.findByDisplayValue('Imported')).toBeDefined();
     expect(updateAppSettings).not.toHaveBeenCalled();
+  });
+
+  it('opens the bundled normative schema from the import review link', async () => {
+    renderStudio();
+    const user = userEvent.setup();
+    await screen.findByDisplayValue('Grounded development');
+    await user.click(screen.getByRole('button', { name: 'Import preset' }));
+    fireEvent.change(screen.getByLabelText('Preset JSON file'), {
+      target: { files: [new File([JSON.stringify(minimalImport())], 'valid.json')] },
+    });
+    await screen.findByText('Imported');
+
+    await user.click(screen.getByRole('link', { name: 'Preset JSON schema' }));
+    expect(screen.getByRole('heading', { name: 'Preset schema version 1' })).toBeDefined();
+    expect(screen.getByText(/Unknown fields are rejected/)).toBeDefined();
   });
 
   it('places depth zero, one, and sparse larger boundaries canonically without expanding depth', async () => {
