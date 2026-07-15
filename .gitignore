@@ -33,3 +33,6 @@ data/
 
 # Logs
 *.log
+
+# Local-only Claude skills (not distributed to other agents)
+.claude/skills/frontend-developer/
