@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   type CreateSource,
   type CreateSourceInput,
+  type PatchSource,
   type SourceDetail,
   type SourceMetadata,
   sourceDetailSchema,
@@ -11,6 +12,7 @@ import {
   sourceOriginSchema,
   conversionNotesSchema,
   createSourceSchema,
+  patchSourceSchema,
 } from '@worldbookllm/shared';
 import type Database from 'better-sqlite3';
 
@@ -184,6 +186,75 @@ export class SourceService {
         cause: error,
       });
     }
+  }
+
+  /**
+   * Edits a saved source's title and/or content. Source identity (`id`,
+   * `createdAt`, `origin`, conversion notes) is preserved; the Markdown file is
+   * the source of truth, so it is rewritten first (recomputing slug, hash, and
+   * word count) and the index row is updated to match. A title change moves the
+   * slugged file path, so the old file is removed only after the index commits.
+   * Any failure rolls the file back so no orphan or stale-path row is left behind.
+   */
+  patch(id: string, input: PatchSource): SourceDetail {
+    const normalized = patchSourceSchema.parse(input);
+    const current = this.get(id);
+    const title = normalized.title ?? current.title;
+    const content = normalized.content ?? current.content;
+    const timestamp = this.now();
+
+    const stored = this.sourceFiles.write({
+      id: current.id,
+      notebookId: current.notebookId,
+      title,
+      content,
+      origin: current.origin,
+      conversionNotes: current.conversionNotes,
+      createdAt: current.createdAt,
+      updatedAt: timestamp,
+    });
+    const pathChanged = stored.filePath !== current.filePath;
+
+    try {
+      this.db.transaction(() => {
+        this.db
+          .prepare(
+            'UPDATE sources SET title = ?, slug = ?, file_path = ?, word_count = ?, content_hash = ?, updated_at = ? WHERE id = ?',
+          )
+          .run(
+            title,
+            stored.slug,
+            stored.filePath,
+            stored.wordCount,
+            stored.contentHash,
+            stored.updatedAt,
+            id,
+          );
+        this.db
+          .prepare('UPDATE notebooks SET updated_at = ? WHERE id = ?')
+          .run(timestamp, current.notebookId);
+      })();
+    } catch (error) {
+      // Restore the file so the on-disk state matches the unchanged index row.
+      if (pathChanged) {
+        this.sourceFiles.remove(stored.filePath);
+      } else {
+        this.sourceFiles.write({
+          id: current.id,
+          notebookId: current.notebookId,
+          title: current.title,
+          content: current.content,
+          origin: current.origin,
+          conversionNotes: current.conversionNotes,
+          createdAt: current.createdAt,
+          updatedAt: current.updatedAt,
+        });
+      }
+      throw error;
+    }
+
+    if (pathChanged) this.sourceFiles.remove(current.filePath);
+    return this.get(id);
   }
 
   private assertFileIdentity(row: SourceRow, file: ReadSourceFile): void {

@@ -7,6 +7,7 @@ import { SourceFileStore } from './files/source-files.js';
 import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
 import { registerChatRoutes } from './routes/chats.js';
+import { registerMessageRoutes } from './routes/messages.js';
 import { registerNotebookRoutes } from './routes/notebooks.js';
 import { registerProviderRoutes } from './routes/providers.js';
 import { registerPresetRoutes } from './routes/presets.js';
@@ -99,6 +100,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerProviderRoutes(app);
   registerPresetRoutes(app);
   registerChatRoutes(app);
+  registerMessageRoutes(app);
 
   return app;
 }

@@ -30,6 +30,7 @@ export function PresetControls({
   const [settingsReloadKey, setSettingsReloadKey] = useState(0);
   const [selecting, setSelecting] = useState(false);
   const [savingTemperature, setSavingTemperature] = useState(false);
+  const [savingThinking, setSavingThinking] = useState(false);
   const [draftTemperature, setDraftTemperature] = useState<{
     presetId: string;
     value: number;
@@ -145,7 +146,8 @@ export function PresetControls({
       ? draftTemperature.value
       : activePreset.generation.temperature;
   const hasUnsavedTemperature = draftTemperature !== null;
-  const controlsBusy = selecting || savingTemperature;
+  const thinking = activePreset.generation.thinking ?? false;
+  const controlsBusy = selecting || savingTemperature || savingThinking;
 
   async function selectPreset(value: string) {
     const presetId = value === '' ? null : value;
@@ -183,6 +185,35 @@ export function PresetControls({
       temperatureTimerRef.current = null;
       void saveTemperature(activePreset, value);
     }, TEMPERATURE_COMMIT_DELAY_MS);
+  }
+
+  async function toggleThinking(next: boolean) {
+    if (mutationRef.current) return;
+    mutationRef.current = true;
+    setSavingThinking(true);
+    reportMutationBusy(true);
+    setError(null);
+    try {
+      const updated = await api.updatePreset(activePreset.id, { generation: { thinking: next } });
+      if (mountedRef.current) {
+        setPresetsState((current) =>
+          current.status === 'ready'
+            ? {
+                ...current,
+                value: current.value.map((entry) => (entry.id === updated.id ? updated : entry)),
+              }
+            : current,
+        );
+      } else {
+        onPresetUpdated(updated);
+      }
+    } catch (caught) {
+      if (mountedRef.current) setError(messageFor(caught, 'Could not save the thinking setting.'));
+    } finally {
+      mutationRef.current = false;
+      if (mountedRef.current) setSavingThinking(false);
+      reportMutationBusy(false);
+    }
   }
 
   async function saveTemperature(preset: Preset, value: number) {
@@ -268,8 +299,24 @@ export function PresetControls({
         </p>
       </div>
 
+      <div className="thinking-control">
+        <label>
+          <input
+            type="checkbox"
+            checked={thinking}
+            disabled={controlsBusy || hasUnsavedTemperature}
+            onChange={(event) => void toggleThinking(event.target.checked)}
+          />
+          Extended thinking
+        </label>
+        <p>
+          Ask the model to reason before answering and show its thinking in each response. Support
+          varies by provider, and some models only think when a max-tokens value is set.
+        </p>
+      </div>
+
       {settingsState.status === 'error' ? <SettingsError onRetry={retrySettings} /> : null}
-      {selecting || savingTemperature || hasUnsavedTemperature ? (
+      {selecting || savingTemperature || savingThinking || hasUnsavedTemperature ? (
         <p className="preset-saving">Saving…</p>
       ) : null}
       {error === null ? null : <p role="alert">{error}</p>}

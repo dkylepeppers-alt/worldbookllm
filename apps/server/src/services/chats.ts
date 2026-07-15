@@ -8,6 +8,7 @@ import {
   type GenerationContext,
   type Message,
   messageSchema,
+  type MessageVariant,
   type PatchChat,
 } from '@worldbookllm/shared';
 import type Database from 'better-sqlite3';
@@ -45,6 +46,21 @@ function mapChat(row: ChatRow): Chat {
 
 function mapMessage(row: MessageRow): Message {
   try {
+    const context = JSON.parse(row.context_json);
+    // A null variants_json means one implicit variant taken from the mirror columns,
+    // so pre-variants messages read back as a single-variant message.
+    const variants: unknown =
+      row.variants_json === null
+        ? [
+            {
+              content: row.content,
+              reasoning: row.reasoning,
+              status: row.status,
+              context,
+              createdAt: row.created_at,
+            },
+          ]
+        : JSON.parse(row.variants_json);
     return messageSchema.parse({
       id: row.id,
       chatId: row.chat_id,
@@ -53,9 +69,32 @@ function mapMessage(row: MessageRow): Message {
       content: row.content,
       reasoning: row.reasoning,
       status: row.status,
-      context: JSON.parse(row.context_json),
+      context,
       createdAt: row.created_at,
+      variants,
+      activeVariant: row.active_variant,
     });
+  } catch (error) {
+    throw new InvalidStoredDataError(`Message ${row.id} has invalid stored data`, {
+      cause: error,
+    });
+  }
+}
+
+function readVariants(row: MessageRow): MessageVariant[] {
+  try {
+    if (row.variants_json === null) {
+      return [
+        {
+          content: row.content,
+          reasoning: row.reasoning,
+          status: row.status,
+          context: JSON.parse(row.context_json) as MessageVariant['context'],
+          createdAt: row.created_at,
+        },
+      ];
+    }
+    return JSON.parse(row.variants_json) as MessageVariant[];
   } catch (error) {
     throw new InvalidStoredDataError(`Message ${row.id} has invalid stored data`, {
       cause: error,
@@ -214,13 +253,103 @@ export class ChatService {
     return mapMessage(row);
   }
 
+  private requireAssistantRow(id: string): MessageRow {
+    const row = this.db
+      .prepare("SELECT * FROM messages WHERE id = ? AND role = 'assistant'")
+      .get(id) as MessageRow | undefined;
+    if (!row) throw new NotFoundError(`Assistant message ${id} was not found`);
+    return row;
+  }
+
   updateAssistant(id: string, update: AssistantUpdate): Message {
-    const result = this.db
+    const row = this.requireAssistantRow(id);
+    // Keep the active variant in step with the mirror columns. When there is only
+    // the implicit variant (variants_json is null) the mirror columns are the whole
+    // record, so there is nothing extra to write.
+    let variantsJson = row.variants_json;
+    if (variantsJson !== null) {
+      // readVariants wraps malformed stored JSON in InvalidStoredDataError.
+      const variants = readVariants(row);
+      const active = variants[row.active_variant];
+      // An out-of-range active_variant means the mirror columns and the stored
+      // variants array have drifted; refuse rather than write a half-updated row.
+      if (!active) {
+        throw new InvalidStoredDataError(
+          `Message ${id} points at variant ${row.active_variant} of ${variants.length}`,
+        );
+      }
+      variants[row.active_variant] = {
+        ...active,
+        content: update.content,
+        reasoning: update.reasoning,
+        status: update.status,
+      };
+      variantsJson = JSON.stringify(variants);
+    }
+    this.db
       .prepare(
-        "UPDATE messages SET content = ?, reasoning = ?, status = ? WHERE id = ? AND role = 'assistant'",
+        "UPDATE messages SET content = ?, reasoning = ?, status = ?, variants_json = ? WHERE id = ? AND role = 'assistant'",
       )
-      .run(update.content, update.reasoning, update.status, id);
-    if (result.changes === 0) throw new NotFoundError(`Assistant message ${id} was not found`);
+      .run(update.content, update.reasoning, update.status, variantsJson, id);
     return this.getMessage(id);
+  }
+
+  /**
+   * Adds a fresh, empty response variant to an assistant message and makes it
+   * active. The previous responses are preserved as earlier variants; the mirror
+   * columns are reset so streaming writes land on the new variant.
+   */
+  beginRegeneration(assistantMessageId: string, context: GenerationContext): Message {
+    return this.db.transaction(() => {
+      const row = this.requireAssistantRow(assistantMessageId);
+      const timestamp = this.now();
+      const variants = [
+        ...readVariants(row),
+        {
+          content: '',
+          reasoning: null,
+          status: 'interrupted' as const,
+          context: context as MessageVariant['context'],
+          createdAt: timestamp,
+        },
+      ];
+      const activeVariant = variants.length - 1;
+      this.db
+        .prepare(
+          "UPDATE messages SET content = '', reasoning = NULL, status = 'interrupted', context_json = ?, variants_json = ?, active_variant = ? WHERE id = ? AND role = 'assistant'",
+        )
+        .run(JSON.stringify(context), JSON.stringify(variants), activeVariant, assistantMessageId);
+      const chat = this.get(row.chat_id);
+      this.db.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').run(timestamp, row.chat_id);
+      this.db
+        .prepare('UPDATE notebooks SET updated_at = ? WHERE id = ?')
+        .run(timestamp, chat.notebookId);
+      return this.getMessage(assistantMessageId);
+    })();
+  }
+
+  /** Switches which stored variant of an assistant message is the active one. */
+  selectVariant(messageId: string, index: number): Message {
+    return this.db.transaction(() => {
+      const row = this.requireAssistantRow(messageId);
+      const variants = readVariants(row);
+      const chosen = variants[index];
+      if (!chosen) {
+        throw new NotFoundError(`Variant ${index} of message ${messageId} was not found`);
+      }
+      this.db
+        .prepare(
+          "UPDATE messages SET content = ?, reasoning = ?, status = ?, context_json = ?, active_variant = ? WHERE id = ? AND role = 'assistant'",
+        )
+        .run(
+          chosen.content,
+          chosen.reasoning,
+          chosen.status,
+          JSON.stringify(chosen.context),
+          index,
+          messageId,
+        );
+      return this.getMessage(messageId);
+    })();
   }
 }

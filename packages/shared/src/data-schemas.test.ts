@@ -8,6 +8,8 @@ import {
   createSourceSchema,
   notebookListSchema,
   patchNotebookSchema,
+  patchSourceSchema,
+  patchMessageSchema,
   providerConfigSchema,
   providerSourceSchema,
   secretStateSchema,
@@ -123,6 +125,27 @@ describe('data API schemas', () => {
       content: '# Lore',
     };
     expect(sourceDetailSchema.parse(detail)).toEqual(detail);
+  });
+
+  it('validates source edits and requires at least one field', () => {
+    expect(patchSourceSchema.parse({ title: ' Renamed ' })).toEqual({ title: 'Renamed' });
+    expect(patchSourceSchema.parse({ content: '# New body' })).toEqual({ content: '# New body' });
+    expect(patchSourceSchema.parse({ title: 'A', content: 'B' })).toEqual({
+      title: 'A',
+      content: 'B',
+    });
+    expect(() => patchSourceSchema.parse({})).toThrow();
+    expect(() => patchSourceSchema.parse({ title: '' })).toThrow();
+    expect(() => patchSourceSchema.parse({ content: '' })).toThrow();
+    expect(() => patchSourceSchema.parse({ origin: { type: 'paste' } })).toThrow();
+  });
+
+  it('validates active-variant selection patches', () => {
+    expect(patchMessageSchema.parse({ activeVariant: 0 })).toEqual({ activeVariant: 0 });
+    expect(patchMessageSchema.parse({ activeVariant: 3 })).toEqual({ activeVariant: 3 });
+    expect(() => patchMessageSchema.parse({ activeVariant: -1 })).toThrow();
+    expect(() => patchMessageSchema.parse({ activeVariant: 1.5 })).toThrow();
+    expect(() => patchMessageSchema.parse({})).toThrow();
   });
 
   it('accepts every documented source origin variant and rejects unsafe URLs', () => {

@@ -1,6 +1,7 @@
 import {
   createSourceSchema,
   createSourcesSchema,
+  patchSourceSchema,
   resourceIdParamsSchema,
 } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
@@ -45,6 +46,12 @@ export function registerSourceRoutes(app: FastifyInstance): void {
   app.get('/api/sources/:id', (request) => {
     const { id } = resourceIdParamsSchema.parse(request.params);
     return app.services.sources.get(id);
+  });
+
+  app.patch('/api/sources/:id', (request) => {
+    const { id } = resourceIdParamsSchema.parse(request.params);
+    const body = patchSourceSchema.parse(request.body);
+    return app.services.sources.patch(id, body);
   });
 
   app.delete('/api/sources/:id', async (request, reply) => {

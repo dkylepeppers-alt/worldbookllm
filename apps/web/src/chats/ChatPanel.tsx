@@ -14,7 +14,7 @@ import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
 import { ProviderConfigDialog } from '../providers/ProviderConfigDialog.js';
-import { ChatMessages, type PendingExchange } from './ChatMessages.js';
+import { ChatMessages, type PendingExchange, type RegenStream } from './ChatMessages.js';
 import { MessageComposer } from './MessageComposer.js';
 import { PromptInspectorDialog } from './PromptInspectorDialog.js';
 import { PresetControls } from './PresetControls.js';
@@ -46,6 +46,8 @@ export function ChatPanel() {
   const [detail, setDetail] = useState<DetailState>({ status: 'idle' });
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [pending, setPending] = useState<PendingExchange | null>(null);
+  const [regen, setRegen] = useState<RegenStream | null>(null);
+  const [switchingVariant, setSwitchingVariant] = useState(false);
   const [savingSources, setSavingSources] = useState(false);
   const [presetMutationBusyOwners, setPresetMutationBusyOwners] = useState<ReadonlySet<symbol>>(
     () => new Set(),
@@ -136,6 +138,7 @@ export function ChatPanel() {
       abortRef.current?.abort();
       abortRef.current = null;
       setPending(null);
+      setRegen(null);
     };
   }, [selectedId]);
 
@@ -145,7 +148,12 @@ export function ChatPanel() {
     const controller = new AbortController();
     abortRef.current = controller;
     setStreamError(null);
-    setPending({ userContent: content, assistantText: '', stopping: false });
+    setPending({
+      userContent: content,
+      assistantText: '',
+      assistantReasoning: '',
+      stopping: false,
+    });
     let sawEvent = false;
     let rejectedBeforeStream = false;
     try {
@@ -157,7 +165,11 @@ export function ChatPanel() {
             setPending((current) =>
               current === null
                 ? current
-                : { ...current, assistantText: current.assistantText + event.text },
+                : {
+                    ...current,
+                    assistantText: current.assistantText + event.text,
+                    assistantReasoning: current.assistantReasoning + (event.reasoning ?? ''),
+                  },
             );
           } else if (event.type === 'error') {
             setStreamError(event.message);
@@ -193,6 +205,79 @@ export function ChatPanel() {
   function stopStreaming() {
     abortRef.current?.abort();
     setPending((current) => (current === null ? current : { ...current, stopping: true }));
+    setRegen((current) => (current === null ? current : { ...current, stopping: true }));
+  }
+
+  async function regenerate(message: Message) {
+    if (selectedId === null || pending !== null || regen !== null) return;
+    const chatId = selectedId;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStreamError(null);
+    setRegen({ messageId: message.id, text: '', reasoning: '', stopping: false });
+    try {
+      await api.regenerateMessage(chatId, {
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.type === 'delta') {
+            setRegen((current) =>
+              current === null
+                ? current
+                : {
+                    ...current,
+                    text: current.text + event.text,
+                    reasoning: current.reasoning + (event.reasoning ?? ''),
+                  },
+            );
+          } else if (event.type === 'error') {
+            setStreamError(event.message);
+          }
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setStreamError(messageFor(error, 'Could not regenerate the response.'));
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      // Reconstruct the history from the server regardless of how the stream
+      // ended so the new variant and its swipe controls reflect persisted state.
+      if (selectedIdRef.current === chatId) {
+        try {
+          const fresh = await api.getChat(chatId);
+          if (selectedIdRef.current === chatId) setDetail({ status: 'ready', detail: fresh });
+        } catch {
+          // Keep the last known history; the user can reselect to retry.
+        }
+        setRegen(null);
+      }
+    }
+  }
+
+  async function selectVariant(message: Message, index: number) {
+    if (switchingVariant) return;
+    setSwitchingVariant(true);
+    setStreamError(null);
+    try {
+      const updated = await api.selectVariant(message.id, index);
+      setDetail((current) =>
+        current.status === 'ready' && current.detail.id === selectedIdRef.current
+          ? {
+              status: 'ready',
+              detail: {
+                ...current.detail,
+                messages: current.detail.messages.map((entry) =>
+                  entry.id === updated.id ? updated : entry,
+                ),
+              },
+            }
+          : current,
+      );
+    } catch (error) {
+      setStreamError(messageFor(error, 'Could not switch the response version.'));
+    } finally {
+      setSwitchingVariant(false);
+    }
   }
 
   function adoptChat(updated: Chat) {
@@ -390,13 +475,17 @@ export function ChatPanel() {
               <ChatMessages
                 messages={selectedDetail.messages}
                 pending={pending}
+                regenStream={regen}
                 onInspect={setInspecting}
                 onAddToSources={setCapturing}
+                onRegenerate={(message) => void regenerate(message)}
+                onSelectVariant={(message, index) => void selectVariant(message, index)}
+                busy={pending !== null || regen !== null || switchingVariant}
               />
               {streamError === null ? null : <p role="alert">{streamError}</p>}
               <MessageComposer
-                streaming={pending !== null}
-                stopping={pending?.stopping ?? false}
+                streaming={pending !== null || regen !== null}
+                stopping={pending?.stopping ?? regen?.stopping ?? false}
                 sendDisabled={savingSources || presetMutationBusyOwners.size > 0}
                 onSend={send}
                 onStop={stopStreaming}

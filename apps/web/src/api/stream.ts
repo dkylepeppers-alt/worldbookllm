@@ -36,24 +36,23 @@ function emitFrame(rawFrame: string, onEvent: (event: StreamEvent) => void): voi
 }
 
 /**
- * Sends a user message with `POST /api/chats/:id/messages` and consumes the
- * SSE response with a fetch reader (`EventSource` cannot POST a body or take
- * an `AbortSignal`). Resolves when the server closes the stream after its
- * terminal `done`/`error` event; rejects on abort, transport failure, HTTP
- * errors before the stream begins, and malformed or invalid frames.
+ * POSTs to an SSE endpoint and consumes the stream with a fetch reader
+ * (`EventSource` cannot POST a body or take an `AbortSignal`). Resolves when the
+ * server closes the stream after its terminal `done`/`error` event; rejects on
+ * abort, transport failure, HTTP errors before the stream begins, and malformed
+ * or invalid frames. Pass `undefined` for `body` on endpoints that take none.
  */
-export async function streamChatMessage(
-  chatId: string,
-  content: string,
-  options: StreamChatOptions,
-): Promise<void> {
+async function streamSse(path: string, body: unknown, options: StreamChatOptions): Promise<void> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   let response: Response;
   try {
-    response = await fetchImpl(`/api/chats/${encodeURIComponent(chatId)}/messages`, {
+    response = await fetchImpl(path, {
       method: 'POST',
-      headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      headers: {
+        Accept: 'text/event-stream',
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: options.signal,
     });
   } catch (error) {
@@ -116,4 +115,18 @@ export async function streamChatMessage(
   // that ends without one was truncated (or wasn't SSE at all) and must not
   // pass for a successful exchange.
   if (!sawTerminal) throw invalidResponse();
+}
+
+/** Sends a user message with `POST /api/chats/:id/messages`. */
+export function streamChatMessage(
+  chatId: string,
+  content: string,
+  options: StreamChatOptions,
+): Promise<void> {
+  return streamSse(`/api/chats/${encodeURIComponent(chatId)}/messages`, { content }, options);
+}
+
+/** Re-runs the last assistant turn with `POST /api/chats/:id/regenerate` (no body). */
+export function streamRegenerate(chatId: string, options: StreamChatOptions): Promise<void> {
+  return streamSse(`/api/chats/${encodeURIComponent(chatId)}/regenerate`, undefined, options);
 }

@@ -8,6 +8,10 @@ export const generationControlsSchema = z.strictObject({
   topP: z.number().positive().max(1).nullable(),
   maxTokens: z.number().int().min(1).max(131_072).nullable(),
   assistantPrefill: z.string().max(32_768).nullable(),
+  // Additive and schemaVersion-1-compatible: optional so presets, portable imports,
+  // and stored exchange snapshots authored before this field still validate. Absent
+  // is treated as "off" at the point the request is built.
+  thinking: z.boolean().optional(),
 });
 
 const generationControlsPatchSchema = generationControlsSchema

@@ -5,7 +5,35 @@ import {
   patchChatSchema,
   resourceIdParamsSchema,
 } from '@worldbookllm/shared';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
+
+import type { PreparedGeneration } from '../services/generation.js';
+
+async function streamPrepared(
+  app: FastifyInstance,
+  reply: FastifyReply,
+  prepared: PreparedGeneration,
+): Promise<void> {
+  const controller = new AbortController();
+  const onClose = () => controller.abort();
+  reply.hijack();
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  reply.raw.once('close', onClose);
+  try {
+    await app.services.generation.stream(prepared, controller.signal, (event) => {
+      if (!reply.raw.destroyed) reply.raw.write(encodeSseEvent(event));
+    });
+  } finally {
+    reply.raw.off('close', onClose);
+    prepared.release();
+    if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end();
+  }
+}
 
 export function registerChatRoutes(app: FastifyInstance): void {
   app.get('/api/notebooks/:id/chats', (request) => {
@@ -36,24 +64,12 @@ export function registerChatRoutes(app: FastifyInstance): void {
     const { id } = resourceIdParamsSchema.parse(request.params);
     const { content } = createMessageSchema.parse(request.body);
     const prepared = app.services.generation.prepare(id, content);
-    const controller = new AbortController();
-    const onClose = () => controller.abort();
-    reply.hijack();
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-    reply.raw.once('close', onClose);
-    try {
-      await app.services.generation.stream(prepared, controller.signal, (event) => {
-        if (!reply.raw.destroyed) reply.raw.write(encodeSseEvent(event));
-      });
-    } finally {
-      reply.raw.off('close', onClose);
-      prepared.release();
-      if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end();
-    }
+    await streamPrepared(app, reply, prepared);
+  });
+
+  app.post('/api/chats/:id/regenerate', async (request, reply) => {
+    const { id } = resourceIdParamsSchema.parse(request.params);
+    const prepared = app.services.generation.prepareRegeneration(id);
+    await streamPrepared(app, reply, prepared);
   });
 }

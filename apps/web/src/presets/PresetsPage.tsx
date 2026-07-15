@@ -609,6 +609,16 @@ function PresetEditor(props: EditorProps) {
             onChange={(event) => setGeneration({ assistantPrefill: event.target.value })}
           />
         )}
+        <label className="nullable-toggle">
+          <input
+            aria-label="Enable extended thinking"
+            type="checkbox"
+            disabled={props.busy}
+            checked={draft.generation.thinking ?? false}
+            onChange={(event) => setGeneration({ thinking: event.target.checked })}
+          />{' '}
+          Extended thinking (show model reasoning)
+        </label>
       </section>
       <section className="preset-card">
         <header className="region-header">

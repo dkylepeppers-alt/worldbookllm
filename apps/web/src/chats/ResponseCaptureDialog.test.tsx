@@ -60,6 +60,7 @@ function renderDialog(overrides = {}, value: Message = message, onClose = vi.fn(
             sourcesState: { status: 'ready', sources: [] },
             retrySources: vi.fn(),
             addSource,
+            updateSource: vi.fn(),
             removeSource: vi.fn(),
             replaceNotebook: vi.fn(),
             lastSourceId: null,

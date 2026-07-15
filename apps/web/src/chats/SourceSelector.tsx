@@ -35,15 +35,12 @@ export function SourceSelector({
   if (sourcesState.status !== 'ready') return null;
   const sources = sourcesState.sources;
   const selected = new Set(optimistic ?? selectedSourceIds);
+  const allSelected = sources.length > 0 && selected.size === sources.length;
 
-  async function toggle(sourceId: string) {
+  // Persists a complete selection in a single PATCH. Individual toggles and the
+  // bulk Select all / Clear all actions all route through here.
+  async function persistSelection(sourceIds: string[]) {
     if (saving || sourcesState.status !== 'ready') return;
-    const next = new Set(selected);
-    if (next.has(sourceId)) next.delete(sourceId);
-    else next.add(sourceId);
-    const sourceIds = sourcesState.sources
-      .filter((source) => next.has(source.id))
-      .map((source) => source.id);
     setSaving(true);
     onSavingChange?.(true);
     setOptimistic(sourceIds);
@@ -61,6 +58,16 @@ export function SourceSelector({
     }
   }
 
+  async function toggle(sourceId: string) {
+    if (sourcesState.status !== 'ready') return;
+    const next = new Set(selected);
+    if (next.has(sourceId)) next.delete(sourceId);
+    else next.add(sourceId);
+    await persistSelection(
+      sourcesState.sources.filter((source) => next.has(source.id)).map((source) => source.id),
+    );
+  }
+
   return (
     <fieldset className="source-selector" disabled={saving}>
       <legend>Grounding sources</legend>
@@ -68,9 +75,27 @@ export function SourceSelector({
         <p className="empty-inline">No sources yet — paste one to ground this chat.</p>
       ) : (
         <>
-          <p className="coordinate-label">
-            {selected.size} of {sources.length} sources selected
-          </p>
+          <div className="source-selector-heading">
+            <p className="coordinate-label">
+              {selected.size} of {sources.length} sources selected
+            </p>
+            <div className="source-selector-bulk">
+              <button
+                type="button"
+                disabled={saving || allSelected}
+                onClick={() => void persistSelection(sources.map((source) => source.id))}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                disabled={saving || selected.size === 0}
+                onClick={() => void persistSelection([])}
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
           <ul className="source-selector-list">
             {sources.map((source) => (
               <li key={source.id}>

@@ -54,4 +54,7 @@ export interface MessageRow {
   status: 'complete' | 'interrupted' | 'error';
   context_json: string;
   created_at: string;
+  /** JSON array of MessageVariant, or null for a single implicit variant. */
+  variants_json: string | null;
+  active_variant: number;
 }

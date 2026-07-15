@@ -79,6 +79,17 @@ export function NotebookWorkspace() {
     );
   }, []);
 
+  const updateSource = useCallback((source: SourceMetadata) => {
+    setSourcesState((current) =>
+      current.status === 'ready'
+        ? {
+            status: 'ready',
+            sources: current.sources.map((entry) => (entry.id === source.id ? source : entry)),
+          }
+        : current,
+    );
+  }, []);
+
   const removeSource = useCallback((sourceId: string) => {
     setSourcesState((current) =>
       current.status === 'ready'
@@ -103,6 +114,7 @@ export function NotebookWorkspace() {
         setSourcesReloadKey((current) => current + 1);
       },
       addSource,
+      updateSource,
       removeSource,
       replaceNotebook,
       lastSourceId,
@@ -116,6 +128,7 @@ export function NotebookWorkspace() {
     removeSource,
     replaceNotebook,
     sourcesState,
+    updateSource,
   ]);
 
   if (notebookId === undefined) return null;

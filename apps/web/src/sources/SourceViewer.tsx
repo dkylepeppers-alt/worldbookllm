@@ -11,16 +11,64 @@ import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js
 
 interface SourceViewerProps {
   source: SourceDetail;
+  onUpdated: (source: SourceDetail) => void;
 }
 
-export function SourceViewer({ source }: SourceViewerProps) {
+export function SourceViewer({ source, onUpdated }: SourceViewerProps) {
   const api = useApi();
   const navigate = useNavigate();
-  const { notebookId, removeSource } = useNotebookWorkspace();
+  const { notebookId, updateSource, removeSource } = useNotebookWorkspace();
   const [mode, setMode] = useState<'rendered' | 'raw'>('rendered');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(source.title);
+  const [draftContent, setDraftContent] = useState(source.content);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function startEditing() {
+    setDraftTitle(source.title);
+    setDraftContent(source.content);
+    setError(null);
+    setEditing(true);
+  }
+
+  async function handleSave() {
+    const title = draftTitle.trim();
+    if (title.length === 0) {
+      setError('Enter a source title.');
+      return;
+    }
+    if (draftContent.length === 0) {
+      setError('A source cannot be empty.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.updateSource(source.id, { title, content: draftContent });
+      updateSource({
+        id: updated.id,
+        notebookId: updated.notebookId,
+        title: updated.title,
+        slug: updated.slug,
+        filePath: updated.filePath,
+        origin: updated.origin,
+        conversionNotes: updated.conversionNotes,
+        wordCount: updated.wordCount,
+        contentHash: updated.contentHash,
+        createdAt: updated.createdAt,
+        updatedAt: updated.updatedAt,
+      });
+      onUpdated(updated);
+      setEditing(false);
+    } catch (value) {
+      setError(value instanceof ApiClientError ? value.message : 'Could not save the source.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleDelete() {
     setDeleting(true);
@@ -37,10 +85,56 @@ export function SourceViewer({ source }: SourceViewerProps) {
     }
   }
 
+  if (editing) {
+    return (
+      <article className="source-viewer">
+        <header className="source-viewer-header">
+          <p className="coordinate-label">Editing source</p>
+          <label htmlFor="source-title">Title</label>
+          <input
+            id="source-title"
+            maxLength={300}
+            disabled={saving}
+            value={draftTitle}
+            onChange={(event) => setDraftTitle(event.target.value)}
+          />
+          {error === null ? null : <p role="alert">{error}</p>}
+        </header>
+        <label htmlFor="source-content">Markdown</label>
+        <textarea
+          id="source-content"
+          className="source-editor"
+          aria-label="Source Markdown"
+          disabled={saving}
+          value={draftContent}
+          onChange={(event) => setDraftContent(event.target.value)}
+        />
+        <div className="dialog-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={saving}
+            onClick={() => setEditing(false)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="button-primary"
+            disabled={saving}
+            onClick={() => void handleSave()}
+          >
+            {saving ? 'Saving…' : 'Save source'}
+          </button>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <article className="source-viewer">
       <header className="source-viewer-header">
-        <p className="coordinate-label">Read-only Markdown · {source.wordCount} words</p>
+        <p className="coordinate-label">Markdown · {source.wordCount} words</p>
         <h1>{source.title}</h1>
         <code className="source-path">{source.filePath}</code>
         <div className="viewer-toolbar" aria-label="Source display">
@@ -56,6 +150,9 @@ export function SourceViewer({ source }: SourceViewerProps) {
               Raw
             </button>
           </div>
+          <button type="button" aria-label={`Edit ${source.title}`} onClick={startEditing}>
+            Edit
+          </button>
           <button
             type="button"
             className="text-danger"

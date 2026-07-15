@@ -85,6 +85,19 @@ describe('preset schemas', () => {
     }
   });
 
+  it('accepts an optional thinking flag and defaults absent to undefined', () => {
+    expect(generationControlsSchema.parse(portablePreset.generation).thinking).toBeUndefined();
+    expect(
+      generationControlsSchema.parse({ ...portablePreset.generation, thinking: true }).thinking,
+    ).toBe(true);
+    expect(
+      generationControlsSchema.parse({ ...portablePreset.generation, thinking: false }).thinking,
+    ).toBe(false);
+    expect(() =>
+      generationControlsSchema.parse({ ...portablePreset.generation, thinking: 'yes' }),
+    ).toThrow();
+  });
+
   it('rejects unknown fields and unsupported schema versions', () => {
     expect(() => portablePresetSchema.parse({ ...portablePreset, schemaVersion: 2 })).toThrow();
     expect(() => portablePresetSchema.parse({ ...portablePreset, surprise: true })).toThrow();
