@@ -266,6 +266,33 @@ describe('ChatService', () => {
     db.close();
   });
 
+  it('refuses to update an assistant whose active_variant is out of range', () => {
+    const { db, chats, now } = setup();
+    const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      title: 'Chat',
+      sourceIds: [],
+      providerOverride: null,
+      presetId: null,
+    });
+    const { assistant } = chats.beginExchange(chat.id, 'Ask', {
+      sourceIds: [],
+      provider: 'nanogpt',
+      model: 'gpt-4o-mini',
+      strictness: 'grounded',
+    });
+    const oneVariant = JSON.stringify([
+      { content: 'a', reasoning: null, status: 'complete', context: null, createdAt: now },
+    ]);
+    db.prepare('UPDATE messages SET variants_json = ?, active_variant = 5 WHERE id = ?').run(
+      oneVariant,
+      assistant.id,
+    );
+    expect(() =>
+      chats.updateAssistant(assistant.id, { content: 'x', reasoning: null, status: 'complete' }),
+    ).toThrow(InvalidStoredDataError);
+    db.close();
+  });
+
   it('deletes chats with cascading messages', () => {
     const { db, chats } = setup();
     const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {

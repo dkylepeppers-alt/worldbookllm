@@ -271,15 +271,20 @@ export class ChatService {
       // readVariants wraps malformed stored JSON in InvalidStoredDataError.
       const variants = readVariants(row);
       const active = variants[row.active_variant];
-      if (active) {
-        variants[row.active_variant] = {
-          ...active,
-          content: update.content,
-          reasoning: update.reasoning,
-          status: update.status,
-        };
-        variantsJson = JSON.stringify(variants);
+      // An out-of-range active_variant means the mirror columns and the stored
+      // variants array have drifted; refuse rather than write a half-updated row.
+      if (!active) {
+        throw new InvalidStoredDataError(
+          `Message ${id} points at variant ${row.active_variant} of ${variants.length}`,
+        );
       }
+      variants[row.active_variant] = {
+        ...active,
+        content: update.content,
+        reasoning: update.reasoning,
+        status: update.status,
+      };
+      variantsJson = JSON.stringify(variants);
     }
     this.db
       .prepare(
