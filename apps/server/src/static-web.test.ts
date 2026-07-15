@@ -49,6 +49,22 @@ describe('production static web serving (ADR 0002)', () => {
     expect(missingApiRoute.statusCode).toBe(404);
     expect(missingApiRoute.json()).toMatchObject({ error: 'not_found' });
 
+    // A bare /api (no trailing slash) is still API space, not a client route.
+    const bareApi = await app.inject({ method: 'GET', url: '/api' });
+    expect(bareApi.statusCode).toBe(404);
+    expect(bareApi.json()).toMatchObject({ error: 'not_found' });
+
+    // Non-navigation methods to an unknown path are a real 404, not the app shell.
+    const postToUnknown = await app.inject({ method: 'POST', url: '/notebooks/some-id' });
+    expect(postToUnknown.statusCode).toBe(404);
+    expect(postToUnknown.json()).toMatchObject({ error: 'not_found' });
+
+    // A missing static asset (has a file extension) 404s instead of masking
+    // the miss with the app shell.
+    const missingAsset = await app.inject({ method: 'GET', url: '/icons/missing.png' });
+    expect(missingAsset.statusCode).toBe(404);
+    expect(missingAsset.json()).toMatchObject({ error: 'not_found' });
+
     await app.close();
   });
 

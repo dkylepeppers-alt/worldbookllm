@@ -26,6 +26,22 @@ import { PresetService } from './services/presets.js';
 import { UPLOAD_LIMIT_BYTES } from './services/converters/limits.js';
 import { SourceService } from './services/sources.js';
 
+/**
+ * True for a request the SPA fallback should answer with index.html: a
+ * GET/HEAD for something that isn't the API and isn't a real (missing) file.
+ * Excludes other methods (a POST to an unknown path is a real 404, not a
+ * page load) and excludes any path whose last segment has a file extension
+ * (e.g. a missing /icons/x.png stays a 404 instead of silently becoming the
+ * app shell).
+ */
+function isSpaNavigation(method: string, url: string): boolean {
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  const pathname = url.split(/[?#]/u)[0] ?? url;
+  if (pathname === '/api' || pathname.startsWith('/api/')) return false;
+  const lastSegment = pathname.slice(pathname.lastIndexOf('/') + 1);
+  return !lastSegment.includes('.');
+}
+
 export interface AppServices {
   notebooks: NotebookService;
   sources: SourceService;
@@ -119,12 +135,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }
 
   app.setNotFoundHandler((request, reply) => {
-    if (serveWeb && !request.raw.url?.startsWith('/api/')) {
+    const url = request.raw.url ?? '';
+    if (serveWeb && isSpaNavigation(request.method, url)) {
       return reply.sendFile('index.html');
     }
     return reply.status(404).send({
       error: 'not_found',
-      message: `Route ${request.method}:${request.raw.url} was not found`,
+      message: `Route ${request.method}:${url} was not found`,
     });
   });
 

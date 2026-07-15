@@ -4,7 +4,7 @@
 //
 //   pnpm --filter @worldbookllm/web generate:icons
 //
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,6 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, '..');
 const markSvg = readFileSync(join(webRoot, 'src/brand/mark.svg'));
 const iconsDir = join(webRoot, 'public/icons');
+mkdirSync(iconsDir, { recursive: true });
 
 // The manifest icon at 512/192 doubles as the "maskable" purpose: the ring's
 // outer edge (150 + 34/2 = 167px) sits well inside the W3C maskable safe
