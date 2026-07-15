@@ -24,3 +24,7 @@ All from the repo root (pnpm 9, Node ≥ 20.19):
 - ESLint flat config + Prettier at the root only — don't add per-package configs.
 - User data lives in `data/` (gitignored): sources as `.md` files on disk are the source of truth; SQLite is a rebuildable index (ADR 0003). Never design features that hide source content from the user.
 - Architecture decisions get an ADR in `docs/decisions/`.
+
+## Design context
+
+`apps/web` has captured Impeccable design context: `apps/web/PRODUCT.md` (register: product, platform: web — users, purpose, positioning, anti-references) and `apps/web/DESIGN.md` (the "Field Atlas" visual system: paper/blueprint/vermilion palette, Archivo + Source Serif 4 pairing, stamped card shadows). Read both before making UI changes in `apps/web`.
