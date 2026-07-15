@@ -152,6 +152,30 @@ describe('ProviderService', () => {
     ]);
   });
 
+  it('requests reasoning only when the thinking control is enabled', () => {
+    const secrets = store();
+    secrets.add('api_key_openrouter', 'openrouter-key', 'Primary');
+    const service = new ProviderService(
+      secrets,
+      new ProviderHttpClient(async () => Promise.reject(new Error('not called'))),
+    );
+    const base = { temperature: 0.5, topP: null, maxTokens: null, assistantPrefill: null };
+
+    const off = service.createChatRequest(
+      { source: 'openrouter', model: 'anthropic/claude-3.5-sonnet' },
+      [{ role: 'user', content: 'Hello' }],
+      { ...base, thinking: false },
+    );
+    expect(off.body.reasoning).toMatchObject({ exclude: true });
+
+    const on = service.createChatRequest(
+      { source: 'openrouter', model: 'anthropic/claude-3.5-sonnet' },
+      [{ role: 'user', content: 'Hello' }],
+      { ...base, thinking: true },
+    );
+    expect(on.body.reasoning).toMatchObject({ exclude: false });
+  });
+
   it('snapshots only the JSON request body and redacts active secrets inside nested strings', () => {
     const secrets = store();
     secrets.add('api_key_custom', 'active-secret', 'Primary');

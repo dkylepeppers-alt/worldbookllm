@@ -2,7 +2,7 @@ import type { Message, StreamEvent } from '@worldbookllm/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiClientError } from './client.js';
-import { streamChatMessage } from './stream.js';
+import { streamChatMessage, streamRegenerate } from './stream.js';
 
 const chatId = '60a0bf0c-031d-497c-9c1a-2f68441936a6';
 
@@ -40,6 +40,28 @@ function sseResponse(chunks: string[]): Response {
     headers: { 'content-type': 'text/event-stream; charset=utf-8' },
   });
 }
+
+describe('streamRegenerate', () => {
+  it('posts to the regenerate endpoint with no request body', async () => {
+    const wire =
+      frame({ type: 'delta', text: 'Again' }) + frame({ type: 'done', message: assistantMessage });
+    const fetchImpl = vi.fn().mockResolvedValue(sseResponse([wire]));
+    const events: StreamEvent[] = [];
+
+    await streamRegenerate(chatId, { onEvent: (event) => events.push(event), fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `/api/chats/${chatId}/regenerate`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const init = fetchImpl.mock.calls[0]?.[1] as RequestInit;
+    expect(init.body).toBeUndefined();
+    expect(events).toEqual([
+      { type: 'delta', text: 'Again' },
+      { type: 'done', message: assistantMessage },
+    ]);
+  });
+});
 
 describe('streamChatMessage', () => {
   it('posts the user message and emits events split across chunk boundaries', async () => {

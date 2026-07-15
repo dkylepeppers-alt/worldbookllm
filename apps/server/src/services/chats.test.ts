@@ -161,6 +161,88 @@ describe('ChatService', () => {
     db.close();
   });
 
+  it('reads a pre-variants assistant message as a single implicit variant', () => {
+    const { db, chats } = setup();
+    const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      title: 'Chat',
+      sourceIds: [],
+      providerOverride: null,
+      presetId: null,
+    });
+    const context: GenerationContext = {
+      sourceIds: [],
+      provider: 'nanogpt',
+      model: 'gpt-4o-mini',
+      strictness: 'grounded',
+    };
+    const { assistant } = chats.beginExchange(chat.id, 'Ask', context);
+    const updated = chats.updateAssistant(assistant.id, {
+      content: 'Answer one',
+      reasoning: null,
+      status: 'complete',
+    });
+    expect(updated.variants).toEqual([
+      {
+        content: 'Answer one',
+        reasoning: null,
+        status: 'complete',
+        context,
+        createdAt: updated.createdAt,
+      },
+    ]);
+    expect(updated.activeVariant).toBe(0);
+    db.close();
+  });
+
+  it('regenerates into new variants and switches the active one', () => {
+    const { db, chats } = setup();
+    const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      title: 'Chat',
+      sourceIds: [],
+      providerOverride: null,
+      presetId: null,
+    });
+    const context: GenerationContext = {
+      sourceIds: [],
+      provider: 'nanogpt',
+      model: 'gpt-4o-mini',
+      strictness: 'grounded',
+    };
+    const { assistant } = chats.beginExchange(chat.id, 'Ask', context);
+    chats.updateAssistant(assistant.id, { content: 'First', reasoning: null, status: 'complete' });
+
+    const regenerating = chats.beginRegeneration(assistant.id, context);
+    expect(regenerating).toMatchObject({ content: '', status: 'interrupted', activeVariant: 1 });
+    expect(regenerating.variants).toHaveLength(2);
+    expect(regenerating.variants?.[0]).toMatchObject({ content: 'First', status: 'complete' });
+
+    const second = chats.updateAssistant(assistant.id, {
+      content: 'Second',
+      reasoning: 'thinking',
+      status: 'complete',
+    });
+    // Only the active variant is rewritten; the earlier one is preserved.
+    expect(second.content).toBe('Second');
+    expect(second.variants?.[0]).toMatchObject({ content: 'First' });
+    expect(second.variants?.[1]).toMatchObject({ content: 'Second', reasoning: 'thinking' });
+
+    const back = chats.selectVariant(assistant.id, 0);
+    expect(back).toMatchObject({ content: 'First', reasoning: null, activeVariant: 0 });
+    // History mirrors the newly-selected active variant.
+    const history = chats.getHistory(chat.id);
+    expect(history.at(-1)).toMatchObject({ content: 'First', activeVariant: 0 });
+
+    expect(() => chats.selectVariant(assistant.id, 5)).toThrow(NotFoundError);
+    db.close();
+  });
+
+  it('rejects variant selection for a message that does not exist', () => {
+    const { db, chats } = setup();
+    const missing = '00000000-0000-4000-8000-000000000000';
+    expect(() => chats.selectVariant(missing, 0)).toThrow(NotFoundError);
+    db.close();
+  });
+
   it('deletes chats with cascading messages', () => {
     const { db, chats } = setup();
     const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {

@@ -52,6 +52,17 @@ export const createSourceSchema = z.strictObject({
 });
 export const createSourcesSchema = z.array(createSourceSchema).min(1).max(1_000);
 
+// Ordinary edit of a saved source: title and/or content. Origin, conversion notes,
+// id, and createdAt are preserved by the server; re-ingestion is a separate concern.
+export const patchSourceSchema = z
+  .strictObject({
+    title: sourceTitleSchema.optional(),
+    content: z.string().min(1).max(10_485_760).optional(),
+  })
+  .refine((value) => value.title !== undefined || value.content !== undefined, {
+    message: 'At least one source field is required',
+  });
+
 export const sourcePreviewFormatSchema = z.enum([
   'markdown',
   'text',
@@ -84,5 +95,6 @@ export type SourceDetail = z.infer<typeof sourceDetailSchema>;
 export type CreateSource = z.output<typeof createSourceSchema>;
 export type CreateSourceInput = z.input<typeof createSourceSchema>;
 export type CreateSourcesInput = z.input<typeof createSourcesSchema>;
+export type PatchSource = z.infer<typeof patchSourceSchema>;
 export type SourcePreviewFormat = z.infer<typeof sourcePreviewFormatSchema>;
 export type SourcePreview = z.infer<typeof sourcePreviewSchema>;

@@ -248,6 +248,46 @@ describe('GenerationService', () => {
     db.close();
   });
 
+  it('regenerates the last turn into a second variant without adding an exchange', async () => {
+    const responses = [
+      'data: {"choices":[{"delta":{"content":"First answer"}}]}\n\ndata: [DONE]\n\n',
+      'data: {"choices":[{"delta":{"content":"Second answer"}}]}\n\ndata: [DONE]\n\n',
+    ];
+    let call = 0;
+    const { db, chats, chat, generation } = setup(async () =>
+      Promise.resolve(new Response(responses[call++])),
+    );
+
+    const first = generation.prepare(chat.id, 'Question');
+    await generation.stream(first, new AbortController().signal, () => undefined);
+    first.release();
+
+    const before = chats.getDetail(chat.id).messages;
+    expect(before).toHaveLength(2);
+    expect(before.at(-1)).toMatchObject({ content: 'First answer' });
+
+    const regen = generation.prepareRegeneration(chat.id);
+    expect(regen.assistant).toMatchObject({ content: '', status: 'interrupted', activeVariant: 1 });
+    await generation.stream(regen, new AbortController().signal, () => undefined);
+    regen.release();
+
+    const after = chats.getDetail(chat.id).messages;
+    // No new user/assistant pair — still one exchange, now with two variants.
+    expect(after).toHaveLength(2);
+    const assistant = after.at(-1);
+    expect(assistant).toMatchObject({ content: 'Second answer', activeVariant: 1 });
+    expect(assistant?.variants).toHaveLength(2);
+    expect(assistant?.variants?.[0]).toMatchObject({ content: 'First answer' });
+    expect(assistant?.variants?.[1]).toMatchObject({ content: 'Second answer' });
+    db.close();
+  });
+
+  it('rejects regeneration when the chat has no assistant turn', () => {
+    const { db, chat, generation } = setup(async () => Promise.reject(new Error('not called')));
+    expect(() => generation.prepareRegeneration(chat.id)).toThrow(ConflictError);
+    db.close();
+  });
+
   it('persists provider failures as error events', async () => {
     const { db, chats, chat, generation } = setup(async () =>
       Promise.resolve(new Response(JSON.stringify({ error: { message: 'bad' } }), { status: 500 })),

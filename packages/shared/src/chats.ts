@@ -59,6 +59,14 @@ export const generationContextSchema = z.union([
   presetGenerationContextSchema,
 ]);
 
+export const messageVariantSchema = z.strictObject({
+  content: z.string(),
+  reasoning: z.string().nullable(),
+  status: z.enum(['complete', 'interrupted', 'error']),
+  context: generationContextSchema.nullable(),
+  createdAt: z.iso.datetime(),
+});
+
 export const messageSchema = z.strictObject({
   id: z.uuid(),
   chatId: z.uuid(),
@@ -69,6 +77,13 @@ export const messageSchema = z.strictObject({
   status: z.enum(['complete', 'interrupted', 'error']),
   context: generationContextSchema.nullable(),
   createdAt: z.iso.datetime(),
+  // The active variant is mirrored into content/reasoning/status/context above so
+  // the assembler and every existing reader keep working unchanged. `variants`
+  // holds every regenerated response for this turn; `activeVariant` indexes it.
+  // Optional so pre-variants fixtures still validate; the server always populates
+  // both (absent is treated as a single implicit variant by readers).
+  variants: z.array(messageVariantSchema).min(1).optional(),
+  activeVariant: z.number().int().nonnegative().optional(),
 });
 
 export const chatSchema = z.strictObject({
@@ -111,12 +126,18 @@ export const createMessageSchema = z.strictObject({
   content: z.string().trim().min(1).max(1_048_576),
 });
 
+export const patchMessageSchema = z.strictObject({
+  activeVariant: z.number().int().nonnegative(),
+});
+
 export type GenerationContext = z.infer<typeof generationContextSchema>;
 export type LegacyGenerationContext = z.infer<typeof legacyGenerationContextSchema>;
 export type PresetGenerationContext = z.infer<typeof presetGenerationContextSchema>;
 export type CanonicalMessage = z.infer<typeof canonicalMessageSchema>;
 export type GenerationSourceSnapshot = z.infer<typeof generationSourceSnapshotSchema>;
+export type MessageVariant = z.infer<typeof messageVariantSchema>;
 export type Message = z.infer<typeof messageSchema>;
+export type PatchMessage = z.infer<typeof patchMessageSchema>;
 export type Chat = z.infer<typeof chatSchema>;
 export type ChatDetail = z.infer<typeof chatDetailSchema>;
 export type CreateChat = z.infer<typeof createChatSchema>;

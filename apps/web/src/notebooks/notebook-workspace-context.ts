@@ -10,6 +10,7 @@ export interface NotebookWorkspaceValue {
   sourcesState: SourcesState;
   retrySources: () => void;
   addSource: (source: SourceMetadata) => void;
+  updateSource: (source: SourceMetadata) => void;
   removeSource: (sourceId: string) => void;
   replaceNotebook: (notebook: Notebook) => void;
   lastSourceId: string | null;

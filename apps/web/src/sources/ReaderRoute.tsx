@@ -71,5 +71,11 @@ export function ReaderRoute() {
       />
     );
   }
-  return <SourceViewer key={state.source.id} source={state.source} />;
+  return (
+    <SourceViewer
+      key={state.source.id}
+      source={state.source}
+      onUpdated={(source) => setState({ status: 'ready', source })}
+    />
+  );
 }

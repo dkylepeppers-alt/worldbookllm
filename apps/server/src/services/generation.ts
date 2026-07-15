@@ -99,6 +99,82 @@ export class GenerationService {
     }
   }
 
+  /**
+   * Re-runs the most recent assistant turn, appending the result as a new variant
+   * of that assistant message rather than adding a new exchange. The prompt is
+   * rebuilt from the same user message and prior history that produced it.
+   */
+  prepareRegeneration(chatId: string): PreparedGeneration {
+    if (this.activeChats.has(chatId)) {
+      throw new ConflictError(
+        'generation_in_progress',
+        `Chat ${chatId} already has a generation in progress`,
+      );
+    }
+    this.activeChats.add(chatId);
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        this.activeChats.delete(chatId);
+      }
+    };
+
+    try {
+      const chat = this.chats.getDetail(chatId);
+      const messages = [...chat.messages].sort((left, right) => left.seq - right.seq);
+      const assistant = messages.at(-1);
+      const userMessage = messages.at(-2);
+      if (
+        !assistant ||
+        assistant.role !== 'assistant' ||
+        !userMessage ||
+        userMessage.role !== 'user'
+      ) {
+        throw new ConflictError(
+          'nothing_to_regenerate',
+          `Chat ${chatId} has no assistant response to regenerate`,
+        );
+      }
+      const notebook = this.notebooks.get(chat.notebookId);
+      const config = chat.providerOverride ?? notebook.settings;
+      if (!config) throw new ConfigurationError('Configure a provider before sending a message.');
+      let preset;
+      try {
+        preset = this.presets.resolve(chat.presetId);
+      } catch (error) {
+        if (error instanceof NotFoundError) {
+          throw new InvalidStoredDataError('The configured generation preset was not found', {
+            cause: error,
+          });
+        }
+        throw error;
+      }
+      const history = messages.slice(0, messages.length - 2);
+      const assembled = this.prompts.assemble(chat, history, userMessage.content, preset);
+      const request = this.providers.createChatRequest(
+        config,
+        assembled.messages,
+        preset.generation,
+      );
+      const context = presetGenerationContextSchema.parse({
+        contextVersion: 2,
+        preset,
+        canonicalMessages: assembled.messages,
+        sources: assembled.sources,
+        requestedControls: preset.generation,
+        effectiveRequestBody: this.providers.snapshotRequestBody(request),
+        provider: config.source,
+        model: config.model,
+      });
+      const updated = this.chats.beginRegeneration(assistant.id, context);
+      return { chatId, source: config.source, request, assistant: updated, release };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
   async stream(
     prepared: PreparedGeneration,
     signal: AbortSignal,

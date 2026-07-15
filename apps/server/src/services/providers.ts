@@ -135,6 +135,13 @@ export class ProviderService {
         topP: controls.topP ?? undefined,
         maxTokens: controls.maxTokens ?? undefined,
         assistantPrefill: controls.assistantPrefill ?? undefined,
+        // The thinking toggle asks the provider to reason and to surface that
+        // reasoning in the response. Effort 'auto' lets each provider pick a
+        // sensible budget; some providers (e.g. Claude) only engage thinking
+        // when maxTokens is also set.
+        ...(controls.thinking === true
+          ? { includeReasoning: true, reasoningEffort: 'auto' as const }
+          : {}),
       });
     } catch (error) {
       if (error instanceof ProviderError) throw new ConfigurationError(error.message);

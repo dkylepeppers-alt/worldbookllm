@@ -2,6 +2,7 @@ import type {
   AppSettings,
   Chat,
   MaskedSecret,
+  Message,
   Notebook,
   PortablePreset,
   Preset,
@@ -167,6 +168,62 @@ describe('API client', () => {
       `/api/sources/${source.id}`,
       `/api/sources/${source.id}`,
     ]);
+  });
+
+  it('edits a source and selects a message variant with PATCH', async () => {
+    const edited: SourceDetail = { ...source, title: 'Renamed', content: 'New body' };
+    const message: Message = {
+      id: '3fdd7a3e-6d4e-4a56-a2a4-8b8a29f6d0cf',
+      chatId: chat.id,
+      seq: 1,
+      role: 'assistant',
+      content: 'First',
+      reasoning: null,
+      status: 'complete',
+      context: null,
+      createdAt: '2026-07-10T12:01:05.000Z',
+      activeVariant: 0,
+      variants: [
+        {
+          content: 'First',
+          reasoning: null,
+          status: 'complete',
+          context: null,
+          createdAt: '2026-07-10T12:01:05.000Z',
+        },
+        {
+          content: 'Second',
+          reasoning: null,
+          status: 'complete',
+          context: null,
+          createdAt: '2026-07-10T12:02:05.000Z',
+        },
+      ],
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(edited))
+      .mockResolvedValueOnce(jsonResponse(message));
+    const client = createApiClient(fetchImpl);
+
+    await expect(
+      client.updateSource(source.id, { title: 'Renamed', content: 'New body' }),
+    ).resolves.toEqual(edited);
+    await expect(client.selectVariant(message.id, 0)).resolves.toEqual(message);
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      `/api/sources/${source.id}`,
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ title: 'Renamed', content: 'New body' }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      `/api/messages/${message.id}`,
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ activeVariant: 0 }) }),
+    );
   });
 
   it('uploads file previews as multipart and saves reviewed sources in a batch', async () => {

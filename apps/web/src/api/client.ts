@@ -14,6 +14,7 @@ import {
   presetSchema,
   providerCatalogEntrySchema,
   secretStateSchema,
+  messageSchema,
   sourceDetailSchema,
   sourceMetadataListSchema,
   sourceMetadataSchema,
@@ -28,11 +29,13 @@ import {
   type CreateSourceInput,
   type CreateSourcesInput,
   type MaskedSecret,
+  type Message,
   type ModelListResponse,
   type Notebook,
   type PatchChat,
   type PatchNotebook,
   type PatchPreset,
+  type PatchSource,
   type ProviderCatalogEntry,
   type ProviderConfig,
   type ProviderConnection,
@@ -45,7 +48,7 @@ import {
 } from '@worldbookllm/shared';
 import { z } from 'zod';
 
-import { streamChatMessage } from './stream.js';
+import { streamChatMessage, streamRegenerate } from './stream.js';
 
 interface ResponseSchema<T> {
   safeParse(value: unknown): { success: true; data: T } | { success: false };
@@ -82,6 +85,7 @@ export interface ApiClient {
   ): Promise<SourceMetadata[]>;
   previewFileImport(notebookId: string, file: File, signal?: AbortSignal): Promise<SourcePreview>;
   getSource(id: string, signal?: AbortSignal): Promise<SourceDetail>;
+  updateSource(id: string, input: PatchSource, signal?: AbortSignal): Promise<SourceDetail>;
   deleteSource(id: string, signal?: AbortSignal): Promise<void>;
   getProviderCatalog(signal?: AbortSignal): Promise<ProviderCatalogEntry[]>;
   listModels(connection: ProviderConnection, signal?: AbortSignal): Promise<ModelListResponse>;
@@ -95,6 +99,8 @@ export interface ApiClient {
   getChat(id: string, signal?: AbortSignal): Promise<ChatDetail>;
   updateChat(id: string, input: PatchChat, signal?: AbortSignal): Promise<Chat>;
   deleteChat(id: string, signal?: AbortSignal): Promise<void>;
+  regenerateMessage(chatId: string, options: StreamMessageOptions): Promise<void>;
+  selectVariant(messageId: string, activeVariant: number, signal?: AbortSignal): Promise<Message>;
   listPresets(signal?: AbortSignal): Promise<Preset[]>;
   createPreset(input: CreatePreset, signal?: AbortSignal): Promise<Preset>;
   getPreset(id: string, signal?: AbortSignal): Promise<Preset>;
@@ -227,6 +233,13 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
     },
     getSource: (id, signal) =>
       request(`/api/sources/${encodeURIComponent(id)}`, { schema: sourceDetailSchema, signal }),
+    updateSource: (id, input, signal) =>
+      request(`/api/sources/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: input,
+        schema: sourceDetailSchema,
+        signal,
+      }),
     deleteSource: (id, signal) =>
       request(`/api/sources/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
     getProviderCatalog: (signal) =>
@@ -286,6 +299,14 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       }),
     deleteChat: (id, signal) =>
       request(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
+    regenerateMessage: (chatId, options) => streamRegenerate(chatId, { ...options, fetchImpl }),
+    selectVariant: (messageId, activeVariant, signal) =>
+      request(`/api/messages/${encodeURIComponent(messageId)}`, {
+        method: 'PATCH',
+        body: { activeVariant },
+        schema: messageSchema,
+        signal,
+      }),
     listPresets: (signal) => request('/api/presets', { schema: presetListSchema, signal }),
     createPreset: (input, signal) =>
       request('/api/presets', {

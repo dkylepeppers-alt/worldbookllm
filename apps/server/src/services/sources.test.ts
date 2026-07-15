@@ -169,3 +169,46 @@ describe('SourceService assistant-response provenance', () => {
     db.close();
   });
 });
+
+describe('SourceService.patch', () => {
+  it('edits content in place, recomputing metadata and preserving identity', () => {
+    const { db, dataDir, sources, notebook } = setup();
+    const created = sources.create(notebook.id, { title: 'Lore', content: 'Old body' });
+    const edited = sources.patch(created.id, { content: 'A much longer new body here' });
+    expect(edited).toMatchObject({
+      id: created.id,
+      title: 'Lore',
+      slug: created.slug,
+      filePath: created.filePath,
+      origin: { type: 'paste' },
+      createdAt: created.createdAt,
+      content: 'A much longer new body here',
+    });
+    expect(edited.contentHash).not.toBe(created.contentHash);
+    expect(edited.wordCount).toBe(6);
+    expect(sourceFiles(dataDir, notebook.id)).toHaveLength(1);
+    db.close();
+  });
+
+  it('renames the slugged file when the title changes and removes the old file', () => {
+    const { db, dataDir, sources, notebook } = setup();
+    const created = sources.create(notebook.id, { title: 'Old Title', content: 'Body' });
+    const edited = sources.patch(created.id, { title: 'New Shiny Title' });
+    expect(edited.title).toBe('New Shiny Title');
+    expect(edited.slug).toBe('new-shiny-title');
+    expect(edited.filePath).not.toBe(created.filePath);
+    expect(edited.createdAt).toBe(created.createdAt);
+    const files = sourceFiles(dataDir, notebook.id);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toContain('new-shiny-title');
+    db.close();
+  });
+
+  it('throws when editing a source that does not exist', () => {
+    const { db, sources } = setup();
+    expect(() => sources.patch('62455a02-2fe1-4b6d-a6ce-4517bf06ada7', { title: 'X' })).toThrow(
+      NotFoundError,
+    );
+    db.close();
+  });
+});

@@ -41,7 +41,7 @@ Parsing trims the root `name` and every module `name`; the trimmed values are th
 
 ## Generation controls and null semantics
 
-The `generation` object is strict and all four fields are required.
+The `generation` object is strict. The four core fields are required; `thinking` is optional.
 
 | Field              | Contract                                                                   | Meaning of `null`                    |
 | ------------------ | -------------------------------------------------------------------------- | ------------------------------------ |
@@ -49,6 +49,13 @@ The `generation` object is strict and all four fields are required.
 | `topP`             | Number greater than 0 and no greater than 1, or `null`.                    | Use the provider/model default.      |
 | `maxTokens`        | Integer from 1 through 131072, or `null`.                                  | Use the provider/model default.      |
 | `assistantPrefill` | String of at most 32768 characters, or `null`.                             | Do not request an assistant prefill. |
+| `thinking`         | Optional boolean. Omitted or `false` means off.                            | Not applicable.                      |
+
+`thinking` is additive and does not change `schemaVersion`: presets, portable imports, and stored
+exchange snapshots authored before this field remain valid and read back as thinking off. When
+`true`, the request asks the provider to reason before answering and to return that reasoning so it
+can be shown in the chat. Support is provider-dependent, and some models only engage thinking when
+`maxTokens` is also set.
 
 Assistant prefill is provider-dependent: a provider may ignore it or reject it. An empty string is an explicit, enabled-but-blank prefill; it is distinct from `null`.
 
