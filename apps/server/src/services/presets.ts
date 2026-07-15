@@ -62,12 +62,15 @@ export class PresetService {
     return mapPreset(row);
   }
 
-  private firstAvailableName(baseName: string): string {
+  private firstAvailableName(baseName: string, excludeId?: string): string {
     let candidate = baseName;
     let suffix = 2;
-    const exists = this.db.prepare('SELECT 1 FROM presets WHERE name = ? COLLATE NOCASE');
-    while (exists.get(candidate)) {
-      candidate = `${baseName} (${suffix})`;
+    const exists = excludeId
+      ? this.db.prepare('SELECT 1 FROM presets WHERE name = ? COLLATE NOCASE AND id <> ?')
+      : this.db.prepare('SELECT 1 FROM presets WHERE name = ? COLLATE NOCASE');
+    while (excludeId ? exists.get(candidate, excludeId) : exists.get(candidate)) {
+      const suffixText = ` (${suffix})`;
+      candidate = `${baseName.slice(0, 200 - suffixText.length)}${suffixText}`;
       suffix += 1;
     }
     return candidate;
@@ -98,29 +101,31 @@ export class PresetService {
 
   patch(id: string, input: PatchPreset): Preset {
     const patch = patchPresetSchema.parse(input);
-    try {
-      return this.db.transaction(() => {
-        const current = this.get(id);
-        const definition = portablePresetSchema.parse({
-          schemaVersion: current.schemaVersion,
-          name: patch.name ?? current.name,
-          generation: patch.generation ?? current.generation,
-          modules: patch.modules ?? current.modules,
-        });
-        this.db
-          .prepare('UPDATE presets SET name = ?, definition_json = ?, updated_at = ? WHERE id = ?')
-          .run(definition.name, JSON.stringify(definition), this.now(), id);
-        return this.get(id);
-      })();
-    } catch (error) {
-      if (isUniqueConstraint(error)) {
-        throw new ConflictError(
-          'preset_name_conflict',
-          `A preset named ${patch.name ?? ''} already exists`,
-        );
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        return this.db.transaction(() => {
+          const current = this.get(id);
+          const definition = portablePresetSchema.parse({
+            schemaVersion: current.schemaVersion,
+            name:
+              patch.name === undefined
+                ? current.name
+                : this.firstAvailableName(patch.name, current.id),
+            generation: patch.generation ?? current.generation,
+            modules: patch.modules ?? current.modules,
+          });
+          this.db
+            .prepare(
+              'UPDATE presets SET name = ?, definition_json = ?, updated_at = ? WHERE id = ?',
+            )
+            .run(definition.name, JSON.stringify(definition), this.now(), id);
+          return this.get(id);
+        })();
+      } catch (error) {
+        if (!isUniqueConstraint(error)) throw error;
       }
-      throw error;
     }
+    throw new ConflictError('preset_name_conflict', `Could not allocate a unique preset name`);
   }
 
   delete(id: string): void {

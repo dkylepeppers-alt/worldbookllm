@@ -86,7 +86,25 @@ describe('PresetService', () => {
     db.close();
   });
 
-  it('patches by merging a complete portable definition and rejects name collisions', () => {
+  it('keeps suffixed create and patch collision names within the 200-character limit', () => {
+    const { db, presets } = setup();
+    const upperName = 'A'.repeat(200);
+    const lowerName = 'a'.repeat(200);
+    presets.create({ ...portablePreset, name: upperName });
+
+    const duplicate = presets.create({ ...portablePreset, name: lowerName });
+    expect(duplicate.name).toBe(`${'a'.repeat(196)} (2)`);
+    expect(duplicate.name).toHaveLength(200);
+
+    const renamed = presets.patch(presets.create({ ...portablePreset, name: 'Other' }).id, {
+      name: lowerName,
+    });
+    expect(renamed.name).toBe(`${'a'.repeat(196)} (3)`);
+    expect(renamed.name).toHaveLength(200);
+    db.close();
+  });
+
+  it('patches by merging a complete portable definition and suffixes name collisions', () => {
     const { db, presets } = setup();
     const first = presets.create(portablePreset);
     const second = presets.create({ ...portablePreset, name: 'Other' });
@@ -101,8 +119,9 @@ describe('PresetService', () => {
       createdAt: NOW,
       updatedAt: NOW,
     });
-    expect(() => presets.patch(second.id, { name: 'FOCUSED DRAFTING' })).toThrow(ConflictError);
-    expect(presets.get(second.id).name).toBe('Other');
+    expect(presets.patch(second.id, { name: 'FOCUSED DRAFTING' }).name).toBe(
+      'FOCUSED DRAFTING (2)',
+    );
     db.close();
   });
 
