@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -15,6 +16,23 @@ const DEPTH_DIRECTIVE = 'M4_DEPTH_DIRECTIVE';
 const QUESTION = 'Which color does the eastern beacon burn?';
 const CUSTOM_PROVIDER_LABEL = 'Custom (OpenAI-compatible)';
 const CHAT_TEMPERATURE = '0.35';
+const SOURCE_HASH = createHash('sha256').update(SOURCE_CONTENT).digest('hex');
+
+interface PersistedPresetContext {
+  contextVersion: 2;
+  preset: Record<string, unknown>;
+  canonicalMessages: Array<{ role: string; content: string }>;
+  sources: Array<{ id: string; title: string; contentHash: string; content: string }>;
+  requestedControls: Record<string, unknown>;
+}
+
+interface PersistedMessage {
+  id: string;
+  chatId: string;
+  role: string;
+  content: string;
+  context: PersistedPresetContext | null;
+}
 
 test('M4 preset studio, immutable inspector, and response capture journey', async ({ page }) => {
   const stubUrl = process.env.E2E_STUB_URL;
@@ -23,6 +41,10 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
   expect(dataDir, 'playwright.config must publish the data dir').toBeTruthy();
 
   let notebookUrl = '';
+  let chatId = '';
+  let assistantMessageId = '';
+  let selectedSourceId = '';
+  let persistedPreset: Record<string, unknown> | null = null;
 
   await test.step('browser-import, review, and save a native preset', async () => {
     await page.goto('/presets');
@@ -89,7 +111,18 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
     await expect(page.locator('#provider-model')).toHaveValue(STUB_MODEL_ID);
     await page.getByRole('button', { name: 'Save provider' }).click();
 
-    await page.getByRole('button', { name: 'New chat' }).click();
+    const [createChatResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          /\/api\/notebooks\/[0-9a-f-]+\/chats$/u.test(response.url()),
+      ),
+      page.getByRole('button', { name: 'New chat' }).click(),
+    ]);
+    expect(createChatResponse.ok()).toBe(true);
+    const createdChat = (await createChatResponse.json()) as { id?: unknown };
+    expect(createdChat.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/u));
+    chatId = createdChat.id as string;
     const controls = page.getByRole('region', { name: 'Preset controls' });
     await expect(controls).toContainText(`Active preset: ${PRESET_NAME}`);
     await expect(controls).toContainText('Inherited from global default');
@@ -108,6 +141,40 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
     await page.getByLabel('Message').fill(QUESTION);
     await chat.getByRole('button', { name: 'Send' }).click();
     await expect(chat).toContainText(STUB_REPLY);
+
+    const detailResponse = await page.request.get(`/api/chats/${chatId}`);
+    expect(detailResponse.ok()).toBe(true);
+    const detail = (await detailResponse.json()) as { messages?: PersistedMessage[] };
+    const matchingAssistants = (detail.messages ?? []).filter(
+      (message) => message.role === 'assistant' && message.content === STUB_REPLY,
+    );
+    expect(matchingAssistants).toHaveLength(1);
+    const assistant = matchingAssistants[0];
+    expect(assistant).toBeDefined();
+    expect(assistant?.chatId).toBe(chatId);
+    expect(assistant?.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/u));
+    expect(assistant?.context?.contextVersion).toBe(2);
+    assistantMessageId = assistant?.id ?? '';
+
+    const context = assistant?.context;
+    expect(context).not.toBeNull();
+    expect(context?.preset).toMatchObject(expectedPresetSnapshot());
+    persistedPreset = context?.preset ?? null;
+    expect(context?.requestedControls).toEqual(expectedGenerationControls());
+    expect(context?.canonicalMessages.map((message) => message.role)).toEqual([
+      'system',
+      'system',
+      'system',
+      'user',
+    ]);
+    expect(context?.sources).toHaveLength(1);
+    expect(context?.sources[0]).toMatchObject({
+      title: SOURCE_TITLE,
+      contentHash: SOURCE_HASH,
+      content: SOURCE_CONTENT,
+    });
+    selectedSourceId = context?.sources[0]?.id ?? '';
+    expect(selectedSourceId).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/u));
   });
 
   await test.step('inspect the exact immutable generation record', async () => {
@@ -116,17 +183,46 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
     const inspector = page.getByRole('dialog', { name: 'What the model received' });
 
     await expect(inspector.getByRole('heading', { name: PRESET_NAME })).toBeVisible();
+    const displayedPreset = JSON.parse(
+      (await inspectorSection(inspector, PRESET_NAME).locator('pre').textContent()) ?? 'null',
+    ) as Record<string, unknown>;
+    expect(displayedPreset).toEqual(persistedPreset);
+    const { id, createdAt, updatedAt, ...portablePreset } = displayedPreset;
+    expect(id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/u));
+    expect(createdAt).toEqual(expect.any(String));
+    expect(updatedAt).toEqual(expect.any(String));
+    expect(portablePreset).toEqual(expectedPresetSnapshot());
+
+    const requestedControls = JSON.parse(
+      (await inspectorSection(inspector, 'Requested controls').locator('pre').textContent()) ??
+        'null',
+    ) as unknown;
+    expect(requestedControls).toEqual(expectedGenerationControls());
+
     const messages = inspector
       .getByRole('list', { name: 'Canonical messages' })
       .getByRole('listitem');
     await expect(messages).toHaveCount(4);
-    await expect(messages.nth(0)).toContainText(PRESET_MARKER);
-    await expect(messages.nth(1)).toContainText(DEPTH_DIRECTIVE);
-    await expect(messages.nth(2)).toContainText(SOURCE_CONTENT);
-    await expect(messages.nth(2)).toContainText(`title="${SOURCE_TITLE}"`);
-    await expect(messages.nth(3)).toContainText(QUESTION);
+    const expectedCanonical = [
+      { role: 'system', content: PRESET_MARKER },
+      { role: 'system', content: DEPTH_DIRECTIVE },
+      {
+        role: 'system',
+        content: `<source id="${selectedSourceId}" title="${SOURCE_TITLE}">\n${SOURCE_CONTENT}\n</source>`,
+      },
+      { role: 'user', content: QUESTION },
+    ];
+    for (const [index, expected] of expectedCanonical.entries()) {
+      const message = messages.nth(index);
+      await expect(message.getByText(expected.role, { exact: true })).toBeVisible();
+      await expect(message.locator('pre')).toHaveText(expected.content);
+    }
 
-    await expect(inspectorSection(inspector, 'Captured sources')).toContainText(SOURCE_CONTENT);
+    const capturedSources = inspectorSection(inspector, 'Captured sources');
+    await expect(capturedSources.getByRole('heading', { name: SOURCE_TITLE })).toBeVisible();
+    await expect(capturedSources.getByText(selectedSourceId, { exact: true })).toBeVisible();
+    await expect(capturedSources.getByText(SOURCE_HASH, { exact: true })).toBeVisible();
+    await expect(capturedSources.locator('pre')).toHaveText(SOURCE_CONTENT);
     await expect(inspectorSection(inspector, 'Effective request body')).toContainText(
       `"temperature": ${CHAT_TEMPERATURE}`,
     );
@@ -155,9 +251,11 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
     expect(capturedFile).toBeTruthy();
     const body = await readFile(join(sourcesDir, capturedFile ?? ''), 'utf8');
     expect(body).toContain(STUB_REPLY);
-    expect(body).toMatch(
-      /origin:\n {2}type: assistant-response\n {2}chatId: [0-9a-f-]{36}\n {2}messageId: [0-9a-f-]{36}/u,
-    );
+    expect(parseAssistantResponseOrigin(body)).toEqual({
+      type: 'assistant-response',
+      chatId,
+      messageId: assistantMessageId,
+    });
   });
 });
 
@@ -200,6 +298,52 @@ function nativePreset() {
         insertion: { position: 'at_depth', depth: 3 },
       },
     ],
+  };
+}
+
+function expectedGenerationControls() {
+  return {
+    temperature: Number(CHAT_TEMPERATURE),
+    topP: null,
+    maxTokens: null,
+    assistantPrefill: null,
+  };
+}
+
+function expectedPresetSnapshot() {
+  const imported = nativePreset();
+  return {
+    schemaVersion: imported.schemaVersion,
+    name: imported.name,
+    generation: expectedGenerationControls(),
+    modules: [
+      imported.modules[0],
+      {
+        ...imported.modules[2],
+        insertion: { position: 'at_depth', depth: 0 },
+      },
+      imported.modules[1],
+    ],
+  };
+}
+
+function parseAssistantResponseOrigin(markdown: string) {
+  if (!markdown.startsWith('---\n')) throw new Error('Captured source is missing frontmatter.');
+  const closing = markdown.indexOf('\n---\n', 4);
+  if (closing < 0) throw new Error('Captured source frontmatter is not closed.');
+  const lines = markdown.slice(4, closing).split('\n');
+  const originIndex = lines.indexOf('origin:');
+  if (originIndex < 0) throw new Error('Captured source is missing origin metadata.');
+  const values = new Map<string, string>();
+  for (const line of lines.slice(originIndex + 1)) {
+    if (!line.startsWith('  ')) break;
+    const match = /^ {2}([A-Za-z][A-Za-z0-9]*): (.+)$/u.exec(line);
+    if (match?.[1] !== undefined && match[2] !== undefined) values.set(match[1], match[2]);
+  }
+  return {
+    type: values.get('type'),
+    chatId: values.get('chatId'),
+    messageId: values.get('messageId'),
   };
 }
 
