@@ -96,11 +96,6 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0004 — pnpm workspace monorepo](decisions/0004-pnpm-monorepo.md)
 - [0005 — SillyTavern provider port; AGPL-3.0 relicense](decisions/0005-sillytavern-provider-port-agpl.md)
 - [0006 — better-sqlite3 for the index database](decisions/0006-better-sqlite3.md)
-<<<<<<< HEAD
-- [0007 — Fastify multipart for source uploads](decisions/0007-fastify-multipart-source-uploads.md)
-- [0008 — PDF and HTML conversion dependencies](decisions/0008-pdf-html-conversion-dependencies.md)
-- [0009 — Native global presets and immutable exchange snapshots](decisions/0009-native-global-presets.md)
-=======
 - [0007 — Parse source uploads with @fastify/multipart](decisions/0007-fastify-multipart-source-uploads.md)
 - [0008 — PDF and HTML conversion dependencies](decisions/0008-pdf-html-conversion-dependencies.md)
->>>>>>> origin/main
+- [0009 — Native global presets and immutable exchange snapshots](decisions/0009-native-global-presets.md)

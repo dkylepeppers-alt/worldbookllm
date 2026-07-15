@@ -16,11 +16,7 @@ Your data stays on your machine: sources are plain Markdown files on disk, metad
 
 ## Status
 
-<<<<<<< HEAD
 **Milestone 1 — walking skeleton (complete).** Create a notebook, paste a source, pick a provider, and watch a grounded answer stream into chat; stop/interrupt, reload persistence, stub-provider E2E, and the required live-provider verification are complete. The current app also includes native Preset Studio controls, per-exchange prompt inspection, and review-before-save response capture. Search-backed organization and richer update/diff/export workflows remain later [roadmap](docs/ROADMAP.md) work.
-=======
-**Milestone 1 — walking skeleton (complete).** Create a notebook, paste a source, pick a provider, and watch a grounded answer stream into the chat — the whole journey, including stop/interrupt and reload persistence, runs end-to-end in CI against a stub provider and has been operator-verified against NanoGPT. Milestone 2 source ingestion is in progress; see the [roadmap](docs/ROADMAP.md) for current scope.
->>>>>>> origin/main
 
 ## Quick start
 
