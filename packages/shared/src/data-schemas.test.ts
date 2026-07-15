@@ -123,6 +123,13 @@ describe('data API schemas', () => {
     expect(sourceOriginSchema.parse(urlOrigin)).toEqual(urlOrigin);
     expect(() => sourceOriginSchema.parse({ ...urlOrigin, url: 'javascript:alert(1)' })).toThrow();
     expect(() => sourceOriginSchema.parse({ ...urlOrigin, url: 'ftp://example.com' })).toThrow();
+    const assistantOrigin = {
+      type: 'assistant-response',
+      chatId: '62455a02-2fe1-4b6d-a6ce-4517bf06ada7',
+      messageId: '36fd9cb0-d787-483a-ab07-d09900892842',
+    };
+    expect(sourceOriginSchema.parse(assistantOrigin)).toEqual(assistantOrigin);
+    expect(() => sourceOriginSchema.parse({ ...assistantOrigin, extra: true })).toThrow();
   });
 
   it('validates collection responses and stable API errors', () => {
