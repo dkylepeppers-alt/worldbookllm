@@ -1,0 +1,11 @@
+services:
+  worldbookllm:
+    build: .
+    ports:
+      - '3001:3001'
+    volumes:
+      - worldbookllm-data:/data
+    restart: unless-stopped
+
+volumes:
+  worldbookllm-data:

@@ -1,8 +1,11 @@
+import { existsSync } from 'node:fs';
+
 import Fastify, { type FastifyInstance } from 'fastify';
+import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 
 import { openDatabase } from './db/database.js';
-import { resolveDataDir } from './env.js';
+import { resolveDataDir, resolveWebDistDir } from './env.js';
 import { SourceFileStore } from './files/source-files.js';
 import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
@@ -22,6 +25,22 @@ import { ProviderService } from './services/providers.js';
 import { PresetService } from './services/presets.js';
 import { UPLOAD_LIMIT_BYTES } from './services/converters/limits.js';
 import { SourceService } from './services/sources.js';
+
+/**
+ * True for a request the SPA fallback should answer with index.html: a
+ * GET/HEAD for something that isn't the API and isn't a real (missing) file.
+ * Excludes other methods (a POST to an unknown path is a real 404, not a
+ * page load) and excludes any path whose last segment has a file extension
+ * (e.g. a missing /icons/x.png stays a 404 instead of silently becoming the
+ * app shell).
+ */
+function isSpaNavigation(method: string, url: string): boolean {
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  const pathname = url.split(/[?#]/u)[0] ?? url;
+  if (pathname === '/api' || pathname.startsWith('/api/')) return false;
+  const lastSegment = pathname.slice(pathname.lastIndexOf('/') + 1);
+  return !lastSegment.includes('.');
+}
 
 export interface AppServices {
   notebooks: NotebookService;
@@ -43,6 +62,8 @@ export interface BuildAppOptions {
   dataDir?: string;
   logger?: boolean;
   fetchImpl?: typeof fetch;
+  /** Built web app to serve in production (ADR 0002); defaults via resolveWebDistDir. */
+  webDistDir?: string;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -101,6 +122,28 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerPresetRoutes(app);
   registerChatRoutes(app);
   registerMessageRoutes(app);
+
+  // One process, one port in production (ADR 0002): serve the built web app
+  // if it exists, with an SPA fallback so client-side routes (e.g.
+  // /notebooks/:id) resolve to index.html instead of 404ing. Skipped
+  // whenever apps/web/dist hasn't been built (dev, most test runs) so
+  // nothing here depends on a build step being present.
+  const webDistDir = resolveWebDistDir(options.webDistDir);
+  const serveWeb = existsSync(webDistDir);
+  if (serveWeb) {
+    app.register(fastifyStatic, { root: webDistDir });
+  }
+
+  app.setNotFoundHandler((request, reply) => {
+    const url = request.raw.url ?? '';
+    if (serveWeb && isSpaNavigation(request.method, url)) {
+      return reply.sendFile('index.html');
+    }
+    return reply.status(404).send({
+      error: 'not_found',
+      message: `Route ${request.method}:${url} was not found`,
+    });
+  });
 
   return app;
 }

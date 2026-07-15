@@ -56,7 +56,7 @@ acquire → extract text → convert to Markdown → user review/edit → store 
 
 Conversion is best-effort and **transparent**: the user sees what was produced, can edit it, and the original origin is recorded in metadata. Nothing enters the knowledge base without being inspectable Markdown.
 
-The implemented upload path accepts Markdown, plain text, PDF, HTML, and SillyTavern lorebook or character-card JSON. Conversion produces a transient, editable preview; saving the reviewed preview writes the Markdown file and provenance metadata. Webpage acquisition by URL and editing or re-ingesting an existing source remain in progress for Milestone 2.
+The implemented upload path accepts Markdown, plain text, PDF, HTML, and SillyTavern lorebook or character-card JSON. Conversion produces a transient, editable preview; saving the reviewed preview writes the Markdown file and provenance metadata. Editing a saved source's title and/or content is implemented (`PATCH /api/sources/:id`): the identity fields (`id`, `createdAt`, `origin`, conversion notes) are preserved, the Markdown file is rewritten atomically, and a title change moves the slugged file path without leaving an orphaned file behind. Webpage acquisition by URL and full re-ingestion (replacing a source's origin/provenance, not just its content) remain in progress for Milestone 2.
 
 ## Provider layer (model-agnostic AI)
 
@@ -82,6 +82,14 @@ Generation resolves the chat-to-global inheritance once at request preparation. 
 
 Assistant responses can be reviewed and saved through the normal source-creation boundary. The result is a visible Markdown file with structured `assistant-response` origin metadata containing the originating `chatId` and `messageId`; SQLite keeps the same provenance as a rebuildable index. Updating existing sources, diff review, and export remain separate later workflows.
 
+Two generation controls extend this beyond the M4 scope: an optional `thinking` flag (additive to the schemaVersion-1 generation controls) asks the provider to reason before answering and surface that reasoning, rendered collapsed in the chat UI; and each assistant turn can be regenerated, keeping every prior response as a variant on the same message (`messages.variants_json` + `active_variant`, with the existing `content`/`reasoning`/`status`/`context` columns always mirroring the active variant so the assembler and every other reader are unchanged). A chat's source selection also supports bulk Select all/Clear all, still a single `sourceIds` replacement under the hood.
+
+## Production serving and installability (PWA)
+
+In production, `apps/server` serves the built `apps/web/dist` directly — one process, one port, as ADR 0002 always intended (see ADR 0010 for why this took a follow-up decision to actually implement, and for the installable-PWA work bundled with it). Client-side routes that aren't real files (e.g. `/notebooks/:id`) fall back to `index.html` so React Router can handle them; `/api/*` paths that don't match a route still return the same JSON 404 shape as always.
+
+The web app is an installable PWA: a manifest and generated icon set (Field Atlas branding) plus a service worker that precaches the static app shell for instant loads. Because this is a local-first tool — a notebook's real state lives in the user's own SQLite database and files, not a cloud backend — the service worker deliberately caches only the shell, never `/api/*`; there is no offline data-mutation queue. See ADR 0010 for the full reasoning.
+
 ## Context strategy
 
 Milestone 1 injects selected sources into the prompt whole (simple, predictable, sufficient for small notebooks). Retrieval (FTS5-backed selection, then smarter ranking) arrives when notebooks outgrow context windows — see the [roadmap](ROADMAP.md). The design constraint throughout: the user can always see and control what the model was given.
@@ -99,3 +107,4 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0007 — Parse source uploads with @fastify/multipart](decisions/0007-fastify-multipart-source-uploads.md)
 - [0008 — PDF and HTML conversion dependencies](decisions/0008-pdf-html-conversion-dependencies.md)
 - [0009 — Native global presets and immutable exchange snapshots](decisions/0009-native-global-presets.md)
+- [0010 — Installable PWA, served single-origin in production](decisions/0010-pwa-single-origin-serving.md)

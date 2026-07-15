@@ -13,6 +13,8 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 - `pnpm dev` boots both processes; the web shell reaches the server through the Vite proxy
 - README, ARCHITECTURE, ROADMAP, and ADRs committed
 
+**Later addition (2026-07-15):** production deployment was never fully closed out — `apps/server` now serves the built web app single-origin as ADR 0002 always intended, the app is an installable PWA, and `docs/DEPLOYMENT.md` covers environment variables, the Docker/compose path, and a reverse-proxy/HTTPS setup. See ADR 0010.
+
 ## M1 — Walking skeleton + full provider layer ✅
 
 **Goal:** the first usable app — create a notebook, add sources, chat with them — built on genuine model agnosticism from day one, via a provider layer ported from SillyTavern (see ADR 0005).
@@ -39,7 +41,7 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Goal:** get real-world source material in, not just pasted text.
 
-**Status (2026-07-14):** in progress. Local file upload and conversion are implemented for Markdown, text, PDF, HTML, and SillyTavern lorebook and character-card JSON, including editable previews, batch save, provenance metadata, and deletion. Webpage acquisition by URL and editing or re-ingesting existing sources remain.
+**Status (2026-07-15):** in progress. Local file upload and conversion are implemented for Markdown, text, PDF, HTML, and SillyTavern lorebook and character-card JSON, including editable previews, batch save, provenance metadata, deletion, and ordinary editing (title/content) of a saved source. Webpage acquisition by URL and full re-ingestion (replacing origin/provenance) remain.
 
 **Scope:**
 
@@ -47,7 +49,8 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 - ⏳ Webpage acquisition by URL and conversion to Markdown
 - ✅ Conversion review step: user sees and can edit the produced Markdown before it is saved
 - ⏳ Origin metadata recorded (file name and conversion notes are implemented; URL provenance awaits URL acquisition)
-- ⏳ Source editing after ingestion and re-ingestion; delete is implemented
+- ✅ Source editing after ingestion (title/content, identity and provenance preserved); delete is implemented
+- ⏳ Re-ingestion (replacing an existing source's origin/provenance wholesale)
 
 **Done when:** a user can drop in a PDF setting bible and a pasted wiki page, review the conversions, fix a mangled table, and chat over them.
 
@@ -78,6 +81,8 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 - Basic **Add to sources** for reviewing an assistant response and saving it as Markdown with chat/message provenance
 
 **Done when:** a user can import or author a reusable preset, make it the global default or select it for a chat, tune controls and module depth/order, verify a generated exchange from its immutable inspector, and review/save the assistant response as a provenance-bearing Markdown source.
+
+**Later additions on this base (2026-07-15):** an optional `thinking` generation control (reasoning shown collapsed in chat), regenerate-as-swipeable-variants on assistant messages, and bulk source selection (Select all/Clear all). See `docs/ARCHITECTURE.md` and `docs/superpowers/plans/2026-07-15-response-controls-plan.md`.
 
 ## M5 — Creative outputs & exports
 

@@ -16,7 +16,7 @@ Your data stays on your machine: sources are plain Markdown files on disk, metad
 
 ## Status
 
-**Milestone 1 — walking skeleton (complete).** Create a notebook, paste a source, pick a provider, and watch a grounded answer stream into chat; stop/interrupt, reload persistence, stub-provider E2E, and the required live-provider verification are complete. The current app also includes native Preset Studio controls, per-exchange prompt inspection, and review-before-save response capture. Search-backed organization and richer update/diff/export workflows remain later [roadmap](docs/ROADMAP.md) work.
+**Milestone 1 — walking skeleton (complete).** Create a notebook, paste a source, pick a provider, and watch a grounded answer stream into chat; stop/interrupt, reload persistence, stub-provider E2E, and the required live-provider verification are complete. The current app also includes native Preset Studio controls, per-exchange prompt inspection, review-before-save response capture, an optional "thinking" toggle with regenerate-as-swipeable-variants, bulk source selection, and editing a saved source after ingestion. The app is an installable PWA and the server serves the built web app single-origin in production. Search-backed organization and richer update/diff/export workflows remain later [roadmap](docs/ROADMAP.md) work.
 
 ## Quick start
 
@@ -37,6 +37,15 @@ pnpm typecheck  # typecheck all packages
 pnpm format     # format with prettier
 ```
 
+## Production
+
+```bash
+pnpm build      # builds packages/*, apps/web (incl. PWA manifest + service worker), apps/server
+pnpm start      # one process, one port: apps/server serves its API and the built web app
+```
+
+See [Deployment](docs/DEPLOYMENT.md) for environment variables, the Docker/compose path, a reverse-proxy/HTTPS setup (needed for the service worker and installability off `localhost`), and backup guidance.
+
 ## Repository layout
 
 ```
@@ -52,6 +61,7 @@ docs/             Architecture, roadmap, and decision records
 
 - [Architecture](docs/ARCHITECTURE.md) — system design and data model
 - [Roadmap](docs/ROADMAP.md) — milestones and "done when" criteria
+- [Deployment](docs/DEPLOYMENT.md) — production build/run, environment variables, Docker, reverse proxy/HTTPS, backups
 - [Native preset JSON schema and import reference](docs/PRESET_SCHEMA.md) — portable format, limits, insertion semantics, and examples
 - [Decision records](docs/decisions/) — why the stack looks the way it does
 
