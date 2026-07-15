@@ -4,7 +4,7 @@ import {
   type Preset,
   type PresetModule,
 } from '@worldbookllm/shared';
-import { Fragment, type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
@@ -71,6 +71,31 @@ export function PresetsPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const operationRef = useRef(0);
+  const busyRef = useRef(false);
+  const selectedIdRef = useRef<string | null>(null);
+
+  function beginOperation(): number | null {
+    if (busyRef.current) return null;
+    busyRef.current = true;
+    const operation = ++operationRef.current;
+    setBusy(true);
+    return operation;
+  }
+
+  function finishOperation(operation: number) {
+    if (operationRef.current !== operation) return;
+    busyRef.current = false;
+    setBusy(false);
+  }
+
+  useEffect(
+    () => () => {
+      operationRef.current += 1;
+      busyRef.current = false;
+    },
+    [],
+  );
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -89,6 +114,7 @@ export function PresetsPage() {
       .then(({ presets, defaultId }) => {
         setState({ status: 'ready', presets, defaultId });
         const first = presets.find((item) => item.id === defaultId) ?? presets[0];
+        selectedIdRef.current = first?.id ?? null;
         setSelectedId(first?.id ?? null);
         setDraft(first === undefined ? null : draftOf(first));
       })
@@ -103,7 +129,12 @@ export function PresetsPage() {
     state.status === 'ready' ? state.presets.find((item) => item.id === selectedId) : undefined;
   const dirty = !sameDraft(draft, selected);
 
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
   function select(id: string) {
+    if (busyRef.current) return;
     if (id === selectedId) return;
     if (dirty) {
       setPendingId(id);
@@ -113,9 +144,11 @@ export function PresetsPage() {
   }
 
   function choose(id: string) {
+    if (busyRef.current) return;
     if (state.status !== 'ready') return;
     const preset = state.presets.find((item) => item.id === id);
     if (preset === undefined) return;
+    selectedIdRef.current = id;
     setSelectedId(id);
     setDraft(draftOf(preset));
     setErrors([]);
@@ -126,6 +159,7 @@ export function PresetsPage() {
     setState((current) =>
       current.status === 'ready' ? { ...current, presets: [...current.presets, created] } : current,
     );
+    selectedIdRef.current = created.id;
     setSelectedId(created.id);
     setDraft(draftOf(created));
     setImporting(false);
@@ -137,14 +171,16 @@ export function PresetsPage() {
       setPendingId('__create__');
       return;
     }
-    setBusy(true);
+    const operation = beginOperation();
+    if (operation === null) return;
     setErrors([]);
     try {
-      addCreated(await api.createPreset(minimalPreset()));
+      const created = await api.createPreset(minimalPreset());
+      if (operationRef.current === operation) addCreated(created);
     } catch (error) {
       setErrors([errorMessage(error, 'Could not create a preset.')]);
     } finally {
-      setBusy(false);
+      finishOperation(operation);
     }
   }
 
@@ -154,28 +190,39 @@ export function PresetsPage() {
       setPendingImport(input);
       return;
     }
-    addCreated(await api.createPreset(input));
+    const operation = beginOperation();
+    if (operation === null) return;
+    try {
+      const created = await api.createPreset(input);
+      if (operationRef.current === operation) addCreated(created);
+    } finally {
+      finishOperation(operation);
+    }
   }
 
   async function confirmImport() {
     if (pendingImport === null) return;
     const input = pendingImport;
-    setBusy(true);
+    const operation = beginOperation();
+    if (operation === null) return;
     setImportError(null);
     try {
-      addCreated(await api.createPreset(input));
+      const created = await api.createPreset(input);
+      if (operationRef.current !== operation) return;
+      addCreated(created);
       setPendingImport(null);
     } catch (error) {
       setPendingImport(null);
       setImportError(errorMessage(error, 'Could not import this preset.'));
     } finally {
-      setBusy(false);
+      finishOperation(operation);
     }
   }
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (draft === null || selected === undefined) return;
+    if (busyRef.current || draft === null || selected === undefined) return;
+    const targetId = selected.id;
     const parsed = createPresetSchema.safeParse({ schemaVersion: 1, ...draft });
     if (!parsed.success) {
       setErrors(
@@ -183,35 +230,39 @@ export function PresetsPage() {
       );
       return;
     }
-    setBusy(true);
+    const operation = beginOperation();
+    if (operation === null) return;
     setErrors([]);
     try {
-      const updated = await api.updatePreset(selected.id, {
+      const updated = await api.updatePreset(targetId, {
         name: parsed.data.name,
         generation: parsed.data.generation,
         modules: parsed.data.modules,
       });
+      if (operationRef.current !== operation || updated.id !== targetId) return;
       setState((current) =>
         current.status === 'ready'
           ? {
               ...current,
-              presets: current.presets.map((item) => (item.id === updated.id ? updated : item)),
+              presets: current.presets.map((item) => (item.id === targetId ? updated : item)),
             }
           : current,
       );
-      setDraft(draftOf(updated));
+      if (selectedIdRef.current === targetId) setDraft(draftOf(updated));
     } catch (error) {
+      if (operationRef.current !== operation || selectedIdRef.current !== targetId) return;
       if (error instanceof ApiClientError && error.issues !== undefined)
         setErrors(error.issues.map((issue) => issue.message));
       else setErrors([errorMessage(error, 'Could not save this preset.')]);
     } finally {
-      setBusy(false);
+      finishOperation(operation);
     }
   }
 
   async function makeDefault() {
     if (selected === undefined || state.status !== 'ready') return;
-    setBusy(true);
+    const operation = beginOperation();
+    if (operation === null) return;
     setErrors([]);
     try {
       const settings = await api.updateAppSettings({ defaultPresetId: selected.id });
@@ -219,31 +270,38 @@ export function PresetsPage() {
     } catch (error) {
       setErrors([errorMessage(error, 'Could not change the global default.')]);
     } finally {
-      setBusy(false);
+      finishOperation(operation);
     }
   }
 
   async function remove() {
     if (selected === undefined || state.status !== 'ready') return;
-    setBusy(true);
+    const targetId = selected.id;
+    const operation = beginOperation();
+    if (operation === null) return;
     setErrors([]);
     try {
-      await api.deletePreset(selected.id);
-      const presets = state.presets.filter((item) => item.id !== selected.id);
+      await api.deletePreset(targetId);
+      if (operationRef.current !== operation) return;
+      const presets = state.presets.filter((item) => item.id !== targetId);
       const next = presets.find((item) => item.id === state.defaultId) ?? presets[0];
       setState({ ...state, presets });
-      setSelectedId(next?.id ?? null);
-      setDraft(next === undefined ? null : draftOf(next));
+      if (selectedIdRef.current === targetId) {
+        selectedIdRef.current = next?.id ?? null;
+        setSelectedId(next?.id ?? null);
+        setDraft(next === undefined ? null : draftOf(next));
+      }
       setDeleting(false);
     } catch (error) {
       setDeleting(false);
       setErrors([errorMessage(error, 'Could not delete this preset.')]);
     } finally {
-      setBusy(false);
+      finishOperation(operation);
     }
   }
 
   function updateModule(index: number, update: (module: PresetModule) => PresetModule) {
+    if (busyRef.current) return;
     setDraft((current) =>
       current === null
         ? current
@@ -254,6 +312,7 @@ export function PresetsPage() {
     );
   }
   function move(from: number, to: number) {
+    if (busyRef.current) return;
     setDraft((current) => {
       if (current === null || to < 0 || to >= current.modules.length || from === to) return current;
       const modules = [...current.modules];
@@ -263,7 +322,7 @@ export function PresetsPage() {
     });
   }
   function addModule() {
-    if (draft === null) return;
+    if (busyRef.current || draft === null) return;
     const used = new Set(draft.modules.map((module) => module.key));
     let suffix = 1;
     while (used.has(`custom-${suffix}`)) suffix += 1;
@@ -316,7 +375,12 @@ export function PresetsPage() {
         >
           Create preset
         </button>
-        <button type="button" className="button-secondary" onClick={() => setImporting(true)}>
+        <button
+          type="button"
+          className="button-secondary"
+          disabled={busy}
+          onClick={() => setImporting(true)}
+        >
           Import preset
         </button>
       </div>
@@ -340,6 +404,7 @@ export function PresetsPage() {
                 <li key={item.id}>
                   <button
                     type="button"
+                    disabled={busy}
                     className={item.id === selectedId ? 'active' : ''}
                     aria-label={`Select ${item.name}`}
                     onClick={() => select(item.id)}
@@ -453,10 +518,12 @@ function PresetEditor(props: EditorProps) {
   const [topPEnabled, setTopPEnabled] = useState(draft.generation.topP !== null);
   const [maxTokensEnabled, setMaxTokensEnabled] = useState(draft.generation.maxTokens !== null);
   const preview = useMemo(() => draft.modules.filter((module) => module.enabled), [draft.modules]);
-  const setGeneration = (value: Partial<Draft['generation']>) =>
+  const setGeneration = (value: Partial<Draft['generation']>) => {
+    if (props.busy) return;
     setDraft((current) =>
       current === null ? current : { ...current, generation: { ...current.generation, ...value } },
     );
+  };
   return (
     <form className="preset-editor" onSubmit={(event) => void props.onSave(event)}>
       <section className="preset-card">
@@ -464,13 +531,15 @@ function PresetEditor(props: EditorProps) {
         <label htmlFor="preset-name">Preset name</label>
         <input
           id="preset-name"
+          disabled={props.busy}
           maxLength={200}
           value={draft.name}
-          onChange={(event) =>
+          onChange={(event) => {
+            if (props.busy) return;
             setDraft((current) =>
               current === null ? current : { ...current, name: event.target.value },
-            )
-          }
+            );
+          }}
         />
         <div className="generation-grid">
           <label>
@@ -478,6 +547,7 @@ function PresetEditor(props: EditorProps) {
             <input
               aria-label="Temperature"
               type="number"
+              disabled={props.busy}
               min="0"
               max="2"
               step="0.05"
@@ -487,6 +557,7 @@ function PresetEditor(props: EditorProps) {
           </label>
           <NullableNumber
             label="Top P"
+            disabled={props.busy}
             enabled={topPEnabled}
             value={draft.generation.topP}
             min="0.01"
@@ -500,6 +571,7 @@ function PresetEditor(props: EditorProps) {
           />
           <NullableNumber
             label="Max tokens"
+            disabled={props.busy}
             enabled={maxTokensEnabled}
             value={draft.generation.maxTokens}
             min="1"
@@ -518,6 +590,7 @@ function PresetEditor(props: EditorProps) {
           <input
             aria-label="Enable assistant prefill"
             type="checkbox"
+            disabled={props.busy}
             checked={draft.generation.assistantPrefill !== null}
             onChange={(event) =>
               setGeneration({ assistantPrefill: event.target.checked ? '' : null })
@@ -528,6 +601,7 @@ function PresetEditor(props: EditorProps) {
         {draft.generation.assistantPrefill === null ? null : (
           <textarea
             aria-label="Assistant prefill"
+            disabled={props.busy}
             maxLength={32768}
             value={draft.generation.assistantPrefill}
             onChange={(event) => setGeneration({ assistantPrefill: event.target.value })}
@@ -537,7 +611,12 @@ function PresetEditor(props: EditorProps) {
       <section className="preset-card">
         <header className="region-header">
           <h2>Modules</h2>
-          <button type="button" className="button-secondary" onClick={props.addModule}>
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={props.busy}
+            onClick={props.addModule}
+          >
             Add custom module
           </button>
         </header>
@@ -548,13 +627,16 @@ function PresetEditor(props: EditorProps) {
               module={module}
               index={index}
               count={draft.modules.length}
+              busy={props.busy}
               update={(update) => props.updateModule(index, update)}
               remove={() =>
-                setDraft((current) =>
-                  current === null
-                    ? current
-                    : { ...current, modules: current.modules.filter((_, at) => at !== index) },
-                )
+                props.busy
+                  ? undefined
+                  : setDraft((current) =>
+                      current === null
+                        ? current
+                        : { ...current, modules: current.modules.filter((_, at) => at !== index) },
+                    )
               }
               move={props.move}
               setDragIndex={props.setDragIndex}
@@ -606,6 +688,7 @@ function PresetEditor(props: EditorProps) {
 
 function NullableNumber({
   label,
+  disabled,
   enabled,
   value,
   onEnabled,
@@ -613,6 +696,7 @@ function NullableNumber({
   ...input
 }: {
   label: string;
+  disabled: boolean;
   enabled: boolean;
   value: number | null;
   onEnabled: (enabled: boolean) => void;
@@ -627,6 +711,7 @@ function NullableNumber({
         <input
           aria-label={`Enable ${label}`}
           type="checkbox"
+          disabled={disabled}
           checked={enabled}
           onChange={(event) => onEnabled(event.target.checked)}
         />{' '}
@@ -636,6 +721,7 @@ function NullableNumber({
         <input
           aria-label={label}
           type="number"
+          disabled={disabled}
           {...input}
           value={value ?? ''}
           onChange={(event) =>
@@ -651,6 +737,7 @@ function ModuleEditor({
   module,
   index,
   count,
+  busy,
   update,
   remove,
   move,
@@ -660,6 +747,7 @@ function ModuleEditor({
   module: PresetModule;
   index: number;
   count: number;
+  busy: boolean;
   update: (fn: (module: PresetModule) => PresetModule) => void;
   remove: () => void;
   move: (from: number, to: number) => void;
@@ -672,18 +760,28 @@ function ModuleEditor({
   return (
     <li>
       <fieldset
-        draggable
-        onDragStart={() => setDragIndex(index)}
         onDragOver={(event) => event.preventDefault()}
-        onDrop={onDrop}
+        onDrop={() => {
+          if (!busy) onDrop();
+        }}
         aria-label={`${name} module`}
       >
         <legend>{module.kind === 'sources' ? 'Protected Sources module' : 'Custom module'}</legend>
+        <button
+          type="button"
+          className="module-drag-handle"
+          aria-label={`Drag ${name} module`}
+          disabled={busy}
+          draggable={!busy}
+          onDragStart={() => setDragIndex(index)}
+        >
+          Drag to reorder
+        </button>
         <label>
           Module key
           <input
             aria-label="Module key"
-            disabled={module.kind === 'sources'}
+            disabled={busy || module.kind === 'sources'}
             value={module.key}
             onChange={(event) => change('key', event.target.value)}
           />
@@ -692,6 +790,7 @@ function ModuleEditor({
           Module name
           <input
             aria-label="Module name"
+            disabled={busy}
             value={module.name}
             onChange={(event) => change('name', event.target.value)}
           />
@@ -702,6 +801,7 @@ function ModuleEditor({
               Role
               <select
                 aria-label="Role"
+                disabled={busy}
                 value={module.role}
                 onChange={(event) => change('role', event.target.value as typeof module.role)}
               >
@@ -714,6 +814,7 @@ function ModuleEditor({
               <input
                 aria-label="Enabled"
                 type="checkbox"
+                disabled={busy}
                 checked={module.enabled}
                 onChange={(event) => change('enabled', event.target.checked)}
               />{' '}
@@ -723,6 +824,7 @@ function ModuleEditor({
               Content
               <textarea
                 aria-label="Content"
+                disabled={busy}
                 value={module.content}
                 onChange={(event) => change('content', event.target.value)}
               />
@@ -737,6 +839,7 @@ function ModuleEditor({
           Insertion position
           <select
             aria-label="Insertion position"
+            disabled={busy}
             value={module.insertion.position}
             onChange={(event) =>
               change(
@@ -757,6 +860,7 @@ function ModuleEditor({
             <input
               aria-label="Depth"
               type="number"
+              disabled={busy}
               min="0"
               step="1"
               value={module.insertion.depth}
@@ -772,7 +876,7 @@ function ModuleEditor({
         <div className="inline-actions">
           <button
             type="button"
-            disabled={index === 0}
+            disabled={busy || index === 0}
             aria-label={`Move ${name} up`}
             onClick={() => move(index, index - 1)}
           >
@@ -780,7 +884,7 @@ function ModuleEditor({
           </button>
           <button
             type="button"
-            disabled={index === count - 1}
+            disabled={busy || index === count - 1}
             aria-label={`Move ${name} down`}
             onClick={() => move(index, index + 1)}
           >
@@ -790,6 +894,7 @@ function ModuleEditor({
             <button
               type="button"
               className="text-danger"
+              disabled={busy}
               aria-label={`Remove ${name}`}
               onClick={remove}
             >

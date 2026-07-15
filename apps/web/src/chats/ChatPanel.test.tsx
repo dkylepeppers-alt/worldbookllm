@@ -77,6 +77,16 @@ const prosePreset: Preset = {
   generation: { ...defaultPreset.generation, temperature: 1.1 },
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 const userMessage: Message = {
   id: '0d0f9d64-5c05-45a9-9a34-53e33a9c2b41',
   chatId: chat.id,
@@ -191,6 +201,45 @@ describe('ChatPanel', () => {
     expect(updateChat).toHaveBeenCalledTimes(1);
   });
 
+  it('holds Send during preset selection and adopts the successful PATCH result', async () => {
+    const updating = deferred<Chat>();
+    const updateChat = vi.fn().mockReturnValue(updating.promise);
+    await renderWorkspace({ updateChat });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    const selector = await screen.findByLabelText('Chat preset');
+    await user.selectOptions(selector, prosePreset.id);
+
+    expect((selector as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+    updating.resolve({ ...chat, presetId: prosePreset.id });
+
+    expect(await screen.findByText('Active preset: Prose draft')).toBeDefined();
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('rolls preset selection back and unlocks Send when its PATCH fails', async () => {
+    const updating = deferred<Chat>();
+    const updateChat = vi.fn().mockReturnValue(updating.promise);
+    await renderWorkspace({ updateChat });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    const selector = await screen.findByLabelText('Chat preset');
+    await user.selectOptions(selector, prosePreset.id);
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+
+    updating.reject(new ApiClientError(500, 'internal_error', 'Preset route interrupted.'));
+    expect(await screen.findByText('Preset route interrupted.')).toBeDefined();
+    expect((selector as HTMLSelectElement).value).toBe('');
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
   it('keeps explicit preset controls available and retries only failed app settings', async () => {
     const explicit = { ...chat, presetId: prosePreset.id };
     const listPresets = vi.fn().mockResolvedValue([defaultPreset, prosePreset]);
@@ -238,11 +287,16 @@ describe('ChatPanel', () => {
     expect(getAppSettings).toHaveBeenCalledTimes(1);
   });
 
-  it('coalesces quick temperature changes and holds Send until the final save settles', async () => {
+  it('patches only temperature, adopts server controls, and holds Send until save settles', async () => {
     let resolveUpdate: (value: Preset) => void = () => undefined;
     const returned = {
       ...defaultPreset,
-      generation: { ...defaultPreset.generation, temperature: 1.25 },
+      generation: {
+        temperature: 1.2,
+        topP: 0.4,
+        maxTokens: 8192,
+        assistantPrefill: 'Server canonical prefill',
+      },
       updatedAt: '2026-07-10T12:02:00.000Z',
     };
     const updatePreset = vi.fn(
@@ -273,7 +327,7 @@ describe('ChatPanel', () => {
         await vi.advanceTimersByTimeAsync(200);
       });
       expect(updatePreset).toHaveBeenCalledWith(defaultPreset.id, {
-        generation: { ...defaultPreset.generation, temperature: 1.25 },
+        generation: { temperature: 1.25 },
       });
       expect(updatePreset).toHaveBeenCalledTimes(1);
       expect((temperature as HTMLInputElement).disabled).toBe(true);
@@ -289,8 +343,8 @@ describe('ChatPanel', () => {
       expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
         false,
       );
-      expect((screen.getByLabelText('Temperature') as HTMLInputElement).value).toBe('1.25');
-      expect(screen.getByText('1.25')).toBeDefined();
+      expect((screen.getByLabelText('Temperature') as HTMLInputElement).value).toBe('1.2');
+      expect(screen.getByText('1.2')).toBeDefined();
     } finally {
       vi.useRealTimers();
     }
@@ -838,6 +892,7 @@ describe('ChatPanel', () => {
     await user.click(await screen.findByRole('button', { name: 'Add to sources' }));
     await user.click(screen.getByRole('button', { name: 'Save source' }));
     await waitFor(() => expect(createSource).toHaveBeenCalledTimes(1));
+    await screen.findByRole('heading', { name: source.title });
 
     await user.click(screen.getByRole('button', { name: 'Chat' }));
     await user.click(await screen.findByRole('button', { name: 'Add to sources' }));

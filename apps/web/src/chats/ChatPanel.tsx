@@ -47,7 +47,7 @@ export function ChatPanel() {
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [pending, setPending] = useState<PendingExchange | null>(null);
   const [savingSources, setSavingSources] = useState(false);
-  const [savingTemperature, setSavingTemperature] = useState(false);
+  const [savingPresetMutation, setSavingPresetMutation] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [inspecting, setInspecting] = useState<Message | null>(null);
   const [capturing, setCapturing] = useState<Message | null>(null);
@@ -348,7 +348,7 @@ export function ChatPanel() {
           <PresetControls
             chat={selected}
             onChatUpdated={adoptChat}
-            onTemperatureSavingChange={setSavingTemperature}
+            onMutationBusyChange={setSavingPresetMutation}
           />
           {selectedDetail === null && !detailFailed ? (
             <LoadingState>Loading messages…</LoadingState>
@@ -381,7 +381,7 @@ export function ChatPanel() {
               <MessageComposer
                 streaming={pending !== null}
                 stopping={pending?.stopping ?? false}
-                sendDisabled={savingSources || savingTemperature}
+                sendDisabled={savingSources || savingPresetMutation}
                 onSend={send}
                 onStop={stopStreaming}
               />

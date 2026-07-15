@@ -13,6 +13,16 @@ const DEFAULT_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_ID = '22222222-2222-4222-8222-222222222222';
 const NOW = '2026-07-15T00:00:00.000Z';
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function preset(id: string, name: string): Preset {
   return {
     id,
@@ -156,6 +166,63 @@ describe('Preset studio', () => {
     );
   });
 
+  it('locks the full studio during save and applies the response only to the saved preset', async () => {
+    const saving = deferred<Preset>();
+    const base = preset(DEFAULT_ID, 'Default');
+    const other = preset(OTHER_ID, 'Other');
+    const updatePreset = vi.fn().mockReturnValue(saving.promise);
+    renderStudio({ updatePreset }, [base, other]);
+    const user = userEvent.setup();
+
+    const name = await screen.findByLabelText('Preset name');
+    await user.clear(name);
+    await user.type(name, 'Saved draft');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect((name as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Temperature') as HTMLInputElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: 'Add custom module' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: 'Create preset' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: 'Import preset' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: 'Select Other' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    fireEvent.change(name, { target: { value: 'Should not replace draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Select Other' }));
+    expect((name as HTMLInputElement).value).toBe('Saved draft');
+
+    saving.resolve({ ...base, name: 'Server canonical name', updatedAt: `${NOW}-new` });
+    await waitFor(() => expect(screen.getByDisplayValue('Server canonical name')).toBeDefined());
+    expect(screen.getByRole('button', { name: 'Select Other' }).className).not.toContain('active');
+    expect(screen.getByRole('button', { name: 'Select Server canonical name' })).toBeDefined();
+  });
+
+  it('unlocks after a failed save and retains the dirty draft', async () => {
+    const saving = deferred<Preset>();
+    renderStudio({ updatePreset: vi.fn().mockReturnValue(saving.promise) });
+    const user = userEvent.setup();
+
+    const name = await screen.findByLabelText('Preset name');
+    await user.clear(name);
+    await user.type(name, 'Retained draft');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    saving.reject(new ApiClientError(500, 'internal_error', 'Save interrupted.'));
+
+    expect(await screen.findByText('Save interrupted.')).toBeDefined();
+    expect((screen.getByLabelText('Preset name') as HTMLInputElement).value).toBe('Retained draft');
+    expect((screen.getByLabelText('Preset name') as HTMLInputElement).disabled).toBe(false);
+    expect(
+      (screen.getByRole('button', { name: 'Create preset' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
   it('confirms before abandoning a dirty selection', async () => {
     renderStudio({}, [preset(DEFAULT_ID, 'Default'), preset(OTHER_ID, 'Other')]);
     const user = userEvent.setup();
@@ -197,7 +264,10 @@ describe('Preset studio', () => {
     await user.clear(within(custom).getByLabelText('Depth'));
     await user.type(within(custom).getByLabelText('Depth'), '2');
     await user.click(screen.getByRole('button', { name: 'Move Style guide up' }));
-    fireEvent.dragStart(custom);
+    expect(custom.getAttribute('draggable')).toBeNull();
+    const handle = within(custom).getByRole('button', { name: 'Drag Style guide module' });
+    expect(handle.getAttribute('draggable')).toBe('true');
+    fireEvent.dragStart(handle);
     fireEvent.drop(sources);
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(updatePreset).toHaveBeenCalled());

@@ -749,6 +749,18 @@ label {
   text-transform: uppercase;
 }
 
+.module-drag-handle {
+  justify-self: start;
+  cursor: grab;
+  border-style: dashed;
+  color: var(--blueprint);
+  background: rgb(36 87 197 / 6%);
+}
+
+.module-drag-handle:active {
+  cursor: grabbing;
+}
+
 .assembly-preview ol {
   display: grid;
   gap: 0.45rem;

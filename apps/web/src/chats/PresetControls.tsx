@@ -11,14 +11,10 @@ const TEMPERATURE_COMMIT_DELAY_MS = 150;
 interface PresetControlsProps {
   chat: Chat;
   onChatUpdated: (chat: Chat) => void;
-  onTemperatureSavingChange: (saving: boolean) => void;
+  onMutationBusyChange: (busy: boolean) => void;
 }
 
-export function PresetControls({
-  chat,
-  onChatUpdated,
-  onTemperatureSavingChange,
-}: PresetControlsProps) {
+export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: PresetControlsProps) {
   const api = useApi();
   const [presetsState, setPresetsState] = useState<RequestState<Preset[]>>({ status: 'loading' });
   const [settingsState, setSettingsState] = useState<RequestState<string>>({ status: 'loading' });
@@ -66,9 +62,9 @@ export function PresetControls({
   useEffect(
     () => () => {
       if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
-      onTemperatureSavingChange(false);
+      onMutationBusyChange(false);
     },
-    [onTemperatureSavingChange],
+    [onMutationBusyChange],
   );
 
   if (presetsState.status === 'loading') {
@@ -140,6 +136,7 @@ export function PresetControls({
     if (mutationRef.current || presetId === chat.presetId) return;
     mutationRef.current = true;
     setSelecting(true);
+    onMutationBusyChange(true);
     setError(null);
     try {
       onChatUpdated(await api.updateChat(chat.id, { presetId }));
@@ -148,6 +145,7 @@ export function PresetControls({
     } finally {
       mutationRef.current = false;
       setSelecting(false);
+      onMutationBusyChange(false);
     }
   }
 
@@ -157,13 +155,13 @@ export function PresetControls({
       if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
       temperatureTimerRef.current = null;
       setDraftTemperature(null);
-      onTemperatureSavingChange(false);
+      onMutationBusyChange(false);
       setError(null);
       return;
     }
     if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
     setDraftTemperature({ presetId: activePreset.id, value });
-    onTemperatureSavingChange(true);
+    onMutationBusyChange(true);
     setError(null);
     temperatureTimerRef.current = setTimeout(() => {
       temperatureTimerRef.current = null;
@@ -177,13 +175,14 @@ export function PresetControls({
     setSavingTemperature(true);
     try {
       const updated = await api.updatePreset(preset.id, {
-        generation: { ...preset.generation, temperature: value },
+        generation: { temperature: value },
       });
+      if (updated.id !== preset.id) return;
       setPresetsState((current) =>
         current.status === 'ready'
           ? {
               ...current,
-              value: current.value.map((entry) => (entry.id === updated.id ? updated : entry)),
+              value: current.value.map((entry) => (entry.id === preset.id ? updated : entry)),
             }
           : current,
       );
@@ -193,7 +192,7 @@ export function PresetControls({
       mutationRef.current = false;
       setDraftTemperature(null);
       setSavingTemperature(false);
-      onTemperatureSavingChange(false);
+      onMutationBusyChange(false);
     }
   }
 
