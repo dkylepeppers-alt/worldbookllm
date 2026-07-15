@@ -3,6 +3,7 @@ import type {
   ChatDetail,
   Message,
   Notebook,
+  Preset,
   ProviderCatalogEntry,
   SourceMetadata,
 } from '@worldbookllm/shared';
@@ -44,6 +45,38 @@ const chat: Chat = {
   updatedAt: '2026-07-10T12:00:00.000Z',
 };
 
+const defaultPreset: Preset = {
+  id: '10000000-0000-4000-8000-000000000001',
+  schemaVersion: 1,
+  name: 'Grounded atlas',
+  generation: {
+    temperature: 0.7,
+    topP: 0.9,
+    maxTokens: 2048,
+    assistantPrefill: null,
+  },
+  modules: [
+    {
+      key: 'sources',
+      name: 'Sources',
+      kind: 'sources',
+      role: 'system',
+      content: null,
+      enabled: true,
+      insertion: { position: 'before_history' },
+    },
+  ],
+  createdAt: '2026-07-10T12:00:00.000Z',
+  updatedAt: '2026-07-10T12:00:00.000Z',
+};
+
+const prosePreset: Preset = {
+  ...defaultPreset,
+  id: '20000000-0000-4000-8000-000000000002',
+  name: 'Prose draft',
+  generation: { ...defaultPreset.generation, temperature: 1.1 },
+};
+
 const userMessage: Message = {
   id: '0d0f9d64-5c05-45a9-9a34-53e33a9c2b41',
   chatId: chat.id,
@@ -79,6 +112,8 @@ async function renderWorkspace(overrides = {}, value: Notebook = notebook) {
     getProviderCatalog: () => Promise.resolve([provider]),
     listChats: () => Promise.resolve([chat]),
     getChat: () => Promise.resolve(detailWith([])),
+    listPresets: () => Promise.resolve([defaultPreset, prosePreset]),
+    getAppSettings: () => Promise.resolve({ defaultPresetId: defaultPreset.id }),
     ...overrides,
   });
   render(
@@ -95,6 +130,140 @@ async function renderWorkspace(overrides = {}, value: Notebook = notebook) {
 }
 
 describe('ChatPanel', () => {
+  it('resolves and labels the inherited global default preset', async () => {
+    await renderWorkspace();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+
+    const selector = await screen.findByLabelText('Chat preset');
+    expect((selector as HTMLSelectElement).value).toBe('');
+    expect(
+      within(selector).getByRole('option', { name: 'Inherit global default — Grounded atlas' }),
+    ).toBeDefined();
+    expect(within(selector).getByRole('option', { name: 'Grounded atlas' })).toBeDefined();
+    expect(within(selector).getByRole('option', { name: 'Prose draft' })).toBeDefined();
+    expect(screen.getByText('Active preset: Grounded atlas')).toBeDefined();
+    expect(screen.getByText('Inherited from global default')).toBeDefined();
+    expect(screen.getByText(/shared global preset for every chat using it/i)).toBeDefined();
+  });
+
+  it('selects an explicit preset and can return to inheritance', async () => {
+    const updateChat = vi
+      .fn()
+      .mockResolvedValueOnce({ ...chat, presetId: prosePreset.id })
+      .mockResolvedValueOnce({ ...chat, presetId: null });
+    await renderWorkspace({ updateChat });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    const selector = await screen.findByLabelText('Chat preset');
+    await user.selectOptions(selector, prosePreset.id);
+
+    await waitFor(() =>
+      expect(updateChat).toHaveBeenNthCalledWith(1, chat.id, { presetId: prosePreset.id }),
+    );
+    expect(await screen.findByText('Active preset: Prose draft')).toBeDefined();
+    expect(screen.getByText('Explicit chat preset')).toBeDefined();
+
+    await user.selectOptions(selector, '');
+    await waitFor(() => expect(updateChat).toHaveBeenNthCalledWith(2, chat.id, { presetId: null }));
+    expect(await screen.findByText('Active preset: Grounded atlas')).toBeDefined();
+    expect(screen.getByText('Inherited from global default')).toBeDefined();
+  });
+
+  it('keeps the current preset selection when its PATCH fails', async () => {
+    const explicit = { ...chat, presetId: prosePreset.id };
+    const updateChat = vi
+      .fn()
+      .mockRejectedValue(new ApiClientError(500, 'internal_error', 'Preset route interrupted.'));
+    await renderWorkspace({ listChats: () => Promise.resolve([explicit]), updateChat });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    const selector = await screen.findByLabelText('Chat preset');
+    expect((selector as HTMLSelectElement).value).toBe(prosePreset.id);
+    await user.selectOptions(selector, defaultPreset.id);
+
+    expect(await screen.findByText('Preset route interrupted.')).toBeDefined();
+    expect((selector as HTMLSelectElement).value).toBe(prosePreset.id);
+    expect(screen.getByText('Active preset: Prose draft')).toBeDefined();
+    expect(updateChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads preset controls independently and retries a failure', async () => {
+    const listPresets = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiClientError(500, 'internal_error', 'Failed'))
+      .mockResolvedValueOnce([defaultPreset, prosePreset]);
+    await renderWorkspace({ listPresets });
+    const user = userEvent.setup();
+
+    expect(await screen.findByRole('button', { name: new RegExp(chat.title) })).toBeDefined();
+    await user.click(screen.getByRole('button', { name: new RegExp(chat.title) }));
+    expect(await screen.findByText('Could not load preset controls.')).toBeDefined();
+    await user.click(screen.getByRole('button', { name: 'Retry preset controls' }));
+
+    expect(await screen.findByLabelText('Chat preset')).toBeDefined();
+    expect(screen.queryByText('Could not load preset controls.')).toBeNull();
+    expect(listPresets).toHaveBeenCalledTimes(2);
+  });
+
+  it('PATCHes the full generation controls and holds Send until temperature save settles', async () => {
+    let resolveUpdate: (value: Preset) => void = () => undefined;
+    const returned = {
+      ...defaultPreset,
+      generation: { ...defaultPreset.generation, temperature: 1.25 },
+      updatedAt: '2026-07-10T12:02:00.000Z',
+    };
+    const updatePreset = vi.fn(
+      () =>
+        new Promise<Preset>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+    await renderWorkspace({ updatePreset });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    const temperature = await screen.findByLabelText('Temperature');
+    fireEvent.change(temperature, { target: { value: '1.25' } });
+
+    expect(updatePreset).toHaveBeenCalledWith(defaultPreset.id, {
+      generation: { ...defaultPreset.generation, temperature: 1.25 },
+    });
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Saving…')).toBeDefined();
+
+    act(() => resolveUpdate(returned));
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    expect((screen.getByLabelText('Temperature') as HTMLInputElement).value).toBe('1.25');
+    expect(screen.getByText('1.25')).toBeDefined();
+  });
+
+  it('rolls temperature back and reports a failed save', async () => {
+    const updatePreset = vi
+      .fn()
+      .mockRejectedValue(new ApiClientError(500, 'internal_error', 'Temperature was not saved.'));
+    await renderWorkspace({ updatePreset });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    const temperature = await screen.findByLabelText('Temperature');
+    fireEvent.change(temperature, { target: { value: '1.25' } });
+
+    expect(await screen.findByText('Temperature was not saved.')).toBeDefined();
+    expect((screen.getByLabelText('Temperature') as HTMLInputElement).value).toBe('0.7');
+    expect(screen.getByText('Active preset: Grounded atlas')).toBeDefined();
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
   it('creates, selects, renames, and deletes chats', async () => {
     const created = { ...chat, title: 'New chat' };
     const renamed = { ...created, title: 'Revised chat' };

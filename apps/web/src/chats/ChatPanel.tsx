@@ -10,6 +10,7 @@ import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js
 import { ProviderConfigDialog } from '../providers/ProviderConfigDialog.js';
 import { ChatMessages, type PendingExchange } from './ChatMessages.js';
 import { MessageComposer } from './MessageComposer.js';
+import { PresetControls } from './PresetControls.js';
 import { SourceSelector } from './SourceSelector.js';
 
 type ChatsState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; chats: Chat[] };
@@ -38,6 +39,7 @@ export function ChatPanel() {
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [pending, setPending] = useState<PendingExchange | null>(null);
   const [savingSources, setSavingSources] = useState(false);
+  const [savingTemperature, setSavingTemperature] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Mirrors selectedId so async completions (stream cleanup, refetches) can
@@ -333,6 +335,11 @@ export function ChatPanel() {
               Delete
             </button>
           </div>
+          <PresetControls
+            chat={selected}
+            onChatUpdated={adoptChat}
+            onTemperatureSavingChange={setSavingTemperature}
+          />
           {selectedDetail === null && !detailFailed ? (
             <LoadingState>Loading messages…</LoadingState>
           ) : null}
@@ -359,7 +366,7 @@ export function ChatPanel() {
               <MessageComposer
                 streaming={pending !== null}
                 stopping={pending?.stopping ?? false}
-                sendDisabled={savingSources}
+                sendDisabled={savingSources || savingTemperature}
                 onSend={send}
                 onStop={stopStreaming}
               />
