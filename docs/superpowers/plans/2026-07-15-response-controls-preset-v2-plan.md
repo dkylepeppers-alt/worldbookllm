@@ -73,6 +73,7 @@ aligning to the template while keeping the app's hard requirements (per-module `
 exactly one protected Sources module).
 
 **`generationControlsSchema`** — add three fields:
+
 - `presencePenalty: z.number().min(-2).max(2).nullable()` (null = provider default)
 - `frequencyPenalty: z.number().min(-2).max(2).nullable()`
 - `thinking: z.boolean()` (Feature 1; default `false` on create)
@@ -89,6 +90,7 @@ optional `notes: z.string().max(20_000).nullable()` and `description: z.string()
 with server-owned `id`/`createdAt`/`updatedAt` as today.
 
 **Legacy support (provenance):**
+
 - Add `upgradePresetV1ToV2(v1)` in `packages/shared/src/presets.ts`: keep name/modules (add
   `recommended: enabled` to each custom module); the v1 seed has no core, so set `core.content` to a
   sensible default (the old assistant-role text) and add penalty/`thinking` defaults. Freeze a
@@ -102,6 +104,7 @@ with adjacent before-history system modules. No other assembly change.
 **Provenance snapshot** (`packages/shared/src/chats.ts`): the current
 `presetGenerationContextSchema` (`contextVersion: 2`) embeds the full `presetSchema`. Since that shape
 changes, follow the existing `legacyGenerationContextSchema` precedent:
+
 - Keep the current schema as a legacy variant whose embedded `preset` uses the frozen v1 preset schema.
 - Add `presetGenerationContextV3Schema` with `contextVersion: z.literal(3)` embedding the new v2
   `presetSchema`.
@@ -110,12 +113,13 @@ changes, follow the existing `legacyGenerationContextSchema` precedent:
 
 **Migration 004** (`apps/server/src/db/migrations/004-preset-schema-v2.ts`, register in
 `db/database.ts`):
+
 - Rewrite every existing `presets.definition_json` v1 → v2 via `upgradePresetV1ToV2`.
 - Insert a new **Worldbook Engine** preset built from the Appendix template: `core.content` =
   template core; `generation` = `{ temperature: 0.9, topP: 0.95, maxTokens: 8192,
-  assistantPrefill: null, presencePenalty: 0, frequencyPenalty: 0, thinking: false }`; each template
+assistantPrefill: null, presencePenalty: 0, frequencyPenalty: 0, thinking: false }`; each template
   module → custom module `{ key: id, name, kind:'custom', role:'system', content, enabled: recommended,
-  recommended, insertion:{position:'before_history'} }` plus one protected `sources` module;
+recommended, insertion:{position:'before_history'} }` plus one protected `sources` module;
   `notes`/`description` from the template.
 - Repoint `app_settings.default_preset_id` to the Worldbook Engine preset (keep the upgraded
   "Grounded development" as a secondary preset).
@@ -156,11 +160,13 @@ Store multiple assistant responses per turn inside the single assistant message 
 assembler and all existing reads are unchanged.
 
 **Migration 005** (`apps/server/src/db/migrations/005-message-variants.ts`):
+
 - `ALTER TABLE messages ADD COLUMN variants_json TEXT` (nullable; null = one implicit variant from
   the existing columns).
 - `ALTER TABLE messages ADD COLUMN active_variant INTEGER NOT NULL DEFAULT 0`.
 
 **Shared** (`packages/shared/src/chats.ts`):
+
 - `messageVariantSchema = { content, reasoning: nullable, status, context: generationContextSchema.nullable(), createdAt }`.
 - `messageSchema`: add `variants: z.array(messageVariantSchema).min(1)` and
   `activeVariant: z.number().int().nonnegative()` (keep `content`/`reasoning`/`status`/`context` as
@@ -169,6 +175,7 @@ assembler and all existing reads are unchanged.
 - `patchMessageSchema = z.strictObject({ activeVariant: z.number().int().nonnegative() })`.
 
 **ChatService** (`apps/server/src/services/chats.ts`):
+
 - `beginExchange`: initialize the assistant row's `variants_json` to one interrupted variant,
   `active_variant = 0`.
 - `updateAssistant`: update the columns AND rewrite `variants_json[active_variant]` in sync (one code
@@ -179,6 +186,7 @@ assembler and all existing reads are unchanged.
   variant into the mirror columns; return the `Message`.
 
 **GenerationService** (`apps/server/src/services/generation.ts`):
+
 - `prepareRegeneration(chatId)`: reuse the `activeChats` guard; load detail; require the last message
   to be an assistant; set `newContent` = the immediately preceding user message and `history` =
   messages before it; resolve provider/preset, assemble, build request, snapshot `contextVersion:3`,
@@ -186,12 +194,14 @@ assembler and all existing reads are unchanged.
   `stream()` is reused unchanged.
 
 **Routes:**
+
 - `apps/server/src/routes/chats.ts`: add `POST /api/chats/:id/regenerate` (SSE, mirrors the messages
   route, no body).
 - New `apps/server/src/routes/messages.ts`: `PATCH /api/messages/:id` → `selectVariant`; register in
   `apps/server/src/app.ts`.
 
 **Web:**
+
 - `apps/web/src/api/client.ts` + `apps/web/src/api/stream.ts`: `regenerateMessage(chatId, {signal,onEvent})`
   (generalize `streamChatMessage` to take a path/optional body) and `selectVariant(messageId, index)`
   (PATCH).
@@ -243,6 +253,7 @@ assembler and all existing reads are unchanged.
    old exchange snapshots still load in the Prompt Inspector.
 
 ## Out of scope / notes
+
 - No `packages/providers` changes — reasoning and penalty params already exist there.
 - Preserving old exchange provenance (the `contextVersion` union) is deliberate; it mirrors the
   existing `legacyGenerationContextSchema` pattern.
