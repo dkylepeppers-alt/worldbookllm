@@ -126,6 +126,7 @@ describe('Preset studio', () => {
     renderStudio({ updatePreset });
     const user = userEvent.setup();
     await screen.findByDisplayValue('Grounded development');
+    expect(screen.getByText('Assistant prefill (provider-dependent)')).toBeDefined();
 
     await user.clear(screen.getByLabelText('Preset name'));
     await user.type(screen.getByLabelText('Preset name'), 'Still here');
@@ -218,6 +219,9 @@ describe('Preset studio', () => {
     await screen.findByDisplayValue('Grounded development');
     await user.click(screen.getByRole('button', { name: 'Import preset' }));
     const input = screen.getByLabelText('Preset JSON file');
+    expect(
+      screen.getByRole('button', { name: 'Save imported preset' }).hasAttribute('disabled'),
+    ).toBe(true);
 
     fireEvent.change(input, {
       target: { files: [new File(['{}'], 'bad.txt', { type: 'text/plain' })] },
@@ -237,7 +241,7 @@ describe('Preset studio', () => {
     const valid: CreatePreset = {
       schemaVersion: 1,
       name: 'Imported',
-      generation: { temperature: 0.7, topP: null, maxTokens: null, assistantPrefill: null },
+      generation: { temperature: 0.7, topP: null, maxTokens: null, assistantPrefill: 'Opening' },
       modules: [preset(DEFAULT_ID, 'x').modules[0]!],
     };
     fireEvent.change(input, {
@@ -245,10 +249,104 @@ describe('Preset studio', () => {
     });
     expect(await screen.findByText('Imported')).toBeDefined();
     expect(screen.getByText('Temperature 0.7')).toBeDefined();
+    expect(screen.getByText('Top P Provider default')).toBeDefined();
+    expect(screen.getByText('Max tokens Provider default')).toBeDefined();
+    expect(screen.getByText('Assistant prefill (provider-dependent) Opening')).toBeDefined();
     expect(screen.getByText('1 module')).toBeDefined();
+    expect(screen.getByRole('link', { name: 'Preset JSON schema' }).getAttribute('href')).toBe(
+      '/docs/PRESET_SCHEMA.md',
+    );
     await user.click(screen.getByRole('button', { name: 'Save imported preset' }));
     expect(createPreset).toHaveBeenCalledTimes(1);
     expect(createPreset).toHaveBeenCalledWith(valid);
     expect(await screen.findByDisplayValue('Imported (2)')).toBeDefined();
   });
+
+  it('guards a dirty import before mutation and never changes the global default', async () => {
+    const imported = preset(OTHER_ID, 'Imported');
+    const createPreset = vi.fn().mockResolvedValue(imported);
+    const updateAppSettings = vi.fn();
+    renderStudio({ createPreset, updateAppSettings });
+    const user = userEvent.setup();
+    await screen.findByDisplayValue('Grounded development');
+    await user.type(screen.getByLabelText('Preset name'), ' dirty');
+    await user.click(screen.getByRole('button', { name: 'Import preset' }));
+    const valid: CreatePreset = {
+      ...minimalImport(),
+      name: 'Imported',
+    };
+    fireEvent.change(screen.getByLabelText('Preset JSON file'), {
+      target: { files: [new File([JSON.stringify(valid)], 'valid.json')] },
+    });
+    await screen.findByText('Imported');
+
+    await user.click(screen.getByRole('button', { name: 'Save imported preset' }));
+    let confirm = screen.getByRole('dialog', { name: 'Discard unsaved changes?' });
+    expect(createPreset).not.toHaveBeenCalled();
+    await user.click(within(confirm).getByRole('button', { name: 'Keep editing' }));
+    expect(screen.getByRole('dialog', { name: 'Import preset' })).toBeDefined();
+    expect(createPreset).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Save imported preset' }));
+    confirm = screen.getByRole('dialog', { name: 'Discard unsaved changes?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+    expect(createPreset).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Import preset' })).toBeDefined();
+
+    await user.click(screen.getByRole('button', { name: 'Save imported preset' }));
+    confirm = screen.getByRole('dialog', { name: 'Discard unsaved changes?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Discard changes' }));
+    await waitFor(() => expect(createPreset).toHaveBeenCalledWith(valid));
+    expect(await screen.findByDisplayValue('Imported')).toBeDefined();
+    expect(updateAppSettings).not.toHaveBeenCalled();
+  });
+
+  it('places depth zero, one, and sparse larger boundaries canonically without expanding depth', async () => {
+    const withDepths = preset(DEFAULT_ID, 'Depth map');
+    withDepths.modules = [
+      withDepths.modules[0]!,
+      customModule('large-a', 'Large A', 50_000),
+      customModule('large-b', 'Large B', 50_000),
+      customModule('one', 'Depth one', 1),
+      customModule('zero', 'Depth zero', 0),
+    ];
+    renderStudio({}, [withDepths]);
+    await screen.findByDisplayValue('Depth map');
+
+    const rows = Array.from(document.querySelectorAll('.assembly-preview li')).map(
+      (item) => item.textContent,
+    );
+    expect(rows).toEqual([
+      '[Selected source excerpts]',
+      '[Conversation history · older than depth 50000]',
+      'Large A · at depth 50000',
+      'Large B · at depth 50000',
+      '[Conversation history · depth 50000 to depth 1]',
+      'Depth one · at depth 1',
+      '[Conversation history · newest message]',
+      'Depth zero · at depth 0',
+      '[Newest user message]',
+    ]);
+  });
 });
+
+function minimalImport(): CreatePreset {
+  return {
+    schemaVersion: 1,
+    name: 'Imported',
+    generation: { temperature: 0.7, topP: null, maxTokens: null, assistantPrefill: null },
+    modules: [preset(DEFAULT_ID, 'x').modules[0]!],
+  };
+}
+
+function customModule(key: string, name: string, depth: number): Preset['modules'][number] {
+  return {
+    key,
+    name,
+    kind: 'custom',
+    role: 'system',
+    content: name,
+    enabled: true,
+    insertion: { position: 'at_depth', depth },
+  };
+}

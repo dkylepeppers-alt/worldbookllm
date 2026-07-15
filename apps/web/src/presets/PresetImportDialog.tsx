@@ -1,17 +1,15 @@
-import { createPresetSchema, type CreatePreset, type Preset } from '@worldbookllm/shared';
+import { createPresetSchema, type CreatePreset } from '@worldbookllm/shared';
 import { useRef, useState } from 'react';
 
-import { ApiClientError } from '../api/client.js';
-import { useApi } from '../api/useApi.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 
 interface Props {
   onClose: () => void;
-  onCreated: (preset: Preset) => void;
+  onSave: (preset: CreatePreset) => Promise<void>;
+  externalError?: string | null;
 }
 
-export function PresetImportDialog({ onClose, onCreated }: Props) {
-  const api = useApi();
+export function PresetImportDialog({ onClose, onSave, externalError = null }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [review, setReview] = useState<CreatePreset | null>(null);
   const [issues, setIssues] = useState<string[]>([]);
@@ -57,11 +55,9 @@ export function PresetImportDialog({ onClose, onCreated }: Props) {
     setSaving(true);
     setIssues([]);
     try {
-      onCreated(await api.createPreset(review));
+      await onSave(review);
     } catch (error) {
-      setIssues([
-        error instanceof ApiClientError ? error.message : 'Could not import this preset.',
-      ]);
+      setIssues([error instanceof Error ? error.message : 'Could not import this preset.']);
     } finally {
       setSaving(false);
     }
@@ -85,8 +81,9 @@ export function PresetImportDialog({ onClose, onCreated }: Props) {
           accept=".json,application/json"
           onChange={(event) => void inspect(event.target.files?.[0])}
         />
-        {issues.length === 0 ? null : (
+        {issues.length === 0 && externalError === null ? null : (
           <ul className="field-errors" role="alert">
+            {externalError === null ? null : <li>{externalError}</li>}
             {issues.map((issue) => (
               <li key={issue}>{issue}</li>
             ))}
@@ -96,9 +93,20 @@ export function PresetImportDialog({ onClose, onCreated }: Props) {
           <section className="import-review" aria-label="Import review">
             <h3>{review.name}</h3>
             <p>Temperature {review.generation.temperature}</p>
+            <p>Top P {review.generation.topP ?? 'Provider default'}</p>
+            <p>Max tokens {review.generation.maxTokens ?? 'Provider default'}</p>
+            <p>
+              Assistant prefill (provider-dependent){' '}
+              {review.generation.assistantPrefill === null
+                ? 'Off'
+                : review.generation.assistantPrefill.length === 0
+                  ? 'Enabled, blank'
+                  : review.generation.assistantPrefill}
+            </p>
             <p>
               {review.modules.length} {review.modules.length === 1 ? 'module' : 'modules'}
             </p>
+            <a href="/docs/PRESET_SCHEMA.md">Preset JSON schema</a>
           </section>
         )}
         <div className="dialog-actions">

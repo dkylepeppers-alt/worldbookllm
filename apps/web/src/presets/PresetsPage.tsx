@@ -4,7 +4,7 @@ import {
   type Preset,
   type PresetModule,
 } from '@worldbookllm/shared';
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
@@ -67,7 +67,8 @@ export function PresetsPage() {
   const [errors, setErrors] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [pendingCreated, setPendingCreated] = useState<Preset | null>(null);
+  const [pendingImport, setPendingImport] = useState<CreatePreset | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
@@ -147,12 +148,28 @@ export function PresetsPage() {
     }
   }
 
-  function handleImported(created: Preset) {
-    setImporting(false);
+  async function importPreset(input: CreatePreset) {
+    setImportError(null);
     if (dirty && selected !== undefined) {
-      setPendingCreated(created);
-    } else {
-      addCreated(created);
+      setPendingImport(input);
+      return;
+    }
+    addCreated(await api.createPreset(input));
+  }
+
+  async function confirmImport() {
+    if (pendingImport === null) return;
+    const input = pendingImport;
+    setBusy(true);
+    setImportError(null);
+    try {
+      addCreated(await api.createPreset(input));
+      setPendingImport(null);
+    } catch (error) {
+      setPendingImport(null);
+      setImportError(errorMessage(error, 'Could not import this preset.'));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -366,21 +383,31 @@ export function PresetsPage() {
           </p>
         </ConfirmDialog>
       ) : null}
-      {pendingId === null && pendingCreated === null ? null : (
+      {importing ? (
+        <PresetImportDialog
+          onClose={() => {
+            setImporting(false);
+            setImportError(null);
+          }}
+          onSave={importPreset}
+          externalError={importError}
+        />
+      ) : null}
+      {pendingId === null && pendingImport === null ? null : (
         <ConfirmDialog
           title="Discard unsaved changes?"
           confirmLabel="Discard changes"
           onCancel={() => {
             setPendingId(null);
-            setPendingCreated(null);
+            setPendingImport(null);
           }}
+          busy={busy}
+          busyLabel={pendingImport === null ? 'Working…' : 'Importing…'}
           onConfirm={() => {
             const target = pendingId;
-            const created = pendingCreated;
             setPendingId(null);
-            setPendingCreated(null);
-            if (created !== null) {
-              addCreated(created);
+            if (pendingImport !== null) {
+              void confirmImport();
               return;
             }
             if (target === '__create__') {
@@ -395,16 +422,13 @@ export function PresetsPage() {
             className="button-secondary"
             onClick={() => {
               setPendingId(null);
-              setPendingCreated(null);
+              setPendingImport(null);
             }}
           >
             Keep editing
           </button>
         </ConfirmDialog>
       )}
-      {importing ? (
-        <PresetImportDialog onClose={() => setImporting(false)} onCreated={handleImported} />
-      ) : null}
     </section>
   );
 }
@@ -499,7 +523,7 @@ function PresetEditor(props: EditorProps) {
               setGeneration({ assistantPrefill: event.target.checked ? '' : null })
             }
           />{' '}
-          Assistant prefill
+          Assistant prefill (provider-dependent)
         </label>
         {draft.generation.assistantPrefill === null ? null : (
           <textarea
@@ -780,26 +804,47 @@ function ModuleEditor({
 
 function AssemblyPreview({ modules }: { modules: PresetModule[] }) {
   const before = modules.filter((module) => module.insertion.position === 'before_history');
-  const depth = modules.filter((module) => module.insertion.position === 'at_depth');
+  const atDepth = new Map<number, PresetModule[]>();
+  for (const module of modules) {
+    if (module.insertion.position !== 'at_depth') continue;
+    const group = atDepth.get(module.insertion.depth) ?? [];
+    group.push(module);
+    atDepth.set(module.insertion.depth, group);
+  }
+  const positiveDepths = [...atDepth.keys()].filter((depth) => depth > 0).sort((a, b) => b - a);
+  const depthZero = atDepth.get(0) ?? [];
+  const moduleLabel = (module: PresetModule, depth?: number) =>
+    `${module.kind === 'sources' ? '[Selected source excerpts]' : module.name}${depth === undefined ? '' : ` · at depth ${depth}`}`;
   return (
     <section className="preset-card assembly-preview">
       <p className="coordinate-label">Assembly preview · not chat content</p>
       <h2>Prompt order</h2>
       <ol>
         {before.map((module) => (
-          <li key={module.key}>
-            {module.kind === 'sources' ? '[Selected source excerpts]' : module.name}
-          </li>
+          <li key={module.key}>{moduleLabel(module)}</li>
         ))}
-        {!before.some((module) => module.kind === 'sources') ? (
-          <li>[Selected source excerpts]</li>
-        ) : null}
-        <li>[Conversation history]</li>
-        {depth.map((module) => (
-          <li key={module.key}>
-            {module.name} · at depth{' '}
-            {module.insertion.position === 'at_depth' ? module.insertion.depth : 0}
+        {positiveDepths.length === 0 ? <li>[Conversation history]</li> : null}
+        {positiveDepths.map((depth, index) => (
+          <Fragment key={depth}>
+            <li>
+              {index === 0
+                ? `[Conversation history · older than depth ${depth}]`
+                : `[Conversation history · depth ${positiveDepths[index - 1]} to depth ${depth}]`}
+            </li>
+            {atDepth.get(depth)?.map((module) => (
+              <li key={module.key}>{moduleLabel(module, depth)}</li>
+            ))}
+          </Fragment>
+        ))}
+        {positiveDepths.length > 0 ? (
+          <li>
+            {positiveDepths.at(-1) === 1
+              ? '[Conversation history · newest message]'
+              : `[Conversation history · newest ${positiveDepths.at(-1)} messages]`}
           </li>
+        ) : null}
+        {depthZero.map((module) => (
+          <li key={module.key}>{moduleLabel(module, 0)}</li>
         ))}
         <li>[Newest user message]</li>
       </ol>
