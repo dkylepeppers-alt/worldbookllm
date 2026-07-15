@@ -4,10 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
 
-type LibraryState =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'ready'; presets: Preset[]; defaultId: string };
+type RequestState<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; value: T };
+
+const TEMPERATURE_COMMIT_DELAY_MS = 150;
 
 interface PresetControlsProps {
   chat: Chat;
@@ -21,8 +20,10 @@ export function PresetControls({
   onTemperatureSavingChange,
 }: PresetControlsProps) {
   const api = useApi();
-  const [library, setLibrary] = useState<LibraryState>({ status: 'loading' });
-  const [reloadKey, setReloadKey] = useState(0);
+  const [presetsState, setPresetsState] = useState<RequestState<Preset[]>>({ status: 'loading' });
+  const [settingsState, setSettingsState] = useState<RequestState<string>>({ status: 'loading' });
+  const [presetsReloadKey, setPresetsReloadKey] = useState(0);
+  const [settingsReloadKey, setSettingsReloadKey] = useState(0);
   const [selecting, setSelecting] = useState(false);
   const [savingTemperature, setSavingTemperature] = useState(false);
   const [draftTemperature, setDraftTemperature] = useState<{
@@ -31,66 +32,83 @@ export function PresetControls({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mutationRef = useRef(false);
+  const temperatureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(
-    async (signal: AbortSignal) => {
-      const [presets, settings] = await Promise.all([
-        api.listPresets(signal),
-        api.getAppSettings(signal),
-      ]);
-      return { presets, defaultId: settings.defaultPresetId };
-    },
-    [api],
-  );
+  const loadPresets = useCallback((signal: AbortSignal) => api.listPresets(signal), [api]);
+  const loadSettings = useCallback((signal: AbortSignal) => api.getAppSettings(signal), [api]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal).then(
-      ({ presets, defaultId }) => setLibrary({ status: 'ready', presets, defaultId }),
+    void loadPresets(controller.signal).then(
+      (presets) => setPresetsState({ status: 'ready', value: presets }),
       (caught: unknown) => {
         if (!(caught instanceof DOMException && caught.name === 'AbortError')) {
-          setLibrary({ status: 'error' });
+          setPresetsState({ status: 'error' });
         }
       },
     );
     return () => controller.abort();
-  }, [load, reloadKey]);
+  }, [loadPresets, presetsReloadKey]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadSettings(controller.signal).then(
+      (settings) => setSettingsState({ status: 'ready', value: settings.defaultPresetId }),
+      (caught: unknown) => {
+        if (!(caught instanceof DOMException && caught.name === 'AbortError')) {
+          setSettingsState({ status: 'error' });
+        }
+      },
+    );
+    return () => controller.abort();
+  }, [loadSettings, settingsReloadKey]);
 
   useEffect(
     () => () => {
+      if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
       onTemperatureSavingChange(false);
     },
     [onTemperatureSavingChange],
   );
 
-  if (library.status === 'loading') {
-    return <p className="preset-controls-status">Loading preset controls…</p>;
+  if (presetsState.status === 'loading') {
+    return <p className="preset-controls-status">Loading preset library…</p>;
   }
 
-  if (library.status === 'error') {
+  if (presetsState.status === 'error') {
     return (
       <div className="preset-controls-status" role="alert">
-        <p>Could not load preset controls.</p>
+        <p>Could not load the preset library.</p>
         <button
           type="button"
           className="button-secondary"
           onClick={() => {
             setError(null);
-            setLibrary({ status: 'loading' });
-            setReloadKey((value) => value + 1);
+            setPresetsState({ status: 'loading' });
+            setPresetsReloadKey((value) => value + 1);
           }}
         >
-          Retry preset controls
+          Retry preset library
         </button>
       </div>
     );
   }
 
-  const defaultPreset = library.presets.find((preset) => preset.id === library.defaultId);
-  const activeId = chat.presetId ?? library.defaultId;
-  const active = library.presets.find((preset) => preset.id === activeId);
+  const presets = presetsState.value;
+  const defaultId = settingsState.status === 'ready' ? settingsState.value : null;
+  const defaultPreset = presets.find((preset) => preset.id === defaultId);
+  const activeId = chat.presetId ?? defaultId;
+  const active = presets.find((preset) => preset.id === activeId);
 
-  if (defaultPreset === undefined || active === undefined) {
+  if (chat.presetId === null && settingsState.status !== 'ready') {
+    return settingsState.status === 'error' ? (
+      <SettingsError onRetry={retrySettings} />
+    ) : (
+      <p className="preset-controls-status">Loading global default preset…</p>
+    );
+  }
+
+  if (active === undefined || (settingsState.status === 'ready' && defaultPreset === undefined)) {
     return (
       <div className="preset-controls-status" role="alert">
         <p>The active preset is unavailable. Reload the preset library.</p>
@@ -99,11 +117,11 @@ export function PresetControls({
           className="button-secondary"
           onClick={() => {
             setError(null);
-            setLibrary({ status: 'loading' });
-            setReloadKey((value) => value + 1);
+            setPresetsState({ status: 'loading' });
+            setPresetsReloadKey((value) => value + 1);
           }}
         >
-          Retry preset controls
+          Retry preset library
         </button>
       </div>
     );
@@ -114,6 +132,7 @@ export function PresetControls({
     draftTemperature?.presetId === activePreset.id
       ? draftTemperature.value
       : activePreset.generation.temperature;
+  const hasUnsavedTemperature = draftTemperature !== null;
   const controlsBusy = selecting || savingTemperature;
 
   async function selectPreset(value: string) {
@@ -132,24 +151,39 @@ export function PresetControls({
     }
   }
 
-  async function saveTemperature(value: number) {
-    if (mutationRef.current || value === activePreset.generation.temperature) return;
-    mutationRef.current = true;
+  function stageTemperature(value: number) {
+    if (mutationRef.current) return;
+    if (value === activePreset.generation.temperature) {
+      if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
+      temperatureTimerRef.current = null;
+      setDraftTemperature(null);
+      onTemperatureSavingChange(false);
+      setError(null);
+      return;
+    }
+    if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
     setDraftTemperature({ presetId: activePreset.id, value });
-    setSavingTemperature(true);
     onTemperatureSavingChange(true);
     setError(null);
+    temperatureTimerRef.current = setTimeout(() => {
+      temperatureTimerRef.current = null;
+      void saveTemperature(activePreset, value);
+    }, TEMPERATURE_COMMIT_DELAY_MS);
+  }
+
+  async function saveTemperature(preset: Preset, value: number) {
+    if (mutationRef.current) return;
+    mutationRef.current = true;
+    setSavingTemperature(true);
     try {
-      const updated = await api.updatePreset(activePreset.id, {
-        generation: { ...activePreset.generation, temperature: value },
+      const updated = await api.updatePreset(preset.id, {
+        generation: { ...preset.generation, temperature: value },
       });
-      setLibrary((current) =>
+      setPresetsState((current) =>
         current.status === 'ready'
           ? {
               ...current,
-              presets: current.presets.map((preset) =>
-                preset.id === updated.id ? updated : preset,
-              ),
+              value: current.value.map((entry) => (entry.id === updated.id ? updated : entry)),
             }
           : current,
       );
@@ -179,11 +213,13 @@ export function PresetControls({
       <select
         id="chat-preset"
         value={chat.presetId ?? ''}
-        disabled={controlsBusy}
+        disabled={controlsBusy || hasUnsavedTemperature}
         onChange={(event) => void selectPreset(event.target.value)}
       >
-        <option value="">Inherit global default — {defaultPreset.name}</option>
-        {library.presets.map((preset) => (
+        <option value="" disabled={defaultPreset === undefined}>
+          Inherit global default — {defaultPreset?.name ?? 'unavailable'}
+        </option>
+        {presets.map((preset) => (
           <option key={preset.id} value={preset.id}>
             {preset.name}
           </option>
@@ -203,7 +239,7 @@ export function PresetControls({
           step="0.05"
           value={temperature}
           disabled={controlsBusy}
-          onChange={(event) => void saveTemperature(Number(event.target.value))}
+          onChange={(event) => stageTemperature(Number(event.target.value))}
         />
         <p>
           This edits the shared global preset for every chat using it. Changes apply to future
@@ -211,9 +247,29 @@ export function PresetControls({
         </p>
       </div>
 
-      {selecting || savingTemperature ? <p className="preset-saving">Saving…</p> : null}
+      {settingsState.status === 'error' ? <SettingsError onRetry={retrySettings} /> : null}
+      {selecting || savingTemperature || hasUnsavedTemperature ? (
+        <p className="preset-saving">Saving…</p>
+      ) : null}
       {error === null ? null : <p role="alert">{error}</p>}
     </section>
+  );
+
+  function retrySettings() {
+    setError(null);
+    setSettingsState({ status: 'loading' });
+    setSettingsReloadKey((value) => value + 1);
+  }
+}
+
+function SettingsError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="preset-controls-status" role="alert">
+      <p>Could not load the global default preset.</p>
+      <button type="button" className="button-secondary" onClick={onRetry}>
+        Retry global default
+      </button>
+    </div>
   );
 }
 
