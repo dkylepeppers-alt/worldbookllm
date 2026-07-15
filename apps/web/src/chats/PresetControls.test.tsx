@@ -40,11 +40,10 @@ const chat: Chat = {
 
 describe('PresetControls thinking toggle', () => {
   it('patches the preset generation when toggled on', async () => {
-    const updatePreset = vi.fn((_id: string, input: unknown) =>
+    const updatePreset = vi.fn((_id: string, input: { generation?: object }) =>
       Promise.resolve({
         ...preset,
-        generation: { ...preset.generation, thinking: true },
-        ...(input as object),
+        generation: { ...preset.generation, ...input.generation },
       } as Preset),
     );
     const client = createTestClient({
