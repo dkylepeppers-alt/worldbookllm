@@ -37,6 +37,8 @@ The root is a strict JSON object with exactly these fields:
 | `generation`    | Required strict generation-controls object.               |
 | `modules`       | Required ordered array containing at most 100 modules.    |
 
+Parsing trims the root `name` and every module `name`; the trimmed values are the values stored and returned by the API.
+
 ## Generation controls and null semantics
 
 The `generation` object is strict and all four fields are required.

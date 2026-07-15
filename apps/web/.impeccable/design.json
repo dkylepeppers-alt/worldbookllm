@@ -8,64 +8,164 @@
         "role": "neutral",
         "displayName": "Cool Paper",
         "canonical": "#e8e9e3",
-        "tonalRamp": ["#3a3b36", "#5a5c54", "#7d8076", "#a3a69a", "#c7cabd", "#e8e9e3", "#f2f3ee", "#faf9f6"]
+        "tonalRamp": [
+          "#3a3b36",
+          "#5a5c54",
+          "#7d8076",
+          "#a3a69a",
+          "#c7cabd",
+          "#e8e9e3",
+          "#f2f3ee",
+          "#faf9f6"
+        ]
       },
       "surface": {
         "role": "neutral",
         "displayName": "Warm Surface",
         "canonical": "#f8f8f4",
-        "tonalRamp": ["#3d3d38", "#5e5e57", "#818177", "#a7a79c", "#cbcbc0", "#e9e9e2", "#f8f8f4", "#fdfdfb"]
+        "tonalRamp": [
+          "#3d3d38",
+          "#5e5e57",
+          "#818177",
+          "#a7a79c",
+          "#cbcbc0",
+          "#e9e9e2",
+          "#f8f8f4",
+          "#fdfdfb"
+        ]
       },
       "ink": {
         "role": "neutral",
         "displayName": "Deep Ink",
         "canonical": "#17212b",
-        "tonalRamp": ["#05070a", "#0b1015", "#111a22", "#17212b", "#2c3947", "#4a5866", "#8c99a5", "#d3d9de"]
+        "tonalRamp": [
+          "#05070a",
+          "#0b1015",
+          "#111a22",
+          "#17212b",
+          "#2c3947",
+          "#4a5866",
+          "#8c99a5",
+          "#d3d9de"
+        ]
       },
       "blueprint": {
         "role": "primary",
         "displayName": "Blueprint Blue",
         "canonical": "#2457c5",
-        "tonalRamp": ["#0a1330", "#0f1f52", "#163582", "#1c46a8", "#2457c5", "#4f7ad9", "#93aeeb", "#d6e0f7"]
+        "tonalRamp": [
+          "#0a1330",
+          "#0f1f52",
+          "#163582",
+          "#1c46a8",
+          "#2457c5",
+          "#4f7ad9",
+          "#93aeeb",
+          "#d6e0f7"
+        ]
       },
       "vermilion": {
         "role": "secondary",
         "displayName": "Vermilion",
         "canonical": "#c9442e",
-        "tonalRamp": ["#3a0f08", "#5c180f", "#832318", "#a8301f", "#c9442e", "#dd6a52", "#eda08c", "#f8d3c8"]
+        "tonalRamp": [
+          "#3a0f08",
+          "#5c180f",
+          "#832318",
+          "#a8301f",
+          "#c9442e",
+          "#dd6a52",
+          "#eda08c",
+          "#f8d3c8"
+        ]
       },
       "lichen": {
         "role": "tertiary",
         "displayName": "Lichen Green",
         "canonical": "#5f705a",
-        "tonalRamp": ["#151a13", "#252d20", "#38442f", "#4b593f", "#5f705a", "#7f9078", "#a9b8a2", "#d6dfd2"]
+        "tonalRamp": [
+          "#151a13",
+          "#252d20",
+          "#38442f",
+          "#4b593f",
+          "#5f705a",
+          "#7f9078",
+          "#a9b8a2",
+          "#d6dfd2"
+        ]
       },
       "line": {
         "role": "neutral",
         "displayName": "Line",
         "canonical": "#b8bdb8",
-        "tonalRamp": ["#2c2f2b", "#484c46", "#666b62", "#8a8f85", "#b8bdb8", "#cbcfc9", "#dfe1dc", "#f0f1ee"]
+        "tonalRamp": [
+          "#2c2f2b",
+          "#484c46",
+          "#666b62",
+          "#8a8f85",
+          "#b8bdb8",
+          "#cbcfc9",
+          "#dfe1dc",
+          "#f0f1ee"
+        ]
       },
       "muted": {
         "role": "neutral",
         "displayName": "Muted",
         "canonical": "#5a656d",
-        "tonalRamp": ["#14171a", "#23282c", "#343c41", "#48525a", "#5a656d", "#79838a", "#a3aaaf", "#cfd3d6"]
+        "tonalRamp": [
+          "#14171a",
+          "#23282c",
+          "#343c41",
+          "#48525a",
+          "#5a656d",
+          "#79838a",
+          "#a3aaaf",
+          "#cfd3d6"
+        ]
       }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "Page-level h1s: notebook atlas title, source titles." },
-      "headline": { "displayName": "Headline", "purpose": "Section h2s: region headers, dialog titles." },
-      "body": { "displayName": "Body", "purpose": "Source Markdown content and long-form prose (page intros, dialog copy, provider notes)." },
-      "label": { "displayName": "Label", "purpose": "Coordinate labels, source order/word-count, timestamps, legends — data annotations, not prose." }
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page-level h1s: notebook atlas title, source titles."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section h2s: region headers, dialog titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Source Markdown content and long-form prose (page intros, dialog copy, provider notes)."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Coordinate labels, source order/word-count, timestamps, legends — data annotations, not prose."
+      }
     },
     "shadows": [
-      { "name": "stamp", "value": "5px 5px 0 rgb(36 87 197 / 15%)", "purpose": "Notebook cards — hard offset, no blur, reads as an ink stamp on paper." },
-      { "name": "stamp-quiet", "value": "4px 4px 0 rgb(36 87 197 / 12%)", "purpose": "Provider settings cards — the same stamp move at lower opacity." },
-      { "name": "sheet-lift", "value": "0 18px 50px rgb(23 33 43 / 14%)", "purpose": "The dialog card only — the one element genuinely floating above the page." }
+      {
+        "name": "stamp",
+        "value": "5px 5px 0 rgb(36 87 197 / 15%)",
+        "purpose": "Notebook cards — hard offset, no blur, reads as an ink stamp on paper."
+      },
+      {
+        "name": "stamp-quiet",
+        "value": "4px 4px 0 rgb(36 87 197 / 12%)",
+        "purpose": "Provider settings cards — the same stamp move at lower opacity."
+      },
+      {
+        "name": "sheet-lift",
+        "value": "0 18px 50px rgb(23 33 43 / 14%)",
+        "purpose": "The dialog card only — the one element genuinely floating above the page."
+      }
     ],
     "motion": [
-      { "name": "survey-pulse", "value": "survey-pulse 1.2s ease-in-out infinite alternate", "purpose": "Loading indicator: a breathing dot (scale 1 to 0.65, opacity 1 to 0.25) shown ahead of loading copy." }
+      {
+        "name": "survey-pulse",
+        "value": "survey-pulse 1.2s ease-in-out infinite alternate",
+        "purpose": "Loading indicator: a breathing dot (scale 1 to 0.65, opacity 1 to 0.25) shown ahead of loading copy."
+      }
     ],
     "breakpoints": [
       { "name": "sm", "value": "620px" },
@@ -142,9 +242,21 @@
       "Two accent colors doing distinct jobs: blueprint for navigation/primary action, vermilion for danger/focus/active state — never interchangeable"
     ],
     "rules": [
-      { "name": "The Two-Accent Rule", "body": "Blueprint and vermilion never swap jobs. Blueprint means \"go / select / structural\"; vermilion means \"danger / focus / active-right-now.\" A screen that needs a third signal reaches for lichen, not a new hue.", "section": "colors" },
-      { "name": "The Serif-Is-Canon Rule", "body": "Source Serif 4 is reserved for content that came from — or reads like — the user's own material: Markdown bodies, page intros, dialog copy, provider notes. Archivo owns UI chrome, controls, and structural headings. If a string is describing the app, it's Archivo; if it's the user's words or long-form reading, it's the serif.", "section": "typography" },
-      { "name": "The One Soft Shadow Rule", "body": "Blur is reserved for the dialog sheet, the only element genuinely floating above the page. Every other elevated surface uses a hard offset instead — if it isn't overlaying the page, it doesn't get blur.", "section": "elevation" }
+      {
+        "name": "The Two-Accent Rule",
+        "body": "Blueprint and vermilion never swap jobs. Blueprint means \"go / select / structural\"; vermilion means \"danger / focus / active-right-now.\" A screen that needs a third signal reaches for lichen, not a new hue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Serif-Is-Canon Rule",
+        "body": "Source Serif 4 is reserved for content that came from — or reads like — the user's own material: Markdown bodies, page intros, dialog copy, provider notes. Archivo owns UI chrome, controls, and structural headings. If a string is describing the app, it's Archivo; if it's the user's words or long-form reading, it's the serif.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Soft Shadow Rule",
+        "body": "Blur is reserved for the dialog sheet, the only element genuinely floating above the page. Every other elevated surface uses a hard offset instead — if it isn't overlaying the page, it doesn't get blur.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do keep the page background a cool, desaturated paper (#e8e9e3) with the faint blueprint grid — never a warm cream or sand neutral.",
