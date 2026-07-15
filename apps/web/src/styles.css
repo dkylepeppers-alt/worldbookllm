@@ -1217,6 +1217,41 @@ label {
   margin-top: 1.2rem;
 }
 
+.pwa-banner-stack {
+  position: fixed;
+  z-index: 40;
+  right: 1rem;
+  bottom: calc(70px + env(safe-area-inset-bottom));
+  left: 1rem;
+  display: grid;
+  gap: 0.65rem;
+  justify-items: end;
+}
+
+.pwa-banner {
+  width: min(100%, 360px);
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  padding: 1rem;
+  box-shadow: 4px 4px 0 rgb(36 87 197 / 15%);
+}
+
+.pwa-banner-quiet {
+  color: var(--muted);
+}
+
+.pwa-banner p:not(.coordinate-label) {
+  margin: 0.35rem 0 0;
+  font-family: 'Source Serif 4 Variable', Georgia, serif;
+}
+
+.pwa-banner-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
 .source-dialog label:not(:first-of-type) {
   margin-top: 1rem;
 }
@@ -1410,6 +1445,10 @@ label {
 
   .mobile-tabs {
     display: none;
+  }
+
+  .pwa-banner-stack {
+    bottom: 1rem;
   }
 }
 

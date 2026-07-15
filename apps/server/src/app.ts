@@ -1,8 +1,11 @@
+import { existsSync } from 'node:fs';
+
 import Fastify, { type FastifyInstance } from 'fastify';
+import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 
 import { openDatabase } from './db/database.js';
-import { resolveDataDir } from './env.js';
+import { resolveDataDir, resolveWebDistDir } from './env.js';
 import { SourceFileStore } from './files/source-files.js';
 import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
@@ -43,6 +46,8 @@ export interface BuildAppOptions {
   dataDir?: string;
   logger?: boolean;
   fetchImpl?: typeof fetch;
+  /** Built web app to serve in production (ADR 0002); defaults via resolveWebDistDir. */
+  webDistDir?: string;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -101,6 +106,27 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerPresetRoutes(app);
   registerChatRoutes(app);
   registerMessageRoutes(app);
+
+  // One process, one port in production (ADR 0002): serve the built web app
+  // if it exists, with an SPA fallback so client-side routes (e.g.
+  // /notebooks/:id) resolve to index.html instead of 404ing. Skipped
+  // whenever apps/web/dist hasn't been built (dev, most test runs) so
+  // nothing here depends on a build step being present.
+  const webDistDir = resolveWebDistDir(options.webDistDir);
+  const serveWeb = existsSync(webDistDir);
+  if (serveWeb) {
+    app.register(fastifyStatic, { root: webDistDir });
+  }
+
+  app.setNotFoundHandler((request, reply) => {
+    if (serveWeb && !request.raw.url?.startsWith('/api/')) {
+      return reply.sendFile('index.html');
+    }
+    return reply.status(404).send({
+      error: 'not_found',
+      message: `Route ${request.method}:${request.raw.url} was not found`,
+    });
+  });
 
   return app;
 }

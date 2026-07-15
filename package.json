@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
+    "start": "pnpm --filter @worldbookllm/server start",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

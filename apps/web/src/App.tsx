@@ -12,6 +12,7 @@ import { NotebookWorkspace, ReaderEmpty } from './notebooks/NotebookWorkspace.js
 import { NotFoundPage } from './pages/NotFoundPage.js';
 import { PresetSchemaPage } from './pages/PresetSchemaPage.js';
 import { PresetsPage } from './presets/PresetsPage.js';
+import { PwaStatusBanner } from './pwa/PwaStatusBanner.js';
 import { SettingsPage } from './settings/SettingsPage.js';
 import { ReaderRoute } from './sources/ReaderRoute.js';
 
@@ -47,6 +48,7 @@ export function App({ client = createApiClient() }: AppProps) {
     <ApiProvider client={client}>
       <BrowserRouter>
         <AppRoutes />
+        <PwaStatusBanner />
       </BrowserRouter>
     </ApiProvider>
   );

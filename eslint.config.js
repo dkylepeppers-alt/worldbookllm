@@ -28,4 +28,12 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    // Node-run maintenance scripts (e.g. icon regeneration), not part of the
+    // browser bundle.
+    files: ['**/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
 );
