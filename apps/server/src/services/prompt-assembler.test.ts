@@ -3,12 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { Chat, Message, Preset, PresetModule } from '@worldbookllm/shared';
+import Database from 'better-sqlite3';
 import matter from 'gray-matter';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { openDatabase } from '../db/database.js';
+import { migrateToVersion1 } from '../db/migrations/001-init.js';
+import { migrateToVersion2 } from '../db/migrations/002-source-provenance.js';
 import { SourceFileStore } from '../files/source-files.js';
 import { NotebookService } from './notebooks.js';
+import { PresetService } from './presets.js';
 import { PromptAssembler } from './prompt-assembler.js';
 import { SourceService } from './sources.js';
 
@@ -91,6 +95,70 @@ function preset(modules: PresetModule[]): Preset {
 }
 
 describe('PromptAssembler', () => {
+  it.each([
+    ['clean migration', false, false],
+    ['v2 upgrade', true, true],
+  ] as const)(
+    'keeps the seeded preset exactly compatible with the pre-M4 prompt after a %s',
+    (_label, startAtV2, selectSource) => {
+      const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-seeded-prompt-'));
+      tempDirs.push(dataDir);
+      if (startAtV2) {
+        const legacy = new Database(join(dataDir, 'worldbookllm.db'));
+        legacy.pragma('foreign_keys = ON');
+        migrateToVersion1(legacy);
+        migrateToVersion2(legacy);
+        legacy.pragma('user_version = 2');
+        legacy.close();
+      }
+
+      const db = openDatabase(dataDir);
+      const files = new SourceFileStore(dataDir);
+      const notebooks = new NotebookService(db, files);
+      const sources = new SourceService(db, files);
+      const notebook = notebooks.create({ name: 'Atlas', settings: null });
+      const source = selectSource
+        ? sources.create(notebook.id, {
+            title: 'Second & "quoted" <lore>',
+            content: 'Source body',
+          })
+        : undefined;
+      const chat: Chat = {
+        id: CHAT_ID,
+        notebookId: notebook.id,
+        title: 'Chat',
+        sourceIds: source === undefined ? [] : [source.id],
+        providerOverride: null,
+        presetId: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+      };
+      const presets = new PresetService(db);
+      const seeded = presets.resolve(null);
+      const sourceSection =
+        source === undefined
+          ? 'No sources selected.'
+          : `<source id="${source.id}" title="Second &amp; &quot;quoted&quot; &lt;lore&gt;">\nSource body\n</source>`;
+
+      expect(
+        new PromptAssembler(sources).assemble(
+          chat,
+          [message({ role: 'user', content: 'Earlier' })],
+          'Newest',
+          seeded,
+        ).messages,
+      ).toEqual([
+        {
+          role: 'system',
+          content: `You are a creative writing and worldbuilding assistant working from user-provided source material.\n\n## Sources\n${sourceSection}\n\n## Grounding instructions\nTreat the supplied sources as the grounding for your answer. Preserve established facts and clearly distinguish reasonable development from facts stated in the sources. If the sources do not answer something, say so rather than inventing certainty.`,
+        },
+        { role: 'user', content: 'Earlier' },
+        { role: 'user', content: 'Newest' },
+      ]);
+      db.close();
+    },
+  );
+
   it('reads fresh sources in selected order and returns exact snapshots with fresh hashes', () => {
     const { dataDir, db, sources, notebook, chat, assembler } = setup();
     const first = sources.create(notebook.id, { title: 'First', content: 'old first' });
@@ -115,7 +183,7 @@ describe('PromptAssembler', () => {
     expect(result.messages).toEqual([
       {
         role: 'system',
-        content: `<source id="${second.id}" title="Second &amp; &quot;quoted&quot; &lt;lore&gt;">\nsecond body\n</source>\n\n<source id="${first.id}" title="First">\nfresh first\n</source>`,
+        content: `## Sources\n<source id="${second.id}" title="Second &amp; &quot;quoted&quot; &lt;lore&gt;">\nsecond body\n</source>\n\n<source id="${first.id}" title="First">\nfresh first\n</source>`,
       },
       { role: 'user', content: 'Question' },
     ]);
@@ -149,7 +217,7 @@ describe('PromptAssembler', () => {
     expect(result).toEqual({
       messages: [
         { role: 'user', content: 'Earlier' },
-        { role: 'system', content: 'No sources selected.' },
+        { role: 'system', content: '## Sources\nNo sources selected.' },
         { role: 'user', content: 'Newest' },
       ],
       sources: [],
@@ -182,7 +250,7 @@ describe('PromptAssembler', () => {
       { role: 'system', content: 'before-a' },
       { role: 'assistant', content: 'before-b' },
       { role: 'system', content: 'depth-far' },
-      { role: 'system', content: 'No sources selected.' },
+      { role: 'system', content: '## Sources\nNo sources selected.' },
       { role: 'user', content: 'u0' },
       { role: 'user', content: 'depth-2' },
       { role: 'assistant', content: 'a1' },

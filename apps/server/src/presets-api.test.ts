@@ -88,6 +88,25 @@ describe('preset API', () => {
       updatedAt: expect.any(String),
     });
 
+    const generationPatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/presets/${preset.id}`,
+      payload: { generation: { temperature: 0.4 } },
+    });
+    expect(generationPatch.statusCode).toBe(200);
+    expect(generationPatch.json()).toMatchObject({
+      generation: { ...newPreset.generation, temperature: 0.4 },
+    });
+
+    for (const generation of [{}, { temperature: 0.4, extra: true }]) {
+      const invalid = await app.inject({
+        method: 'PATCH',
+        url: `/api/presets/${preset.id}`,
+        payload: { generation },
+      });
+      expect(invalid.statusCode).toBe(400);
+    }
+
     const deletion = await app.inject({ method: 'DELETE', url: `/api/presets/${preset.id}` });
     expect(deletion.statusCode).toBe(204);
     expect((await listPresets()).some((entry) => entry.id === preset.id)).toBe(false);

@@ -213,9 +213,16 @@ describe('preset schemas', () => {
     ).toBe(PRESET_ID);
     expect(createPresetSchema.parse(portablePreset).schemaVersion).toBe(1);
     expect(patchPresetSchema.parse({ name: ' Concise ' })).toEqual({ name: 'Concise' });
+    expect(patchPresetSchema.parse({ generation: { temperature: 0.4 } })).toEqual({
+      generation: { temperature: 0.4 },
+    });
     expect(patchPresetSchema.parse({ generation: portablePreset.generation })).toBeTruthy();
     expect(patchPresetSchema.parse({ modules: portablePreset.modules })).toBeTruthy();
     expect(() => patchPresetSchema.parse({})).toThrow();
+    expect(() => patchPresetSchema.parse({ generation: {} })).toThrow();
+    expect(() =>
+      patchPresetSchema.parse({ generation: { temperature: 0.4, extra: true } }),
+    ).toThrow();
     expect(() => patchPresetSchema.parse({ name: 'Valid', extra: true })).toThrow();
     expect(appSettingsSchema.parse({ defaultPresetId: PRESET_ID })).toEqual({
       defaultPresetId: PRESET_ID,

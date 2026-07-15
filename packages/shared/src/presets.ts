@@ -10,6 +10,12 @@ export const generationControlsSchema = z.strictObject({
   assistantPrefill: z.string().max(32_768).nullable(),
 });
 
+const generationControlsPatchSchema = generationControlsSchema
+  .partial()
+  .refine((value) => Object.values(value).some((control) => control !== undefined), {
+    message: 'At least one generation control is required',
+  });
+
 export const moduleInsertionSchema = z.discriminatedUnion('position', [
   z.strictObject({ position: z.literal('before_history') }),
   z.strictObject({
@@ -116,7 +122,7 @@ export const createPresetSchema = portablePresetSchema;
 export const patchPresetSchema = z
   .strictObject({
     name: presetNameSchema.optional(),
-    generation: generationControlsSchema.optional(),
+    generation: generationControlsPatchSchema.optional(),
     modules: presetModulesSchema.optional(),
   })
   .refine(

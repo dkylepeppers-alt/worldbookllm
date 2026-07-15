@@ -36,7 +36,16 @@ function moduleMessage(module: PresetModule, sourceContent: string): ChatMessage
   if (module.kind === 'custom') {
     return module.enabled ? { role: module.role, content: module.content } : undefined;
   }
-  return { role: 'system', content: sourceContent };
+  return { role: 'system', content: `## Sources\n${sourceContent}` };
+}
+
+function appendCoalescingSameRole(messages: ChatMessage[], message: ChatMessage): void {
+  const previous = messages.at(-1);
+  if (previous?.role === message.role) {
+    previous.content = `${previous.content}\n\n${message.content}`;
+  } else {
+    messages.push(message);
+  }
 }
 
 export class PromptAssembler {
@@ -72,7 +81,7 @@ export class PromptAssembler {
       const emitted = moduleMessage(module, sourceContent);
       if (!emitted) continue;
       if (module.insertion.position === 'before_history') {
-        beforeHistory.push(emitted);
+        appendCoalescingSameRole(beforeHistory, emitted);
         continue;
       }
       const boundary = Math.max(0, eligibleHistory.length - module.insertion.depth);

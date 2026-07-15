@@ -99,17 +99,22 @@ describe('PresetService', () => {
     db.close();
   });
 
-  it('patches by merging a complete portable definition and rejects name collisions', () => {
+  it('merges a partial generation patch over the current portable definition', () => {
     const { db, presets } = setup();
     const first = presets.create(portablePreset);
     const second = presets.create({ ...portablePreset, name: 'Other' });
 
-    const patched = presets.patch(first.id, {
-      generation: { ...portablePreset.generation, temperature: 1.1 },
-    });
+    const currentGeneration = {
+      temperature: portablePreset.generation.temperature,
+      topP: 0.83,
+      maxTokens: 8192,
+      assistantPrefill: 'Continue:',
+    };
+    presets.patch(first.id, { generation: currentGeneration });
+    const patched = presets.patch(first.id, { generation: { temperature: 1.1 } });
     expect(patched).toMatchObject({
       name: portablePreset.name,
-      generation: { ...portablePreset.generation, temperature: 1.1 },
+      generation: { ...currentGeneration, temperature: 1.1 },
       modules: portablePreset.modules,
       createdAt: NOW,
       updatedAt: NOW,

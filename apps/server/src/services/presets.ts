@@ -105,7 +105,10 @@ export class PresetService {
         const definition = portablePresetSchema.parse({
           schemaVersion: current.schemaVersion,
           name: patch.name ?? current.name,
-          generation: patch.generation ?? current.generation,
+          generation:
+            patch.generation === undefined
+              ? current.generation
+              : { ...current.generation, ...patch.generation },
           modules: patch.modules ?? current.modules,
         });
         this.db

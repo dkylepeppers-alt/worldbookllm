@@ -29,10 +29,27 @@ describe('assistant-response source provenance', () => {
       payload: { name: 'Atlas' },
     });
     const notebookId = notebookResponse.json<{ id: string }>().id;
+    const chatResponse = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebookId}/chats`,
+      payload: {},
+    });
+    const chatId = chatResponse.json<{ id: string }>().id;
+    const exchange = app.services.chats.beginExchange(chatId, 'Question', {
+      sourceIds: [],
+      provider: 'nanogpt',
+      model: 'gpt-4o-mini',
+      strictness: 'grounded',
+    });
+    app.services.chats.updateAssistant(exchange.assistant.id, {
+      content: 'Original answer.',
+      reasoning: null,
+      status: 'complete',
+    });
     const origin = {
       type: 'assistant-response' as const,
-      chatId: '60a0bf0c-031d-497c-9c1a-2f68441936a6',
-      messageId: '3fdd7a3e-6d4e-4a56-a2a4-8b8a29f6d0cf',
+      chatId,
+      messageId: exchange.assistant.id,
     };
 
     const create = await app.inject({
@@ -73,5 +90,38 @@ describe('assistant-response source provenance', () => {
       content: '# Reviewed\n\nEdited answer.\n',
       origin,
     });
+  });
+
+  it('returns a safe not-found response for an invalid provenance claim', async () => {
+    const notebook = await app.inject({
+      method: 'POST',
+      url: '/api/notebooks',
+      payload: { name: 'Atlas' },
+    });
+    const notebookId = notebook.json<{ id: string }>().id;
+    const create = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebookId}/sources`,
+      payload: {
+        title: 'Forged response',
+        content: 'No answer.',
+        origin: {
+          type: 'assistant-response',
+          chatId: crypto.randomUUID(),
+          messageId: crypto.randomUUID(),
+        },
+      },
+    });
+
+    expect(create.statusCode).toBe(404);
+    expect(create.json()).toEqual({
+      error: 'not_found',
+      message: 'Assistant response was not found in this notebook',
+    });
+    const listed = await app.inject({
+      method: 'GET',
+      url: `/api/notebooks/${notebookId}/sources`,
+    });
+    expect(listed.json()).toEqual([]);
   });
 });

@@ -38,7 +38,7 @@ const GROUNDED_DEVELOPMENT: PortablePreset = {
       kind: 'custom',
       role: 'system',
       content:
-        'Treat the supplied sources as the grounding for your answer. Preserve established facts and clearly distinguish reasonable development from facts stated in the sources. If the sources do not answer something, say so rather than inventing certainty.',
+        '## Grounding instructions\nTreat the supplied sources as the grounding for your answer. Preserve established facts and clearly distinguish reasonable development from facts stated in the sources. If the sources do not answer something, say so rather than inventing certainty.',
       enabled: true,
       insertion: { position: 'before_history' },
     },

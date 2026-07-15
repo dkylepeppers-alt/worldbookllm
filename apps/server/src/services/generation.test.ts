@@ -148,13 +148,13 @@ describe('GenerationService', () => {
     const context = explicitPrepared.assistant.context as PresetGenerationContext;
     expect(context.preset.id).toBe(created.id);
     expect(context.canonicalMessages).toEqual([
-      { role: 'system', content: 'Use explicit mode.' },
       expect.objectContaining({
         role: 'system',
-        content: expect.stringContaining('Amber is canon.'),
+        content: expect.stringContaining('Use explicit mode.\n\n## Sources\n'),
       }),
       { role: 'user', content: 'Explicit' },
     ]);
+    expect(context.canonicalMessages[0]?.content).toContain('Amber is canon.');
     expect(context.requestedControls).toEqual(created.generation);
     expect(context.effectiveRequestBody).toMatchObject({
       temperature: 1.25,

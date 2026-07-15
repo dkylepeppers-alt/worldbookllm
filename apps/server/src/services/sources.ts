@@ -61,6 +61,29 @@ export class SourceService {
     if (!exists) throw new NotFoundError(`Notebook ${id} was not found`);
   }
 
+  private validateAssistantResponseOrigin(
+    notebookId: string,
+    origin: CreateSource['origin'],
+  ): void {
+    if (origin.type !== 'assistant-response') return;
+    const relationship = this.db
+      .prepare(
+        `SELECT messages.chat_id, messages.role, chats.notebook_id
+         FROM messages
+         JOIN chats ON chats.id = messages.chat_id
+         WHERE messages.id = ?`,
+      )
+      .get(origin.messageId) as
+      { chat_id: string; role: 'user' | 'assistant'; notebook_id: string } | undefined;
+    if (
+      relationship?.chat_id !== origin.chatId ||
+      relationship.role !== 'assistant' ||
+      relationship.notebook_id !== notebookId
+    ) {
+      throw new NotFoundError('Assistant response was not found in this notebook');
+    }
+  }
+
   list(notebookId: string): SourceMetadata[] {
     this.requireNotebook(notebookId);
     const rows = this.db
@@ -70,22 +93,24 @@ export class SourceService {
   }
 
   create(notebookId: string, input: CreateSourceInput): SourceMetadata {
-    this.requireNotebook(notebookId);
     const normalized = createSourceSchema.parse(input);
     const id = randomUUID();
     const timestamp = this.now();
-    const stored = this.sourceFiles.write({
-      id,
-      notebookId,
-      title: normalized.title,
-      content: normalized.content,
-      origin: normalized.origin,
-      conversionNotes: normalized.conversionNotes,
-      createdAt: timestamp,
-    });
+    let stored: ReturnType<SourceFileStore['write']> | undefined;
 
     try {
-      this.db.transaction(() => {
+      return this.db.transaction(() => {
+        this.requireNotebook(notebookId);
+        this.validateAssistantResponseOrigin(notebookId, normalized.origin);
+        stored = this.sourceFiles.write({
+          id,
+          notebookId,
+          title: normalized.title,
+          content: normalized.content,
+          origin: normalized.origin,
+          conversionNotes: normalized.conversionNotes,
+          createdAt: timestamp,
+        });
         this.db
           .prepare(
             'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin_json, conversion_notes_json, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -106,13 +131,12 @@ export class SourceService {
         this.db
           .prepare('UPDATE notebooks SET updated_at = ? WHERE id = ?')
           .run(timestamp, notebookId);
+        return mapSource(this.getRow(id));
       })();
     } catch (error) {
-      this.sourceFiles.remove(stored.filePath);
+      if (stored !== undefined) this.sourceFiles.remove(stored.filePath);
       throw error;
     }
-
-    return mapSource(this.getRow(id));
   }
 
   createMany(notebookId: string, inputs: CreateSource[]): SourceMetadata[] {
