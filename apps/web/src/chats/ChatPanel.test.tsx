@@ -39,6 +39,7 @@ const chat: Chat = {
   title: 'First chat',
   sourceIds: [],
   providerOverride: null,
+  presetId: null,
   createdAt: '2026-07-10T12:00:00.000Z',
   updatedAt: '2026-07-10T12:00:00.000Z',
 };

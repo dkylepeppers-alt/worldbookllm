@@ -9,6 +9,7 @@ import { installErrorHandler } from './routes/helpers.js';
 import { registerChatRoutes } from './routes/chats.js';
 import { registerNotebookRoutes } from './routes/notebooks.js';
 import { registerProviderRoutes } from './routes/providers.js';
+import { registerPresetRoutes } from './routes/presets.js';
 import { registerSecretRoutes } from './routes/secrets.js';
 import { registerSourceRoutes } from './routes/sources.js';
 import { SecretStore } from './secrets/secret-store.js';
@@ -17,6 +18,7 @@ import { GenerationService } from './services/generation.js';
 import { NotebookService } from './services/notebooks.js';
 import { PromptAssembler } from './services/prompt-assembler.js';
 import { ProviderService } from './services/providers.js';
+import { PresetService } from './services/presets.js';
 import { UPLOAD_LIMIT_BYTES } from './services/converters/limits.js';
 import { SourceService } from './services/sources.js';
 
@@ -25,6 +27,7 @@ export interface AppServices {
   sources: SourceService;
   secrets: SecretStore;
   providers: ProviderService;
+  presets: PresetService;
   chats: ChatService;
   generation: GenerationService;
 }
@@ -52,6 +55,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     new ProviderHttpClient(options.fetchImpl ?? globalThis.fetch),
   );
   const chats = new ChatService(db);
+  const presets = new PresetService(db);
   const notebooks = new NotebookService(db, sourceFiles);
   const sources = new SourceService(db, sourceFiles);
   const generation = new GenerationService(
@@ -67,6 +71,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     sources,
     secrets,
     providers,
+    presets,
     chats,
     generation,
   });
@@ -91,6 +96,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerSourceRoutes(app);
   registerSecretRoutes(app);
   registerProviderRoutes(app);
+  registerPresetRoutes(app);
   registerChatRoutes(app);
 
   return app;
