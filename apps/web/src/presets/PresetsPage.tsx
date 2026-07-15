@@ -1,5 +1,7 @@
 import {
+  coalesceCanonicalMessages,
   createPresetSchema,
+  type CanonicalMessage,
   type CreatePreset,
   type Preset,
   type PresetModule,
@@ -908,25 +910,42 @@ function ModuleEditor({
 }
 
 function AssemblyPreview({ modules }: { modules: PresetModule[] }) {
-  const before = modules.filter((module) => module.insertion.position === 'before_history');
-  const atDepth = new Map<number, PresetModule[]>();
+  const canonicalMessage = (module: PresetModule): CanonicalMessage | undefined => {
+    if (module.kind === 'custom') {
+      return module.enabled ? { role: module.role, content: module.content } : undefined;
+    }
+    return { role: 'system', content: '[Selected source excerpts]' };
+  };
+  const before = coalesceCanonicalMessages(
+    modules.flatMap((module) => {
+      if (module.insertion.position !== 'before_history') return [];
+      const message = canonicalMessage(module);
+      return message === undefined ? [] : [message];
+    }),
+  );
+  const atDepth = new Map<number, CanonicalMessage[]>();
   for (const module of modules) {
     if (module.insertion.position !== 'at_depth') continue;
+    const message = canonicalMessage(module);
+    if (message === undefined) continue;
     const group = atDepth.get(module.insertion.depth) ?? [];
-    group.push(module);
+    group.push(message);
     atDepth.set(module.insertion.depth, group);
+  }
+  for (const [depth, group] of atDepth) {
+    atDepth.set(depth, coalesceCanonicalMessages(group));
   }
   const positiveDepths = [...atDepth.keys()].filter((depth) => depth > 0).sort((a, b) => b - a);
   const depthZero = atDepth.get(0) ?? [];
-  const moduleLabel = (module: PresetModule, depth?: number) =>
-    `${module.kind === 'sources' ? '[Selected source excerpts]' : module.name}${depth === undefined ? '' : ` · at depth ${depth}`}`;
+  const messageLabel = (message: CanonicalMessage, depth?: number) =>
+    `${message.role}: ${message.content}${depth === undefined ? '' : ` · at depth ${depth}`}`;
   return (
     <section className="preset-card assembly-preview">
       <p className="coordinate-label">Assembly preview · not chat content</p>
       <h2>Prompt order</h2>
       <ol>
-        {before.map((module) => (
-          <li key={module.key}>{moduleLabel(module)}</li>
+        {before.map((message, index) => (
+          <li key={`before-${index}`}>{messageLabel(message)}</li>
         ))}
         {positiveDepths.length === 0 ? <li>[Conversation history]</li> : null}
         {positiveDepths.map((depth, index) => (
@@ -936,8 +955,8 @@ function AssemblyPreview({ modules }: { modules: PresetModule[] }) {
                 ? `[Conversation history · older than depth ${depth}]`
                 : `[Conversation history · depth ${positiveDepths[index - 1]} to depth ${depth}]`}
             </li>
-            {atDepth.get(depth)?.map((module) => (
-              <li key={module.key}>{moduleLabel(module, depth)}</li>
+            {atDepth.get(depth)?.map((message, messageIndex) => (
+              <li key={`${depth}-${messageIndex}`}>{messageLabel(message, depth)}</li>
             ))}
           </Fragment>
         ))}
@@ -948,8 +967,8 @@ function AssemblyPreview({ modules }: { modules: PresetModule[] }) {
               : `[Conversation history · newest ${positiveDepths.at(-1)} messages]`}
           </li>
         ) : null}
-        {depthZero.map((module) => (
-          <li key={module.key}>{moduleLabel(module, 0)}</li>
+        {depthZero.map((message, index) => (
+          <li key={`zero-${index}`}>{messageLabel(message, 0)}</li>
         ))}
         <li>[Newest user message]</li>
       </ol>

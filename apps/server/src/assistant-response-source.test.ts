@@ -124,4 +124,55 @@ describe('assistant-response source provenance', () => {
     });
     expect(listed.json()).toEqual([]);
   });
+
+  it('rejects whitespace-only assistant provenance before creating a row or Markdown file', async () => {
+    const notebook = await app.inject({
+      method: 'POST',
+      url: '/api/notebooks',
+      payload: { name: 'Atlas' },
+    });
+    const notebookId = notebook.json<{ id: string }>().id;
+    const chat = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebookId}/chats`,
+      payload: {},
+    });
+    const chatId = chat.json<{ id: string }>().id;
+    const exchange = app.services.chats.beginExchange(chatId, 'Question', {
+      sourceIds: [],
+      provider: 'nanogpt',
+      model: 'gpt-4o-mini',
+      strictness: 'grounded',
+    });
+    app.services.chats.updateAssistant(exchange.assistant.id, {
+      content: ' \n\t ',
+      reasoning: null,
+      status: 'error',
+    });
+
+    const create = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebookId}/sources`,
+      payload: {
+        title: 'Empty response',
+        content: 'Must not persist',
+        origin: {
+          type: 'assistant-response',
+          chatId,
+          messageId: exchange.assistant.id,
+        },
+      },
+    });
+
+    expect(create.statusCode).toBe(404);
+    expect(create.json()).toEqual({
+      error: 'not_found',
+      message: 'Assistant response was not found in this notebook',
+    });
+    const db = new Database(join(dataDir, 'worldbookllm.db'), { readonly: true });
+    const count = db.prepare('SELECT count(*) AS count FROM sources').get() as { count: number };
+    db.close();
+    expect(count.count).toBe(0);
+    expect(await app.services.sources.list(notebookId)).toEqual([]);
+  });
 });

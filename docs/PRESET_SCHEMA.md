@@ -120,7 +120,7 @@ Enabled `before_history` modules are emitted before conversation history in thei
 - larger depths move toward the beginning of history;
 - a depth greater than the available history collapses to the boundary before all history.
 
-Modules that resolve to the same boundary retain their module-array order. Disabled custom modules emit nothing but retain their array position for later editing.
+Modules that resolve to the same boundary retain their module-array order. At each boundary, adjacent emitted canonical messages with the same role are coalesced into one message, joining their content with a blank line (`\n\n`). Coalescing is independent per boundary: it never crosses from modules into conversation history or the newest user message. A different-role module separates same-role messages. Disabled custom modules emit nothing but retain their array position for later editing.
 
 ## Validation and versioning
 

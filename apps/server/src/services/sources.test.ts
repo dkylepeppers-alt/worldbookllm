@@ -111,6 +111,33 @@ describe('SourceService assistant-response provenance', () => {
     db.close();
   });
 
+  it.each(['', '   \n\t'])(
+    'rejects an assistant-response origin whose message content is %j before creating data',
+    (content) => {
+      const { dataDir, db, chats, sources, notebook, chat, exchange } = setup();
+      chats.updateAssistant(exchange.assistant.id, {
+        content,
+        reasoning: null,
+        status: 'complete',
+      });
+
+      expect(() =>
+        sources.create(notebook.id, {
+          title: 'Invalid empty response',
+          content: 'No file',
+          origin: {
+            type: 'assistant-response',
+            chatId: chat.id,
+            messageId: exchange.assistant.id,
+          },
+        }),
+      ).toThrow(NotFoundError);
+      expect(sources.list(notebook.id)).toEqual([]);
+      expect(sourceFiles(dataDir, notebook.id)).toEqual([]);
+      db.close();
+    },
+  );
+
   it('rolls back a batch and removes files when any provenance claim is invalid', () => {
     const { dataDir, db, sources, notebook, chat, exchange } = setup();
     expect(() =>

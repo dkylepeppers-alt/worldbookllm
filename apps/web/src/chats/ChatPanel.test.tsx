@@ -284,6 +284,55 @@ describe('ChatPanel', () => {
     );
   });
 
+  it('retains an in-flight temperature owner across chats until its PATCH settles and refreshes the shared preset', async () => {
+    const secondChat: Chat = {
+      ...chat,
+      id: '80a0bf0c-031d-497c-9c1a-2f68441936a8',
+      title: 'Second shared-preset chat',
+    };
+    const updating = deferred<Preset>();
+    const returned = {
+      ...defaultPreset,
+      generation: { ...defaultPreset.generation, temperature: 1.25 },
+      updatedAt: '2026-07-10T12:03:00.000Z',
+    };
+    let persisted = defaultPreset;
+    const listPresets = vi.fn(() => Promise.resolve([persisted, prosePreset]));
+    const updatePreset = vi.fn(() => updating.promise);
+    await renderWorkspace({
+      listChats: () => Promise.resolve([chat, secondChat]),
+      getChat: (id: string) =>
+        Promise.resolve({ ...(id === chat.id ? chat : secondChat), messages: [] }),
+      listPresets,
+      updatePreset,
+    });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    fireEvent.change(await screen.findByLabelText('Temperature'), {
+      target: { value: '1.25' },
+    });
+    await waitFor(() => expect(updatePreset).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole('button', { name: new RegExp(secondChat.title) }));
+    await screen.findByRole('heading', { name: secondChat.title, level: 3 });
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+
+    persisted = returned;
+    await act(async () => {
+      updating.resolve(returned);
+      await updating.promise;
+    });
+
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    expect(await screen.findByText('1.25')).toBeDefined();
+    expect(listPresets).toHaveBeenCalledTimes(3);
+  });
+
   it('keeps explicit preset controls available and retries only failed app settings', async () => {
     const explicit = { ...chat, presetId: prosePreset.id };
     const listPresets = vi.fn().mockResolvedValue([defaultPreset, prosePreset]);

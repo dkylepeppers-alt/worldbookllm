@@ -21,6 +21,21 @@ export const canonicalMessageSchema = z.strictObject({
   content: z.string(),
 });
 
+export function coalesceCanonicalMessages(
+  messages: readonly CanonicalMessage[],
+): CanonicalMessage[] {
+  const coalesced: CanonicalMessage[] = [];
+  for (const message of messages) {
+    const previous = coalesced.at(-1);
+    if (previous?.role === message.role) {
+      previous.content = `${previous.content}\n\n${message.content}`;
+    } else {
+      coalesced.push({ ...message });
+    }
+  }
+  return coalesced;
+}
+
 export const generationSourceSnapshotSchema = z.strictObject({
   id: z.uuid(),
   title: z.string().trim().min(1).max(300),

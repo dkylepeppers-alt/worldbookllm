@@ -10,11 +10,19 @@ const TEMPERATURE_COMMIT_DELAY_MS = 150;
 
 interface PresetControlsProps {
   chat: Chat;
+  presetLibraryRevision: number;
   onChatUpdated: (chat: Chat) => void;
+  onPresetUpdated: (preset: Preset) => void;
   onMutationBusyChange: (owner: symbol, busy: boolean) => void;
 }
 
-export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: PresetControlsProps) {
+export function PresetControls({
+  chat,
+  presetLibraryRevision,
+  onChatUpdated,
+  onPresetUpdated,
+  onMutationBusyChange,
+}: PresetControlsProps) {
   const api = useApi();
   const [presetsState, setPresetsState] = useState<RequestState<Preset[]>>({ status: 'loading' });
   const [settingsState, setSettingsState] = useState<RequestState<string>>({ status: 'loading' });
@@ -28,6 +36,7 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mutationRef = useRef(false);
+  const mountedRef = useRef(true);
   const busyOwnerRef = useRef(Symbol('preset-controls'));
   const temperatureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reportMutationBusy = (busy: boolean) => onMutationBusyChange(busyOwnerRef.current, busy);
@@ -46,7 +55,7 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
       },
     );
     return () => controller.abort();
-  }, [loadPresets, presetsReloadKey]);
+  }, [loadPresets, presetsReloadKey, presetLibraryRevision]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -61,13 +70,18 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
     return () => controller.abort();
   }, [loadSettings, settingsReloadKey]);
 
-  useEffect(
-    () => () => {
-      if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
-      onMutationBusyChange(busyOwnerRef.current, false);
-    },
-    [onMutationBusyChange],
-  );
+  useEffect(() => {
+    const busyOwner = busyOwnerRef.current;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (temperatureTimerRef.current !== null) {
+        clearTimeout(temperatureTimerRef.current);
+        temperatureTimerRef.current = null;
+        onMutationBusyChange(busyOwner, false);
+      }
+    };
+  }, [onMutationBusyChange]);
 
   if (presetsState.status === 'loading') {
     return <p className="preset-controls-status">Loading preset library…</p>;
@@ -143,10 +157,10 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
     try {
       onChatUpdated(await api.updateChat(chat.id, { presetId }));
     } catch (caught) {
-      setError(messageFor(caught, 'Could not update this chat preset.'));
+      if (mountedRef.current) setError(messageFor(caught, 'Could not update this chat preset.'));
     } finally {
       mutationRef.current = false;
-      setSelecting(false);
+      if (mountedRef.current) setSelecting(false);
       reportMutationBusy(false);
     }
   }
@@ -180,20 +194,26 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
         generation: { temperature: value },
       });
       if (updated.id !== preset.id) return;
-      setPresetsState((current) =>
-        current.status === 'ready'
-          ? {
-              ...current,
-              value: current.value.map((entry) => (entry.id === preset.id ? updated : entry)),
-            }
-          : current,
-      );
+      if (mountedRef.current) {
+        setPresetsState((current) =>
+          current.status === 'ready'
+            ? {
+                ...current,
+                value: current.value.map((entry) => (entry.id === preset.id ? updated : entry)),
+              }
+            : current,
+        );
+      } else {
+        onPresetUpdated(updated);
+      }
     } catch (caught) {
-      setError(messageFor(caught, 'Could not save the temperature.'));
+      if (mountedRef.current) setError(messageFor(caught, 'Could not save the temperature.'));
     } finally {
       mutationRef.current = false;
-      setDraftTemperature(null);
-      setSavingTemperature(false);
+      if (mountedRef.current) {
+        setDraftTemperature(null);
+        setSavingTemperature(false);
+      }
       reportMutationBusy(false);
     }
   }

@@ -1,16 +1,17 @@
 import type {
+  CanonicalMessage,
   Chat,
   GenerationSourceSnapshot,
   Message,
   Preset,
   PresetModule,
 } from '@worldbookllm/shared';
-import type { ChatMessage } from '@worldbookllm/providers';
+import { coalesceCanonicalMessages } from '@worldbookllm/shared';
 
 import type { SourceService } from './sources.js';
 
 export interface AssembledPrompt {
-  messages: ChatMessage[];
+  messages: CanonicalMessage[];
   sources: GenerationSourceSnapshot[];
 }
 
@@ -32,20 +33,11 @@ function includeHistory(message: Message): boolean {
   return message.status === 'interrupted' && message.content.length > 0;
 }
 
-function moduleMessage(module: PresetModule, sourceContent: string): ChatMessage | undefined {
+function moduleMessage(module: PresetModule, sourceContent: string): CanonicalMessage | undefined {
   if (module.kind === 'custom') {
     return module.enabled ? { role: module.role, content: module.content } : undefined;
   }
   return { role: 'system', content: `## Sources\n${sourceContent}` };
-}
-
-function appendCoalescingSameRole(messages: ChatMessage[], message: ChatMessage): void {
-  const previous = messages.at(-1);
-  if (previous?.role === message.role) {
-    previous.content = `${previous.content}\n\n${message.content}`;
-  } else {
-    messages.push(message);
-  }
 }
 
 export class PromptAssembler {
@@ -70,18 +62,18 @@ export class PromptAssembler {
                 `<source id="${source.id}" title="${escapeAttribute(source.title)}">\n${source.content}\n</source>`,
             )
             .join('\n\n');
-    const eligibleHistory: ChatMessage[] = history.filter(includeHistory).map((entry) => ({
+    const eligibleHistory: CanonicalMessage[] = history.filter(includeHistory).map((entry) => ({
       role: entry.role,
       content: entry.content,
     }));
 
-    const beforeHistory: ChatMessage[] = [];
-    const atBoundaries = new Map<number, ChatMessage[]>();
+    const beforeHistory: CanonicalMessage[] = [];
+    const atBoundaries = new Map<number, CanonicalMessage[]>();
     for (const module of preset.modules) {
       const emitted = moduleMessage(module, sourceContent);
       if (!emitted) continue;
       if (module.insertion.position === 'before_history') {
-        appendCoalescingSameRole(beforeHistory, emitted);
+        beforeHistory.push(emitted);
         continue;
       }
       const boundary = Math.max(0, eligibleHistory.length - module.insertion.depth);
@@ -90,9 +82,9 @@ export class PromptAssembler {
       atBoundaries.set(boundary, messages);
     }
 
-    const messages = [...beforeHistory];
+    const messages = coalesceCanonicalMessages(beforeHistory);
     for (let boundary = 0; boundary <= eligibleHistory.length; boundary += 1) {
-      messages.push(...(atBoundaries.get(boundary) ?? []));
+      messages.push(...coalesceCanonicalMessages(atBoundaries.get(boundary) ?? []));
       const historical = eligibleHistory[boundary];
       if (historical) messages.push(historical);
     }

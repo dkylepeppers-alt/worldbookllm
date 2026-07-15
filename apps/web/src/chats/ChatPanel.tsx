@@ -50,6 +50,7 @@ export function ChatPanel() {
   const [presetMutationBusyOwners, setPresetMutationBusyOwners] = useState<ReadonlySet<symbol>>(
     () => new Set(),
   );
+  const [presetLibraryRevision, setPresetLibraryRevision] = useState(0);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [inspecting, setInspecting] = useState<Message | null>(null);
   const [capturing, setCapturing] = useState<Message | null>(null);
@@ -360,7 +361,9 @@ export function ChatPanel() {
           <PresetControls
             key={selected.id}
             chat={selected}
+            presetLibraryRevision={presetLibraryRevision}
             onChatUpdated={adoptChat}
+            onPresetUpdated={() => setPresetLibraryRevision((revision) => revision + 1)}
             onMutationBusyChange={setPresetMutationOwnerBusy}
           />
           {selectedDetail === null && !detailFailed ? (

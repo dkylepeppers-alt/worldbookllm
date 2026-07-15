@@ -81,7 +81,7 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
     await expect(previewItems).toHaveText([
       'Preset marker',
       '[Conversation history · older than depth 2]',
-      '[Selected source excerpts] · at depth 2',
+      'system: [Selected source excerpts] · at depth 2',
       '[Conversation history · newest 2 messages]',
       'Depth directive · at depth 0',
       '[Newest user message]',

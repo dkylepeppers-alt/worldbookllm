@@ -68,16 +68,18 @@ export class SourceService {
     if (origin.type !== 'assistant-response') return;
     const relationship = this.db
       .prepare(
-        `SELECT messages.chat_id, messages.role, chats.notebook_id
+        `SELECT messages.chat_id, messages.role, messages.content, chats.notebook_id
          FROM messages
          JOIN chats ON chats.id = messages.chat_id
          WHERE messages.id = ?`,
       )
       .get(origin.messageId) as
-      { chat_id: string; role: 'user' | 'assistant'; notebook_id: string } | undefined;
+      | { chat_id: string; role: 'user' | 'assistant'; content: string; notebook_id: string }
+      | undefined;
     if (
       relationship?.chat_id !== origin.chatId ||
       relationship.role !== 'assistant' ||
+      relationship.content.trim().length === 0 ||
       relationship.notebook_id !== notebookId
     ) {
       throw new NotFoundError('Assistant response was not found in this notebook');

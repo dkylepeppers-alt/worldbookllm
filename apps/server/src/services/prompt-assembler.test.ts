@@ -249,8 +249,10 @@ describe('PromptAssembler', () => {
     expect(assembler.assemble(chat, history, 'new', preset(modules)).messages).toEqual([
       { role: 'system', content: 'before-a' },
       { role: 'assistant', content: 'before-b' },
-      { role: 'system', content: 'depth-far' },
-      { role: 'system', content: '## Sources\nNo sources selected.' },
+      {
+        role: 'system',
+        content: 'depth-far\n\n## Sources\nNo sources selected.',
+      },
       { role: 'user', content: 'u0' },
       { role: 'user', content: 'depth-2' },
       { role: 'assistant', content: 'a1' },
@@ -259,6 +261,63 @@ describe('PromptAssembler', () => {
       { role: 'assistant', content: 'partial' },
       { role: 'system', content: 'depth-0' },
       { role: 'user', content: 'new' },
+    ]);
+    db.close();
+  });
+
+  it('coalesces same-role modules independently at before-history and shared depth boundaries', () => {
+    const { db, assembler, chat } = setup();
+    const history = [
+      message({ seq: 0, role: 'system', content: 'history system' }),
+      message({ seq: 1, role: 'user', content: 'history user' }),
+    ];
+    const modules = [
+      custom('before-system-a', 'before system A', { position: 'before_history' }),
+      custom('before-system-b', 'before system B', { position: 'before_history' }),
+      custom('before-user', 'before user', { position: 'before_history' }, 'user'),
+      custom('before-user-b', 'before user B', { position: 'before_history' }, 'user'),
+      custom('before-system-c', 'before system C', { position: 'before_history' }),
+      custom(
+        'before-assistant-a',
+        'before assistant A',
+        { position: 'before_history' },
+        'assistant',
+      ),
+      custom(
+        'before-assistant-b',
+        'before assistant B',
+        { position: 'before_history' },
+        'assistant',
+      ),
+      custom('depth-system-a', 'depth system A', { position: 'at_depth', depth: 2 }),
+      sourcesModule({ position: 'at_depth', depth: 99 }),
+      custom('depth-user-a', 'depth user A', { position: 'at_depth', depth: 2 }, 'user'),
+      custom('depth-user-b', 'depth user B', { position: 'at_depth', depth: 99 }, 'user'),
+      custom('depth-assistant', 'depth assistant', { position: 'at_depth', depth: 2 }, 'assistant'),
+      custom(
+        'depth-assistant-b',
+        'depth assistant B',
+        { position: 'at_depth', depth: 99 },
+        'assistant',
+      ),
+      custom('depth-system-b', 'depth system B', { position: 'at_depth', depth: 2 }),
+    ];
+
+    expect(assembler.assemble(chat, history, 'newest user', preset(modules)).messages).toEqual([
+      { role: 'system', content: 'before system A\n\nbefore system B' },
+      { role: 'user', content: 'before user\n\nbefore user B' },
+      { role: 'system', content: 'before system C' },
+      { role: 'assistant', content: 'before assistant A\n\nbefore assistant B' },
+      {
+        role: 'system',
+        content: 'depth system A\n\n## Sources\nNo sources selected.',
+      },
+      { role: 'user', content: 'depth user A\n\ndepth user B' },
+      { role: 'assistant', content: 'depth assistant\n\ndepth assistant B' },
+      { role: 'system', content: 'depth system B' },
+      { role: 'system', content: 'history system' },
+      { role: 'user', content: 'history user' },
+      { role: 'user', content: 'newest user' },
     ]);
     db.close();
   });

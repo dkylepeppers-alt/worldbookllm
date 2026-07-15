@@ -250,7 +250,7 @@ describe('Preset studio', () => {
     const sources = screen.getByRole('group', { name: 'Selected sources module' });
     expect(within(sources).queryByLabelText('Role')).toBeNull();
     expect(within(sources).queryByRole('button', { name: /remove/i })).toBeNull();
-    expect(screen.getByText('[Selected source excerpts]')).toBeDefined();
+    expect(screen.getByText('system: [Selected source excerpts]')).toBeDefined();
     expect(screen.getByText('[Conversation history]')).toBeDefined();
     expect(screen.getByText('[Newest user message]')).toBeDefined();
 
@@ -276,7 +276,7 @@ describe('Preset studio', () => {
       'Style guide',
       'Selected sources',
     ]);
-    expect(screen.getByText(/Style guide · at depth 2/)).toBeDefined();
+    expect(screen.getByText('system: Use terse prose. · at depth 2')).toBeDefined();
     await user.click(screen.getByRole('button', { name: 'Remove Style guide' }));
     expect(screen.queryByRole('group', { name: 'Style guide module' })).toBeNull();
   });
@@ -402,14 +402,80 @@ describe('Preset studio', () => {
       (item) => item.textContent,
     );
     expect(rows).toEqual([
-      '[Selected source excerpts]',
+      'system: [Selected source excerpts]',
       '[Conversation history · older than depth 50000]',
-      'Large A · at depth 50000',
-      'Large B · at depth 50000',
+      'system: Large A\n\nLarge B · at depth 50000',
       '[Conversation history · depth 50000 to depth 1]',
-      'Depth one · at depth 1',
+      'system: Depth one · at depth 1',
       '[Conversation history · newest message]',
-      'Depth zero · at depth 0',
+      'system: Depth zero · at depth 0',
+      '[Newest user message]',
+    ]);
+  });
+
+  it('previews the shared canonical coalescing semantics independently at each boundary', async () => {
+    const preview = preset(DEFAULT_ID, 'Canonical grouping');
+    preview.modules = [
+      {
+        key: 'before-system',
+        name: 'Before system',
+        kind: 'custom',
+        role: 'system',
+        content: 'Before system content',
+        enabled: true,
+        insertion: { position: 'before_history' },
+      },
+      preview.modules[0]!,
+      {
+        key: 'before-user',
+        name: 'Before user',
+        kind: 'custom',
+        role: 'user',
+        content: 'Before user content',
+        enabled: true,
+        insertion: { position: 'before_history' },
+      },
+      {
+        key: 'depth-assistant-a',
+        name: 'Depth assistant A',
+        kind: 'custom',
+        role: 'assistant',
+        content: 'Depth assistant A content',
+        enabled: true,
+        insertion: { position: 'at_depth', depth: 4 },
+      },
+      {
+        key: 'depth-assistant-b',
+        name: 'Depth assistant B',
+        kind: 'custom',
+        role: 'assistant',
+        content: 'Depth assistant B content',
+        enabled: true,
+        insertion: { position: 'at_depth', depth: 4 },
+      },
+      {
+        key: 'depth-system',
+        name: 'Depth system',
+        kind: 'custom',
+        role: 'system',
+        content: 'Depth system content',
+        enabled: true,
+        insertion: { position: 'at_depth', depth: 4 },
+      },
+    ];
+    renderStudio({}, [preview]);
+    await screen.findByDisplayValue('Canonical grouping');
+
+    const rows = Array.from(document.querySelectorAll('.assembly-preview li')).map(
+      (item) => item.textContent,
+    );
+    expect(rows).toEqual([
+      'system: Before system content\n\n[Selected source excerpts]',
+      'user: Before user content',
+      '[Conversation history · older than depth 4]',
+      'assistant: Depth assistant A content\n\nDepth assistant B content · at depth 4',
+      'system: Depth system content · at depth 4',
+      '[Conversation history · newest 4 messages]',
       '[Newest user message]',
     ]);
   });

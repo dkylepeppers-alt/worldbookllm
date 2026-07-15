@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  coalesceCanonicalMessages,
   apiErrorSchema,
   createNotebookSchema,
   createSecretSchema,
@@ -16,6 +17,25 @@ import {
 } from './index.js';
 
 describe('data API schemas', () => {
+  it('coalesces only adjacent canonical messages with the same role without mutating input', () => {
+    const input = [
+      { role: 'system' as const, content: 'System one' },
+      { role: 'system' as const, content: 'System two' },
+      { role: 'user' as const, content: 'User one' },
+      { role: 'assistant' as const, content: 'Assistant one' },
+      { role: 'assistant' as const, content: 'Assistant two' },
+      { role: 'system' as const, content: 'System three' },
+    ];
+
+    expect(coalesceCanonicalMessages(input)).toEqual([
+      { role: 'system', content: 'System one\n\nSystem two' },
+      { role: 'user', content: 'User one' },
+      { role: 'assistant', content: 'Assistant one\n\nAssistant two' },
+      { role: 'system', content: 'System three' },
+    ]);
+    expect(input[0]?.content).toBe('System one');
+  });
+
   it('pins every M1 provider source', () => {
     expect(providerSourceSchema.options).toEqual([
       'openai',
