@@ -11,7 +11,7 @@ const TEMPERATURE_COMMIT_DELAY_MS = 150;
 interface PresetControlsProps {
   chat: Chat;
   onChatUpdated: (chat: Chat) => void;
-  onMutationBusyChange: (busy: boolean) => void;
+  onMutationBusyChange: (owner: symbol, busy: boolean) => void;
 }
 
 export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: PresetControlsProps) {
@@ -28,7 +28,9 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mutationRef = useRef(false);
+  const busyOwnerRef = useRef(Symbol('preset-controls'));
   const temperatureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reportMutationBusy = (busy: boolean) => onMutationBusyChange(busyOwnerRef.current, busy);
 
   const loadPresets = useCallback((signal: AbortSignal) => api.listPresets(signal), [api]);
   const loadSettings = useCallback((signal: AbortSignal) => api.getAppSettings(signal), [api]);
@@ -62,7 +64,7 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
   useEffect(
     () => () => {
       if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
-      onMutationBusyChange(false);
+      onMutationBusyChange(busyOwnerRef.current, false);
     },
     [onMutationBusyChange],
   );
@@ -136,7 +138,7 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
     if (mutationRef.current || presetId === chat.presetId) return;
     mutationRef.current = true;
     setSelecting(true);
-    onMutationBusyChange(true);
+    reportMutationBusy(true);
     setError(null);
     try {
       onChatUpdated(await api.updateChat(chat.id, { presetId }));
@@ -145,7 +147,7 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
     } finally {
       mutationRef.current = false;
       setSelecting(false);
-      onMutationBusyChange(false);
+      reportMutationBusy(false);
     }
   }
 
@@ -155,13 +157,13 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
       if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
       temperatureTimerRef.current = null;
       setDraftTemperature(null);
-      onMutationBusyChange(false);
+      reportMutationBusy(false);
       setError(null);
       return;
     }
     if (temperatureTimerRef.current !== null) clearTimeout(temperatureTimerRef.current);
     setDraftTemperature({ presetId: activePreset.id, value });
-    onMutationBusyChange(true);
+    reportMutationBusy(true);
     setError(null);
     temperatureTimerRef.current = setTimeout(() => {
       temperatureTimerRef.current = null;
@@ -192,7 +194,7 @@ export function PresetControls({ chat, onChatUpdated, onMutationBusyChange }: Pr
       mutationRef.current = false;
       setDraftTemperature(null);
       setSavingTemperature(false);
-      onMutationBusyChange(false);
+      reportMutationBusy(false);
     }
   }
 

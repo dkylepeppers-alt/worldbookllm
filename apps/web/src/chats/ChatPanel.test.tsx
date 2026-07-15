@@ -240,6 +240,50 @@ describe('ChatPanel', () => {
     );
   });
 
+  it('keeps Send locked for preset mutation B when stale mutation A settles after unmount', async () => {
+    const secondChat: Chat = {
+      ...chat,
+      id: '70a0bf0c-031d-497c-9c1a-2f68441936a7',
+      title: 'Second chat',
+    };
+    const updateA = deferred<Chat>();
+    const updateB = deferred<Chat>();
+    const updateChat = vi.fn((id: string) => (id === chat.id ? updateA.promise : updateB.promise));
+    await renderWorkspace({
+      listChats: () => Promise.resolve([chat, secondChat]),
+      getChat: (id: string) =>
+        Promise.resolve({ ...(id === chat.id ? chat : secondChat), messages: [] }),
+      updateChat,
+    });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    await user.selectOptions(await screen.findByLabelText('Chat preset'), prosePreset.id);
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: new RegExp(secondChat.title) }));
+    const secondSelector = await screen.findByLabelText('Chat preset');
+    await user.selectOptions(secondSelector, prosePreset.id);
+    expect(updateChat).toHaveBeenCalledTimes(2);
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      updateA.resolve({ ...chat, presetId: prosePreset.id });
+      await updateA.promise;
+    });
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      updateB.resolve({ ...secondChat, presetId: prosePreset.id });
+      await updateB.promise;
+    });
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+  });
+
   it('keeps explicit preset controls available and retries only failed app settings', async () => {
     const explicit = { ...chat, presetId: prosePreset.id };
     const listPresets = vi.fn().mockResolvedValue([defaultPreset, prosePreset]);

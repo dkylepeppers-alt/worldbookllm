@@ -47,7 +47,9 @@ export function ChatPanel() {
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [pending, setPending] = useState<PendingExchange | null>(null);
   const [savingSources, setSavingSources] = useState(false);
-  const [savingPresetMutation, setSavingPresetMutation] = useState(false);
+  const [presetMutationBusyOwners, setPresetMutationBusyOwners] = useState<ReadonlySet<symbol>>(
+    () => new Set(),
+  );
   const [streamError, setStreamError] = useState<string | null>(null);
   const [inspecting, setInspecting] = useState<Message | null>(null);
   const [capturing, setCapturing] = useState<Message | null>(null);
@@ -55,6 +57,16 @@ export function ChatPanel() {
   // Mirrors selectedId so async completions (stream cleanup, refetches) can
   // tell whether their chat is still the selected one before writing state.
   const selectedIdRef = useRef<string | null>(null);
+
+  const setPresetMutationOwnerBusy = useCallback((owner: symbol, busy: boolean) => {
+    setPresetMutationBusyOwners((current) => {
+      if (current.has(owner) === busy) return current;
+      const next = new Set(current);
+      if (busy) next.add(owner);
+      else next.delete(owner);
+      return next;
+    });
+  }, []);
 
   const loadChats = useCallback(
     (signal?: AbortSignal) => api.listChats(notebookId, signal),
@@ -346,9 +358,10 @@ export function ChatPanel() {
             </button>
           </div>
           <PresetControls
+            key={selected.id}
             chat={selected}
             onChatUpdated={adoptChat}
-            onMutationBusyChange={setSavingPresetMutation}
+            onMutationBusyChange={setPresetMutationOwnerBusy}
           />
           {selectedDetail === null && !detailFailed ? (
             <LoadingState>Loading messages…</LoadingState>
@@ -381,7 +394,7 @@ export function ChatPanel() {
               <MessageComposer
                 streaming={pending !== null}
                 stopping={pending?.stopping ?? false}
-                sendDisabled={savingSources || savingPresetMutation}
+                sendDisabled={savingSources || presetMutationBusyOwners.size > 0}
                 onSend={send}
                 onStop={stopStreaming}
               />
