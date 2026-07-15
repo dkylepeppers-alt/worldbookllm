@@ -203,9 +203,8 @@ export function PresetControls({
               }
             : current,
         );
-      } else {
-        onPresetUpdated(updated);
       }
+      onPresetUpdated(updated);
     } catch (caught) {
       if (mountedRef.current) setError(messageFor(caught, 'Could not save the temperature.'));
     } finally {
