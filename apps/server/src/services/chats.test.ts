@@ -243,6 +243,29 @@ describe('ChatService', () => {
     db.close();
   });
 
+  it('surfaces corrupt variant JSON as an internal stored-data error', () => {
+    const { db, chats } = setup();
+    const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      title: 'Chat',
+      sourceIds: [],
+      providerOverride: null,
+      presetId: null,
+    });
+    const context: GenerationContext = {
+      sourceIds: [],
+      provider: 'nanogpt',
+      model: 'gpt-4o-mini',
+      strictness: 'grounded',
+    };
+    const { assistant } = chats.beginExchange(chat.id, 'Ask', context);
+    db.prepare('UPDATE messages SET variants_json = ? WHERE id = ?').run('{broken', assistant.id);
+    expect(() => chats.selectVariant(assistant.id, 0)).toThrow(InvalidStoredDataError);
+    expect(() =>
+      chats.updateAssistant(assistant.id, { content: 'x', reasoning: null, status: 'complete' }),
+    ).toThrow(InvalidStoredDataError);
+    db.close();
+  });
+
   it('deletes chats with cascading messages', () => {
     const { db, chats } = setup();
     const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {

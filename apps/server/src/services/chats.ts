@@ -82,18 +82,24 @@ function mapMessage(row: MessageRow): Message {
 }
 
 function readVariants(row: MessageRow): MessageVariant[] {
-  if (row.variants_json === null) {
-    return [
-      {
-        content: row.content,
-        reasoning: row.reasoning,
-        status: row.status,
-        context: JSON.parse(row.context_json) as MessageVariant['context'],
-        createdAt: row.created_at,
-      },
-    ];
+  try {
+    if (row.variants_json === null) {
+      return [
+        {
+          content: row.content,
+          reasoning: row.reasoning,
+          status: row.status,
+          context: JSON.parse(row.context_json) as MessageVariant['context'],
+          createdAt: row.created_at,
+        },
+      ];
+    }
+    return JSON.parse(row.variants_json) as MessageVariant[];
+  } catch (error) {
+    throw new InvalidStoredDataError(`Message ${row.id} has invalid stored data`, {
+      cause: error,
+    });
   }
-  return JSON.parse(row.variants_json) as MessageVariant[];
 }
 
 export class ChatService {
@@ -262,7 +268,8 @@ export class ChatService {
     // record, so there is nothing extra to write.
     let variantsJson = row.variants_json;
     if (variantsJson !== null) {
-      const variants = JSON.parse(variantsJson) as MessageVariant[];
+      // readVariants wraps malformed stored JSON in InvalidStoredDataError.
+      const variants = readVariants(row);
       const active = variants[row.active_variant];
       if (active) {
         variants[row.active_variant] = {
