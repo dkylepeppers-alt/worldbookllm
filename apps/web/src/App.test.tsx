@@ -37,4 +37,11 @@ describe('application routes', () => {
       '/',
     );
   });
+
+  it('exposes the preset studio as a top-level route', async () => {
+    renderRoute('/presets');
+
+    expect(screen.getByRole('link', { name: 'Presets' }).getAttribute('href')).toBe('/presets');
+    expect(await screen.findByRole('heading', { name: 'Preset studio' })).toBeDefined();
+  });
 });
