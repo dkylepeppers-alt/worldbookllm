@@ -109,12 +109,93 @@ describe('ProviderService', () => {
       new ProviderHttpClient(async () => Promise.reject(new Error('not called'))),
     );
     expect(
-      service.createChatRequest({ source: 'nanogpt', model: 'gpt-4o-mini' }, [
-        { role: 'user', content: 'Hello' },
-      ]),
+      service.createChatRequest(
+        { source: 'nanogpt', model: 'gpt-4o-mini' },
+        [{ role: 'user', content: 'Hello' }],
+        { temperature: 0.65, topP: null, maxTokens: null, assistantPrefill: null },
+      ),
     ).toMatchObject({
       headers: { Authorization: 'Bearer generation-key' },
-      body: { stream: true },
+      body: { stream: true, temperature: 0.65 },
     });
+  });
+
+  it('passes nullable controls only when set and preserves provider prefill behavior', () => {
+    const secrets = store();
+    secrets.add('api_key_claude', 'claude-key', 'Primary');
+    const service = new ProviderService(
+      secrets,
+      new ProviderHttpClient(async () => Promise.reject(new Error('not called'))),
+    );
+
+    const withoutNullable = service.createChatRequest(
+      { source: 'claude', model: 'claude-3-5-sonnet-20241022' },
+      [{ role: 'user', content: 'Hello' }],
+      { temperature: 0.4, topP: null, maxTokens: null, assistantPrefill: null },
+    );
+    expect(withoutNullable.body).toMatchObject({ temperature: 0.4 });
+    expect(withoutNullable.body).not.toHaveProperty('top_p');
+    expect(withoutNullable.body).not.toHaveProperty('max_tokens');
+    expect(withoutNullable.body.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
+    ]);
+
+    const withControls = service.createChatRequest(
+      { source: 'claude', model: 'claude-3-5-sonnet-20241022' },
+      [{ role: 'user', content: 'Hello' }],
+      { temperature: 0.4, topP: 0.85, maxTokens: 321, assistantPrefill: 'Answer: ' },
+    );
+    expect(withControls.body).toMatchObject({ temperature: 0.4, top_p: 0.85, max_tokens: 321 });
+    expect(withControls.body.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Answer:' }] },
+    ]);
+  });
+
+  it('snapshots only the JSON request body and redacts active secrets inside nested strings', () => {
+    const secrets = store();
+    secrets.add('api_key_custom', 'active-secret', 'Primary');
+    secrets.add('api_key_openai', 'other-secret', 'Primary');
+    const service = new ProviderService(
+      secrets,
+      new ProviderHttpClient(async () => Promise.reject(new Error('not called'))),
+    );
+    const request = {
+      url: 'https://active-secret.example/v1',
+      method: 'POST' as const,
+      headers: { Authorization: 'Bearer active-secret' },
+      body: {
+        plain: 'safe',
+        nested: { value: 'prefix active-secret and other-secret suffix', omitted: undefined },
+        list: ['active-secret', { again: 'xactive-secrety' }],
+      },
+    };
+
+    expect(service.snapshotRequestBody(request)).toEqual({
+      plain: 'safe',
+      nested: { value: 'prefix [redacted] and [redacted] suffix' },
+      list: ['[redacted]', { again: 'x[redacted]y' }],
+    });
+    expect(JSON.stringify(service.snapshotRequestBody(request))).not.toContain('Authorization');
+    expect(JSON.stringify(service.snapshotRequestBody(request))).not.toContain('https://');
+  });
+
+  it('fully redacts overlapping active secret values', () => {
+    const secrets = store();
+    secrets.add('api_key_custom', 'shared', 'Short');
+    secrets.add('api_key_openai', 'shared-secret', 'Long');
+    const service = new ProviderService(
+      secrets,
+      new ProviderHttpClient(async () => Promise.reject(new Error('not called'))),
+    );
+
+    expect(
+      service.snapshotRequestBody({
+        url: 'https://example.test',
+        method: 'POST',
+        headers: {},
+        body: { value: 'shared-secret' },
+      }),
+    ).toEqual({ value: '[redacted]' });
   });
 });

@@ -61,6 +61,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const generation = new GenerationService(
     chats,
     notebooks,
+    presets,
     new PromptAssembler(sources),
     providers,
     (error) => app.log.error(error),

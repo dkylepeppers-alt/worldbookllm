@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { Chat, Message } from '@worldbookllm/shared';
+import type { Chat, Message, Preset, PresetModule } from '@worldbookllm/shared';
 import matter from 'gray-matter';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -13,6 +13,8 @@ import { PromptAssembler } from './prompt-assembler.js';
 import { SourceService } from './sources.js';
 
 const tempDirs: string[] = [];
+const CHAT_ID = '62455a02-2fe1-4b6d-a6ce-4517bf06ada7';
+const NOW = '2026-07-10T12:00:00.000Z';
 
 function setup() {
   const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-prompt-'));
@@ -22,7 +24,17 @@ function setup() {
   const notebooks = new NotebookService(db, files);
   const sources = new SourceService(db, files);
   const notebook = notebooks.create({ name: 'Atlas', settings: null });
-  return { dataDir, db, sources, notebook, assembler: new PromptAssembler(sources) };
+  const chat: Chat = {
+    id: CHAT_ID,
+    notebookId: notebook.id,
+    title: 'Chat',
+    sourceIds: [],
+    providerOverride: null,
+    presetId: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  return { dataDir, db, sources, notebook, chat, assembler: new PromptAssembler(sources) };
 }
 
 afterEach(() => {
@@ -32,21 +44,55 @@ afterEach(() => {
 function message(overrides: Partial<Message>): Message {
   return {
     id: crypto.randomUUID(),
-    chatId: '62455a02-2fe1-4b6d-a6ce-4517bf06ada7',
+    chatId: CHAT_ID,
     seq: 0,
     role: 'user',
     content: 'history',
     reasoning: null,
     status: 'complete',
     context: null,
-    createdAt: '2026-07-10T12:00:00.000Z',
+    createdAt: NOW,
     ...overrides,
   };
 }
 
+function custom(
+  key: string,
+  content: string,
+  insertion: PresetModule['insertion'],
+  role: 'system' | 'user' | 'assistant' = 'system',
+  enabled = true,
+): PresetModule {
+  return { key, name: key, kind: 'custom', role, content, enabled, insertion };
+}
+
+function sourcesModule(insertion: PresetModule['insertion']): PresetModule {
+  return {
+    key: 'sources',
+    name: 'Sources',
+    kind: 'sources',
+    role: 'system',
+    content: null,
+    enabled: true,
+    insertion,
+  };
+}
+
+function preset(modules: PresetModule[]): Preset {
+  return {
+    id: '786f38a3-6ee4-493f-a6af-7a28e53c9a29',
+    schemaVersion: 1,
+    name: 'Test preset',
+    generation: { temperature: 0.7, topP: null, maxTokens: null, assistantPrefill: null },
+    modules,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
 describe('PromptAssembler', () => {
-  it('reads fresh sources in selected order and escapes title attributes', () => {
-    const { dataDir, db, sources, notebook, assembler } = setup();
+  it('reads fresh sources in selected order and returns exact snapshots with fresh hashes', () => {
+    const { dataDir, db, sources, notebook, chat, assembler } = setup();
     const first = sources.create(notebook.id, { title: 'First', content: 'old first' });
     const second = sources.create(notebook.id, {
       title: 'Second & "quoted" <lore>',
@@ -54,66 +100,98 @@ describe('PromptAssembler', () => {
     });
     const firstPath = join(dataDir, first.filePath);
     const parsed = matter(readFileSync(firstPath, 'utf8'));
-    const edited = matter.stringify('fresh first', parsed.data).replace(/\n$/u, '');
-    writeFileSync(firstPath, edited, { mode: 0o600 });
-    const chat: Chat = {
-      id: '62455a02-2fe1-4b6d-a6ce-4517bf06ada7',
-      notebookId: notebook.id,
-      title: 'Chat',
-      sourceIds: [second.id, first.id],
-      providerOverride: null,
-      createdAt: first.createdAt,
-      updatedAt: first.updatedAt,
-    };
+    writeFileSync(firstPath, matter.stringify('fresh first', parsed.data).replace(/\n$/u, ''), {
+      mode: 0o600,
+    });
+    chat.sourceIds = [second.id, first.id];
 
-    const content = assembler.assemble(chat, [], 'Question')[0]?.content;
-    expect(content).toBeTypeOf('string');
-    expect(content).toContain('title="Second &amp; &quot;quoted&quot; &lt;lore&gt;"');
-    expect(content?.indexOf('second body')).toBeLessThan(content?.indexOf('fresh first') ?? -1);
-    expect(content).not.toContain('old first');
+    const result = assembler.assemble(
+      chat,
+      [],
+      'Question',
+      preset([sourcesModule({ position: 'before_history' })]),
+    );
+
+    expect(result.messages).toEqual([
+      {
+        role: 'system',
+        content: `<source id="${second.id}" title="Second &amp; &quot;quoted&quot; &lt;lore&gt;">\nsecond body\n</source>\n\n<source id="${first.id}" title="First">\nfresh first\n</source>`,
+      },
+      { role: 'user', content: 'Question' },
+    ]);
+    expect(result.sources).toEqual([
+      {
+        id: second.id,
+        title: second.title,
+        contentHash: second.contentHash,
+        content: 'second body',
+      },
+      {
+        id: first.id,
+        title: first.title,
+        contentHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        content: 'fresh first',
+      },
+    ]);
+    expect(result.sources[1]?.contentHash).not.toBe(first.contentHash);
     db.close();
   });
 
-  it('includes eligible history and appends the incoming user message', () => {
-    const { db, assembler, notebook } = setup();
-    const chat: Chat = {
-      id: '62455a02-2fe1-4b6d-a6ce-4517bf06ada7',
-      notebookId: notebook.id,
-      title: 'Chat',
-      sourceIds: [],
-      providerOverride: null,
-      createdAt: '2026-07-10T12:00:00.000Z',
-      updatedAt: '2026-07-10T12:00:00.000Z',
-    };
+  it('emits exact empty-source text and keeps the newest user message last', () => {
+    const { db, assembler, chat } = setup();
+    const result = assembler.assemble(
+      chat,
+      [message({ role: 'user', content: 'Earlier' })],
+      'Newest',
+      preset([sourcesModule({ position: 'at_depth', depth: 0 })]),
+    );
+
+    expect(result).toEqual({
+      messages: [
+        { role: 'user', content: 'Earlier' },
+        { role: 'system', content: 'No sources selected.' },
+        { role: 'user', content: 'Newest' },
+      ],
+      sources: [],
+    });
+    db.close();
+  });
+
+  it('filters history before inserting modules at every depth boundary', () => {
+    const { db, assembler, chat } = setup();
     const history = [
-      message({ seq: 0, role: 'user', content: 'User history' }),
-      message({ seq: 1, role: 'assistant', content: 'Complete', status: 'complete' }),
-      message({ seq: 2, role: 'assistant', content: 'Partial', status: 'interrupted' }),
-      message({ seq: 3, role: 'assistant', content: '', status: 'interrupted' }),
-      message({ seq: 4, role: 'assistant', content: 'Failed', status: 'error' }),
+      message({ seq: 0, role: 'user', content: 'u0' }),
+      message({ seq: 1, role: 'assistant', content: '', status: 'interrupted' }),
+      message({ seq: 2, role: 'assistant', content: 'a1', status: 'complete' }),
+      message({ seq: 3, role: 'assistant', content: 'partial', status: 'interrupted' }),
+      message({ seq: 4, role: 'assistant', content: 'failed', status: 'error' }),
+    ];
+    const modules = [
+      custom('before-a', 'before-a', { position: 'before_history' }),
+      custom('depth-far', 'depth-far', { position: 'at_depth', depth: 99 }),
+      custom('before-b', 'before-b', { position: 'before_history' }, 'assistant'),
+      custom('depth-2', 'depth-2', { position: 'at_depth', depth: 2 }, 'user'),
+      custom('depth-1-a', 'depth-1-a', { position: 'at_depth', depth: 1 }),
+      custom('depth-1-b', 'depth-1-b', { position: 'at_depth', depth: 1 }, 'assistant'),
+      custom('depth-0', 'depth-0', { position: 'at_depth', depth: 0 }),
+      custom('off', 'disabled', { position: 'before_history' }, 'system', false),
+      sourcesModule({ position: 'at_depth', depth: 3 }),
     ];
 
-    expect(assembler.assemble(chat, history, 'New question').slice(1)).toEqual([
-      { role: 'user', content: 'User history' },
-      { role: 'assistant', content: 'Complete' },
-      { role: 'assistant', content: 'Partial' },
-      { role: 'user', content: 'New question' },
+    expect(assembler.assemble(chat, history, 'new', preset(modules)).messages).toEqual([
+      { role: 'system', content: 'before-a' },
+      { role: 'assistant', content: 'before-b' },
+      { role: 'system', content: 'depth-far' },
+      { role: 'system', content: 'No sources selected.' },
+      { role: 'user', content: 'u0' },
+      { role: 'user', content: 'depth-2' },
+      { role: 'assistant', content: 'a1' },
+      { role: 'system', content: 'depth-1-a' },
+      { role: 'assistant', content: 'depth-1-b' },
+      { role: 'assistant', content: 'partial' },
+      { role: 'system', content: 'depth-0' },
+      { role: 'user', content: 'new' },
     ]);
-    db.close();
-  });
-
-  it('states explicitly when no sources are selected', () => {
-    const { db, assembler, notebook } = setup();
-    const chat: Chat = {
-      id: '62455a02-2fe1-4b6d-a6ce-4517bf06ada7',
-      notebookId: notebook.id,
-      title: 'Chat',
-      sourceIds: [],
-      providerOverride: null,
-      createdAt: '2026-07-10T12:00:00.000Z',
-      updatedAt: '2026-07-10T12:00:00.000Z',
-    };
-    expect(assembler.assemble(chat, [], 'Question')[0]?.content).toContain('No sources selected.');
     db.close();
   });
 });

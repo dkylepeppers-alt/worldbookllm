@@ -152,4 +152,10 @@ export class SecretStore {
     if (!entries) return '';
     return entries.find((entry) => (id ? entry.id === id : entry.active))?.value ?? '';
   }
+
+  readActiveValues(): string[] {
+    return Object.values(this.readSecrets())
+      .flatMap((entries) => entries.filter((entry) => entry.active).map((entry) => entry.value))
+      .filter((value) => value.length > 0);
+  }
 }

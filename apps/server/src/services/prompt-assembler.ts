@@ -1,12 +1,18 @@
-import type { Chat, Message } from '@worldbookllm/shared';
+import type {
+  Chat,
+  GenerationSourceSnapshot,
+  Message,
+  Preset,
+  PresetModule,
+} from '@worldbookllm/shared';
 import type { ChatMessage } from '@worldbookllm/providers';
 
 import type { SourceService } from './sources.js';
 
-const PREAMBLE =
-  'You are a creative writing and worldbuilding assistant working from user-provided source material.';
-const GROUNDING =
-  'Treat the supplied sources as the grounding for your answer. Preserve established facts and clearly distinguish reasonable development from facts stated in the sources. If the sources do not answer something, say so rather than inventing certainty.';
+export interface AssembledPrompt {
+  messages: ChatMessage[];
+  sources: GenerationSourceSnapshot[];
+}
 
 function escapeAttribute(value: string): string {
   return value.replace(/[&"<>]/gu, (character) => {
@@ -26,25 +32,62 @@ function includeHistory(message: Message): boolean {
   return message.status === 'interrupted' && message.content.length > 0;
 }
 
+function moduleMessage(module: PresetModule, sourceContent: string): ChatMessage | undefined {
+  if (module.kind === 'custom') {
+    return module.enabled ? { role: module.role, content: module.content } : undefined;
+  }
+  return { role: 'system', content: sourceContent };
+}
+
 export class PromptAssembler {
-  constructor(private readonly sources: SourceService) {}
+  constructor(private readonly sourceService: SourceService) {}
 
-  assemble(chat: Chat, history: Message[], newContent: string): ChatMessage[] {
-    const sourceBlocks = chat.sourceIds.map((id) => {
-      const source = this.sources.get(id);
-      return `<source id="${source.id}" title="${escapeAttribute(source.title)}">\n${source.content}\n</source>`;
+  assemble(chat: Chat, history: Message[], newContent: string, preset: Preset): AssembledPrompt {
+    const sources = chat.sourceIds.map((id) => {
+      const source = this.sourceService.get(id);
+      return {
+        id: source.id,
+        title: source.title,
+        contentHash: source.contentHash,
+        content: source.content,
+      };
     });
-    const sourceSection =
-      sourceBlocks.length > 0 ? sourceBlocks.join('\n\n') : 'No sources selected.';
-    const system = `${PREAMBLE}\n\n## Sources\n${sourceSection}\n\n## Grounding instructions\n${GROUNDING}`;
+    const sourceContent =
+      sources.length === 0
+        ? 'No sources selected.'
+        : sources
+            .map(
+              (source) =>
+                `<source id="${source.id}" title="${escapeAttribute(source.title)}">\n${source.content}\n</source>`,
+            )
+            .join('\n\n');
+    const eligibleHistory: ChatMessage[] = history.filter(includeHistory).map((entry) => ({
+      role: entry.role,
+      content: entry.content,
+    }));
 
-    return [
-      { role: 'system', content: system },
-      ...history.filter(includeHistory).map((message) => ({
-        role: message.role,
-        content: message.content,
-      })),
-      { role: 'user', content: newContent },
-    ];
+    const beforeHistory: ChatMessage[] = [];
+    const atBoundaries = new Map<number, ChatMessage[]>();
+    for (const module of preset.modules) {
+      const emitted = moduleMessage(module, sourceContent);
+      if (!emitted) continue;
+      if (module.insertion.position === 'before_history') {
+        beforeHistory.push(emitted);
+        continue;
+      }
+      const boundary = Math.max(0, eligibleHistory.length - module.insertion.depth);
+      const messages = atBoundaries.get(boundary) ?? [];
+      messages.push(emitted);
+      atBoundaries.set(boundary, messages);
+    }
+
+    const messages = [...beforeHistory];
+    for (let boundary = 0; boundary <= eligibleHistory.length; boundary += 1) {
+      messages.push(...(atBoundaries.get(boundary) ?? []));
+      const historical = eligibleHistory[boundary];
+      if (historical) messages.push(historical);
+    }
+    messages.push({ role: 'user', content: newContent });
+    return { messages, sources };
   }
 }

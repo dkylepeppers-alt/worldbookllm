@@ -1,4 +1,9 @@
-import type { Message, ProviderSource, StreamEvent } from '@worldbookllm/shared';
+import {
+  presetGenerationContextSchema,
+  type Message,
+  type ProviderSource,
+  type StreamEvent,
+} from '@worldbookllm/shared';
 import {
   normalizeStreamChunk,
   parseSseStream,
@@ -6,11 +11,17 @@ import {
   type ProviderChatRequest,
 } from '@worldbookllm/providers';
 
-import { ConfigurationError, ConflictError } from '../errors.js';
+import {
+  ConfigurationError,
+  ConflictError,
+  InvalidStoredDataError,
+  NotFoundError,
+} from '../errors.js';
 import type { ChatService } from './chats.js';
 import type { NotebookService } from './notebooks.js';
 import type { PromptAssembler } from './prompt-assembler.js';
 import type { ProviderService } from './providers.js';
+import type { PresetService } from './presets.js';
 
 export interface PreparedGeneration {
   chatId: string;
@@ -26,6 +37,7 @@ export class GenerationService {
   constructor(
     private readonly chats: ChatService,
     private readonly notebooks: NotebookService,
+    private readonly presets: PresetService,
     private readonly prompts: PromptAssembler,
     private readonly providers: ProviderService,
     private readonly logError: (error: unknown) => void = () => undefined,
@@ -52,14 +64,33 @@ export class GenerationService {
       const notebook = this.notebooks.get(chat.notebookId);
       const config = chat.providerOverride ?? notebook.settings;
       if (!config) throw new ConfigurationError('Configure a provider before sending a message.');
-      const messages = this.prompts.assemble(chat, chat.messages, content);
-      const request = this.providers.createChatRequest(config, messages);
-      const context = {
-        sourceIds: chat.sourceIds,
+      let preset;
+      try {
+        preset = this.presets.resolve(chat.presetId);
+      } catch (error) {
+        if (error instanceof NotFoundError) {
+          throw new InvalidStoredDataError('The configured generation preset was not found', {
+            cause: error,
+          });
+        }
+        throw error;
+      }
+      const assembled = this.prompts.assemble(chat, chat.messages, content, preset);
+      const request = this.providers.createChatRequest(
+        config,
+        assembled.messages,
+        preset.generation,
+      );
+      const context = presetGenerationContextSchema.parse({
+        contextVersion: 2,
+        preset,
+        canonicalMessages: assembled.messages,
+        sources: assembled.sources,
+        requestedControls: preset.generation,
+        effectiveRequestBody: this.providers.snapshotRequestBody(request),
         provider: config.source,
         model: config.model,
-        strictness: 'grounded' as const,
-      };
+      });
       const exchange = this.chats.beginExchange(chatId, content, context);
       return { chatId, source: config.source, request, assistant: exchange.assistant, release };
     } catch (error) {
