@@ -4,6 +4,7 @@ import type {
   ProviderCatalogEntry,
   ProviderConfig,
   ProviderConnection,
+  GenerationControls,
 } from '@worldbookllm/shared';
 import {
   buildChatRequest,
@@ -116,7 +117,11 @@ export class ProviderService {
     return { ok: true, detail: 'Completion endpoint reachable' };
   }
 
-  createChatRequest(config: ProviderConfig, messages: ChatMessage[]): ProviderChatRequest {
+  createChatRequest(
+    config: ProviderConfig,
+    messages: ChatMessage[],
+    controls: GenerationControls,
+  ): ProviderChatRequest {
     const apiKey = this.requireApiKey(config);
     try {
       return buildChatRequest(config.source, {
@@ -126,11 +131,38 @@ export class ProviderService {
         apiKey,
         baseUrl: config.baseUrl,
         extra: config.extra,
+        temperature: controls.temperature,
+        topP: controls.topP ?? undefined,
+        maxTokens: controls.maxTokens ?? undefined,
+        assistantPrefill: controls.assistantPrefill ?? undefined,
       });
     } catch (error) {
       if (error instanceof ProviderError) throw new ConfigurationError(error.message);
       throw error;
     }
+  }
+
+  snapshotRequestBody(request: ProviderChatRequest): Record<string, unknown> {
+    const cloned = JSON.parse(JSON.stringify(request.body)) as Record<string, unknown>;
+    const secrets = this.secrets
+      .readActiveValues()
+      .sort((left, right) => right.length - left.length);
+    const redact = (value: unknown): unknown => {
+      if (typeof value === 'string') {
+        return secrets.reduce(
+          (redacted, secret) => redacted.replaceAll(secret, '[redacted]'),
+          value,
+        );
+      }
+      if (Array.isArray(value)) return value.map(redact);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, nested]) => [key, redact(nested)]),
+        );
+      }
+      return value;
+    };
+    return redact(cloned) as Record<string, unknown>;
   }
 
   openChatStream(

@@ -1,7 +1,10 @@
 import type {
+  AppSettings,
   Chat,
   MaskedSecret,
   Notebook,
+  PortablePreset,
+  Preset,
   ProviderCatalogEntry,
   SourceDetail,
   SourceMetadata,
@@ -54,9 +57,36 @@ const chat: Chat = {
   title: 'New chat',
   sourceIds: [],
   providerOverride: null,
+  presetId: null,
   createdAt: '2026-07-10T12:00:00.000Z',
   updatedAt: '2026-07-10T12:00:00.000Z',
 };
+
+const portablePreset: PortablePreset = {
+  schemaVersion: 1,
+  name: 'Story architect',
+  generation: { temperature: 0.8, topP: 0.9, maxTokens: 4096, assistantPrefill: null },
+  modules: [
+    {
+      key: 'sources',
+      name: 'Sources',
+      kind: 'sources',
+      role: 'system',
+      content: null,
+      enabled: true,
+      insertion: { position: 'before_history' },
+    },
+  ],
+};
+
+const preset: Preset = {
+  id: '71b57732-b2f5-49ef-9829-f0155e8f821f',
+  ...portablePreset,
+  createdAt: '2026-07-10T12:00:00.000Z',
+  updatedAt: '2026-07-10T12:00:00.000Z',
+};
+
+const appSettings: AppSettings = { defaultPresetId: preset.id };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -267,6 +297,82 @@ describe('API client', () => {
       `/api/chats/${chat.id}`,
       expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ title: renamed.title }) }),
     );
+  });
+
+  it('covers every preset and app-settings operation', async () => {
+    const revised = { ...preset, name: 'Revised architect' };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([preset]))
+      .mockResolvedValueOnce(jsonResponse(preset, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse(preset))
+      .mockResolvedValueOnce(jsonResponse(revised))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(appSettings))
+      .mockResolvedValueOnce(jsonResponse(appSettings));
+    const client = createApiClient(fetchImpl);
+
+    await expect(client.listPresets()).resolves.toEqual([preset]);
+    await expect(client.createPreset(portablePreset)).resolves.toEqual(preset);
+    await expect(client.getPreset(preset.id)).resolves.toEqual(preset);
+    await expect(client.updatePreset(preset.id, { name: revised.name })).resolves.toEqual(revised);
+    await expect(client.deletePreset(preset.id)).resolves.toBeUndefined();
+    await expect(client.getAppSettings()).resolves.toEqual(appSettings);
+    await expect(client.updateAppSettings(appSettings)).resolves.toEqual(appSettings);
+
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      '/api/presets',
+      '/api/presets',
+      `/api/presets/${preset.id}`,
+      `/api/presets/${preset.id}`,
+      `/api/presets/${preset.id}`,
+      '/api/app-settings',
+      '/api/app-settings',
+    ]);
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      '/api/presets',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(portablePreset) }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      4,
+      `/api/presets/${preset.id}`,
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ name: revised.name }) }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      5,
+      `/api/presets/${preset.id}`,
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      7,
+      '/api/app-settings',
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify(appSettings) }),
+    );
+  });
+
+  it('validates preset responses and preserves preset API errors', async () => {
+    const invalidFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse([{ ...preset, id: 1 }]));
+    await expect(createApiClient(invalidFetch).listPresets()).rejects.toMatchObject({
+      status: 200,
+      code: 'invalid_response',
+    });
+
+    const errorFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        jsonResponse(
+          { error: 'default_preset', message: 'The default preset cannot be deleted' },
+          { status: 409 },
+        ),
+      );
+    await expect(createApiClient(errorFetch).deletePreset(preset.id)).rejects.toMatchObject({
+      status: 409,
+      code: 'default_preset',
+      message: 'The default preset cannot be deleted',
+    });
   });
 
   it('rejects malformed successful responses', async () => {

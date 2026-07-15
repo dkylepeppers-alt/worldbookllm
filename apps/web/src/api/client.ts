@@ -1,5 +1,6 @@
 import {
   apiErrorSchema,
+  appSettingsSchema,
   chatDetailSchema,
   chatSchema,
   connectionTestResponseSchema,
@@ -9,6 +10,8 @@ import {
   modelListResponseSchema,
   notebookListSchema,
   notebookSchema,
+  presetListSchema,
+  presetSchema,
   providerCatalogEntrySchema,
   secretStateSchema,
   sourceDetailSchema,
@@ -16,10 +19,12 @@ import {
   sourceMetadataSchema,
   sourcePreviewSchema,
   type ApiErrorIssue,
+  type AppSettings,
   type Chat,
   type ChatDetail,
   type ConnectionTestResponse,
   type CreateNotebookInput,
+  type CreatePreset,
   type CreateSourceInput,
   type CreateSourcesInput,
   type MaskedSecret,
@@ -27,9 +32,11 @@ import {
   type Notebook,
   type PatchChat,
   type PatchNotebook,
+  type PatchPreset,
   type ProviderCatalogEntry,
   type ProviderConfig,
   type ProviderConnection,
+  type Preset,
   type SecretState,
   type SourceDetail,
   type SourceMetadata,
@@ -88,6 +95,13 @@ export interface ApiClient {
   getChat(id: string, signal?: AbortSignal): Promise<ChatDetail>;
   updateChat(id: string, input: PatchChat, signal?: AbortSignal): Promise<Chat>;
   deleteChat(id: string, signal?: AbortSignal): Promise<void>;
+  listPresets(signal?: AbortSignal): Promise<Preset[]>;
+  createPreset(input: CreatePreset, signal?: AbortSignal): Promise<Preset>;
+  getPreset(id: string, signal?: AbortSignal): Promise<Preset>;
+  updatePreset(id: string, input: PatchPreset, signal?: AbortSignal): Promise<Preset>;
+  deletePreset(id: string, signal?: AbortSignal): Promise<void>;
+  getAppSettings(signal?: AbortSignal): Promise<AppSettings>;
+  updateAppSettings(input: AppSettings, signal?: AbortSignal): Promise<AppSettings>;
   streamMessage(chatId: string, content: string, options: StreamMessageOptions): Promise<void>;
 }
 
@@ -272,6 +286,33 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       }),
     deleteChat: (id, signal) =>
       request(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
+    listPresets: (signal) => request('/api/presets', { schema: presetListSchema, signal }),
+    createPreset: (input, signal) =>
+      request('/api/presets', {
+        method: 'POST',
+        body: input,
+        schema: presetSchema,
+        signal,
+      }),
+    getPreset: (id, signal) =>
+      request(`/api/presets/${encodeURIComponent(id)}`, { schema: presetSchema, signal }),
+    updatePreset: (id, input, signal) =>
+      request(`/api/presets/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: input,
+        schema: presetSchema,
+        signal,
+      }),
+    deletePreset: (id, signal) =>
+      request(`/api/presets/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
+    getAppSettings: (signal) => request('/api/app-settings', { schema: appSettingsSchema, signal }),
+    updateAppSettings: (input, signal) =>
+      request('/api/app-settings', {
+        method: 'PATCH',
+        body: input,
+        schema: appSettingsSchema,
+        signal,
+      }),
     streamMessage: (chatId, content, options) =>
       streamChatMessage(chatId, content, { ...options, fetchImpl }),
   };

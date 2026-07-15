@@ -72,16 +72,15 @@ The server performs the actual `fetch`, injects keys from the local secret store
 
 Model + provider selection is configurable **per notebook**, overridable **per chat**. Keys never leave the server beyond masked display. Switching models never requires rebuilding a project — sources and chats are provider-independent.
 
-## Creative response controls
+## Native preset library and exchange provenance
 
-Chat requests carry a **canon-strictness setting** that shapes how sources are used in the prompt, on a spectrum:
+Creative response controls use one versioned, native preset model rather than separate canon modes or task-specific generation paths. Presets are global records. Exactly one is the global default; a chat either inherits that default or selects another global preset. Notebook settings choose providers and models but do not own preset defaults.
 
-1. **Strict canon** — sources are authoritative; the model must not contradict them (continuity checks, lore Q&A).
-2. **Grounded development** — sources anchor the work, gaps may be filled in a consistent way (expanding lore, drafting entries).
-3. **Loose inspiration** — sources set tone and direction, invention is welcome (brainstorming, alternates).
-4. **Open invention** — sources are background flavor; the model creates freely (new material, what-ifs).
+Each preset contains generation controls and an ordered module list. Custom modules carry a role, content, enabled state, and either a `before_history` insertion or a nonnegative `at_depth` value. Every preset also contains exactly one protected Sources module: its insertion and order are configurable, while its role, enabled state, and source-expanded content are not. The server deterministically assembles enabled modules, eligible history, exact selected-source Markdown, and the protected newest user message. The normative portable contract is [PRESET_SCHEMA.md](PRESET_SCHEMA.md).
 
-These map to prompt-assembly strategies, not different codepaths — one chat pipeline, parameterized.
+Generation resolves the chat-to-global inheritance once at request preparation. It stores an immutable exchange context containing the resolved preset definition, canonical messages after module/depth assembly, source IDs, hashes and content, requested controls, and the provider-effective request body after provider conversion. Headers, API keys, request URLs, and other secret material are never included. Later preset or source edits therefore affect future generations but cannot rewrite what a completed or interrupted exchange says the model received.
+
+Assistant responses can be reviewed and saved through the normal source-creation boundary. The result is a visible Markdown file with structured `assistant-response` origin metadata containing the originating `chatId` and `messageId`; SQLite keeps the same provenance as a rebuildable index. Updating existing sources, diff review, and export remain separate later workflows.
 
 ## Context strategy
 
@@ -99,3 +98,4 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0006 — better-sqlite3 for the index database](decisions/0006-better-sqlite3.md)
 - [0007 — Parse source uploads with @fastify/multipart](decisions/0007-fastify-multipart-source-uploads.md)
 - [0008 — PDF and HTML conversion dependencies](decisions/0008-pdf-html-conversion-dependencies.md)
+- [0009 — Native global presets and immutable exchange snapshots](decisions/0009-native-global-presets.md)

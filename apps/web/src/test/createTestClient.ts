@@ -29,6 +29,14 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     getChat: unused,
     updateChat: unused,
     deleteChat: unused,
+    listPresets: () => Promise.resolve([]),
+    createPreset: unused,
+    getPreset: unused,
+    updatePreset: unused,
+    deletePreset: unused,
+    getAppSettings: () =>
+      Promise.resolve({ defaultPresetId: '00000000-0000-4000-8000-000000000000' }),
+    updateAppSettings: unused,
     streamMessage: unused,
     ...overrides,
   };

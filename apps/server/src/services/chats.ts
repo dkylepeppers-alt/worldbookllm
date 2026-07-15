@@ -34,6 +34,7 @@ function mapChat(row: ChatRow): Chat {
       title: row.title,
       sourceIds: JSON.parse(row.source_ids_json),
       providerOverride: JSON.parse(row.provider_override_json),
+      presetId: row.preset_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
@@ -85,6 +86,13 @@ export class ChatService {
     }
   }
 
+  private validatePreset(presetId: string | null): void {
+    if (presetId === null) return;
+    if (!this.db.prepare('SELECT 1 FROM presets WHERE id = ?').get(presetId)) {
+      throw new NotFoundError(`Preset ${presetId} was not found`);
+    }
+  }
+
   list(notebookId: string): Chat[] {
     this.requireNotebook(notebookId);
     return (
@@ -107,11 +115,12 @@ export class ChatService {
   create(notebookId: string, input: CreateChat): Chat {
     this.requireNotebook(notebookId);
     this.validateSources(notebookId, input.sourceIds);
+    this.validatePreset(input.presetId);
     const id = randomUUID();
     const timestamp = this.now();
     this.db
       .prepare(
-        'INSERT INTO chats (id, notebook_id, title, source_ids_json, provider_override_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO chats (id, notebook_id, title, source_ids_json, provider_override_json, preset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         id,
@@ -119,6 +128,7 @@ export class ChatService {
         input.title,
         JSON.stringify(input.sourceIds),
         JSON.stringify(input.providerOverride),
+        input.presetId,
         timestamp,
         timestamp,
       );
@@ -128,10 +138,12 @@ export class ChatService {
   patch(id: string, input: PatchChat): Chat {
     const current = this.get(id);
     const sourceIds = input.sourceIds ?? current.sourceIds;
+    const presetId = input.presetId === undefined ? current.presetId : input.presetId;
     this.validateSources(current.notebookId, sourceIds);
+    this.validatePreset(presetId);
     this.db
       .prepare(
-        'UPDATE chats SET title = ?, source_ids_json = ?, provider_override_json = ?, updated_at = ? WHERE id = ?',
+        'UPDATE chats SET title = ?, source_ids_json = ?, provider_override_json = ?, preset_id = ?, updated_at = ? WHERE id = ?',
       )
       .run(
         input.title ?? current.title,
@@ -139,6 +151,7 @@ export class ChatService {
         JSON.stringify(
           input.providerOverride === undefined ? current.providerOverride : input.providerOverride,
         ),
+        presetId,
         this.now(),
         id,
       );

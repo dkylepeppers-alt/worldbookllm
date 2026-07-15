@@ -7,6 +7,7 @@ interface ConfirmDialogProps {
   children: React.ReactNode;
   confirmLabel: string;
   busy?: boolean;
+  busyLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -16,6 +17,7 @@ export function ConfirmDialog({
   children,
   confirmLabel,
   busy = false,
+  busyLabel = 'Deleting…',
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -46,7 +48,7 @@ export function ConfirmDialog({
             Cancel
           </button>
           <button type="button" className="button-danger" disabled={busy} onClick={onConfirm}>
-            {busy ? 'Deleting…' : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </button>
         </div>
       </section>

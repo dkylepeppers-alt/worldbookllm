@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 
 import { migrateToVersion1 } from './migrations/001-init.js';
 import { migrateToVersion2 } from './migrations/002-source-provenance.js';
+import { migrateToVersion3 } from './migrations/003-presets.js';
 
 interface Migration {
   version: number;
@@ -14,6 +15,7 @@ interface Migration {
 const MIGRATIONS: readonly Migration[] = [
   { version: 1, up: migrateToVersion1 },
   { version: 2, up: migrateToVersion2 },
+  { version: 3, up: migrateToVersion3 },
 ];
 const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 

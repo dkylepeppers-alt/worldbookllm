@@ -1,4 +1,10 @@
-import type { Chat, ChatDetail, ProviderCatalogEntry, ProviderConfig } from '@worldbookllm/shared';
+import type {
+  Chat,
+  ChatDetail,
+  Message,
+  ProviderCatalogEntry,
+  ProviderConfig,
+} from '@worldbookllm/shared';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiClientError } from '../api/client.js';
@@ -10,6 +16,9 @@ import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js
 import { ProviderConfigDialog } from '../providers/ProviderConfigDialog.js';
 import { ChatMessages, type PendingExchange } from './ChatMessages.js';
 import { MessageComposer } from './MessageComposer.js';
+import { PromptInspectorDialog } from './PromptInspectorDialog.js';
+import { PresetControls } from './PresetControls.js';
+import { ResponseCaptureDialog } from './ResponseCaptureDialog.js';
 import { SourceSelector } from './SourceSelector.js';
 
 type ChatsState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; chats: Chat[] };
@@ -38,11 +47,27 @@ export function ChatPanel() {
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [pending, setPending] = useState<PendingExchange | null>(null);
   const [savingSources, setSavingSources] = useState(false);
+  const [presetMutationBusyOwners, setPresetMutationBusyOwners] = useState<ReadonlySet<symbol>>(
+    () => new Set(),
+  );
+  const [presetLibraryRevision, setPresetLibraryRevision] = useState(0);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [inspecting, setInspecting] = useState<Message | null>(null);
+  const [capturing, setCapturing] = useState<Message | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Mirrors selectedId so async completions (stream cleanup, refetches) can
   // tell whether their chat is still the selected one before writing state.
   const selectedIdRef = useRef<string | null>(null);
+
+  const setPresetMutationOwnerBusy = useCallback((owner: symbol, busy: boolean) => {
+    setPresetMutationBusyOwners((current) => {
+      if (current.has(owner) === busy) return current;
+      const next = new Set(current);
+      if (busy) next.add(owner);
+      else next.delete(owner);
+      return next;
+    });
+  }, []);
 
   const loadChats = useCallback(
     (signal?: AbortSignal) => api.listChats(notebookId, signal),
@@ -333,6 +358,14 @@ export function ChatPanel() {
               Delete
             </button>
           </div>
+          <PresetControls
+            key={selected.id}
+            chat={selected}
+            presetLibraryRevision={presetLibraryRevision}
+            onChatUpdated={adoptChat}
+            onPresetUpdated={() => setPresetLibraryRevision((revision) => revision + 1)}
+            onMutationBusyChange={setPresetMutationOwnerBusy}
+          />
           {selectedDetail === null && !detailFailed ? (
             <LoadingState>Loading messages…</LoadingState>
           ) : null}
@@ -354,12 +387,17 @@ export function ChatPanel() {
                 onChatUpdated={adoptChat}
                 onSavingChange={setSavingSources}
               />
-              <ChatMessages messages={selectedDetail.messages} pending={pending} />
+              <ChatMessages
+                messages={selectedDetail.messages}
+                pending={pending}
+                onInspect={setInspecting}
+                onAddToSources={setCapturing}
+              />
               {streamError === null ? null : <p role="alert">{streamError}</p>}
               <MessageComposer
                 streaming={pending !== null}
                 stopping={pending?.stopping ?? false}
-                sendDisabled={savingSources}
+                sendDisabled={savingSources || presetMutationBusyOwners.size > 0}
                 onSend={send}
                 onStop={stopStreaming}
               />
@@ -418,6 +456,12 @@ export function ChatPanel() {
             Delete <strong>{deleting.title}</strong>? Its message history will also be removed.
           </p>
         </ConfirmDialog>
+      )}
+      {inspecting === null ? null : (
+        <PromptInspectorDialog message={inspecting} onClose={() => setInspecting(null)} />
+      )}
+      {capturing === null ? null : (
+        <ResponseCaptureDialog message={capturing} onClose={() => setCapturing(null)} />
       )}
     </div>
   );

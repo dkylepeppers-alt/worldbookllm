@@ -10,6 +10,8 @@ import { AppShell } from './layout/AppShell.js';
 import { NotebookListPage } from './notebooks/NotebookListPage.js';
 import { NotebookWorkspace, ReaderEmpty } from './notebooks/NotebookWorkspace.js';
 import { NotFoundPage } from './pages/NotFoundPage.js';
+import { PresetSchemaPage } from './pages/PresetSchemaPage.js';
+import { PresetsPage } from './presets/PresetsPage.js';
 import { SettingsPage } from './settings/SettingsPage.js';
 import { ReaderRoute } from './sources/ReaderRoute.js';
 
@@ -28,6 +30,8 @@ export function AppRoutes() {
           <Route path="sources/:sourceId" element={<KeyedReaderRoute />} />
         </Route>
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="presets" element={<PresetsPage />} />
+        <Route path="preset-schema" element={<PresetSchemaPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

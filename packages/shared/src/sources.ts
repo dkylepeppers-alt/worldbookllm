@@ -15,6 +15,11 @@ export const sourceOriginSchema = z.discriminatedUnion('type', [
     fetchedAt: z.iso.datetime(),
     mediaType: z.string().trim().min(1).max(255),
   }),
+  z.strictObject({
+    type: z.literal('assistant-response'),
+    chatId: z.uuid(),
+    messageId: z.uuid(),
+  }),
 ]);
 
 export const conversionNotesSchema = z.array(z.string().trim().min(1).max(500)).max(20);

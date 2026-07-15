@@ -64,31 +64,33 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Done when:** a 100-source campaign world is navigable — find every mention of a faction in seconds and pull exactly the right sources into a chat.
 
-## M4 — Creative response controls
+## M4 — Native Preset Studio and response capture ✅
 
-**Goal:** the user shapes how creatively the model treats their canon.
+**Goal:** give users one transparent, reusable way to shape chat completion requests, inspect exactly what produced a response, and bring useful responses back into the source library.
 
 **Scope:**
 
-- Canon-strictness spectrum on every chat: strict canon → grounded development → loose inspiration → open invention
-- Task presets bundling strictness + prompt strategy: continuity check, lore Q&A, expand entry, prose draft, brainstorm
-- Per-notebook defaults; visible indicator of the active mode
-- "What was the model given?" inspector: show the exact sources and instructions in any exchange
+- A versioned native global preset library with one global default and optional per-chat selection; a chat with no explicit selection inherits the global default
+- Preset Studio controls for temperature, top-p, maximum output tokens, optional assistant prefill, and ordered prompt modules
+- Custom prompt modules plus one protected Sources module, with deterministic `before_history` and full `at_depth` insertion
+- Native JSON import with local review and strict shared-schema validation; no SillyTavern preset compatibility or preset export in M4
+- An immutable per-exchange inspector showing the captured preset, canonical message order, exact source content, requested controls, and secret-free provider-effective request body
+- Basic **Add to sources** for reviewing an assistant response and saving it as Markdown with chat/message provenance
 
-**Done when:** the same question produces a canon-faithful answer in strict mode and a wild alternative in open mode, and the user can see exactly why.
+**Done when:** a user can import or author a reusable preset, make it the global default or select it for a chat, tune controls and module depth/order, verify a generated exchange from its immutable inspector, and review/save the assistant response as a provenance-bearing Markdown source.
 
 ## M5 — Creative outputs & exports
 
-**Goal:** results leave the app in the formats creative users need.
+**Goal:** update existing material safely and export project knowledge in the formats creative users need.
 
 **Scope:**
 
-- Save chat outputs back into the notebook as new/updated sources
+- Update an existing source from a chat response with a reviewable diff; basic response-to-new-source creation moved to M4
 - SillyTavern lorebook (World Info) export from selected sources
 - Setting-bible export: assemble categorized sources into one organized Markdown document
-- Rewrite workflows: ask the model to restructure/rewrite an entry and diff-review the result before saving
+- Rewrite workflows: ask the model to restructure or rewrite an entry and diff-review the result before updating it
 
-**Done when:** a worldbuilder can develop a setting in worldbookllm and export a working SillyTavern lorebook and a shareable setting bible from it.
+**Done when:** a worldbuilder can review a response-derived update before applying it to an existing source, then export a working SillyTavern lorebook and a shareable setting bible.
 
 ## Later / unscheduled
 

@@ -628,6 +628,171 @@ label {
   padding: clamp(2rem, 6vw, 5rem) 0;
 }
 
+.presets-page {
+  width: min(100% - 2rem, 1280px);
+  margin: 0 auto;
+  padding: clamp(2rem, 6vw, 5rem) 0;
+}
+
+.schema-page {
+  width: min(100% - 2rem, 900px);
+  margin: clamp(1rem, 5vw, 3rem) auto;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  box-shadow: 5px 5px 0 rgb(36 87 197 / 15%);
+}
+
+.schema-page .markdown-body {
+  max-width: 82ch;
+}
+
+.preset-toolbar,
+.preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 1.5rem 0;
+}
+
+.preset-studio-grid,
+.preset-editor {
+  display: grid;
+  gap: 1rem;
+}
+
+.preset-library,
+.preset-card {
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  padding: 1rem;
+  box-shadow: 4px 4px 0 rgb(36 87 197 / 12%);
+}
+
+.preset-library h2,
+.preset-card h2 {
+  font-size: 1.45rem;
+}
+
+.preset-library ul,
+.module-list,
+.field-errors {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preset-library button {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-direction: column;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0.65rem;
+  text-align: left;
+}
+
+.preset-library button.active {
+  color: var(--blueprint);
+  background: rgb(36 87 197 / 8%);
+  box-shadow: inset 3px 0 0 var(--vermilion);
+}
+
+.preset-library small,
+.preset-actions small {
+  color: var(--muted);
+}
+
+.generation-grid {
+  display: grid;
+  gap: 0.8rem;
+  margin: 1rem 0;
+}
+
+.nullable-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+}
+
+.nullable-toggle input[type='checkbox'] {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+}
+
+.module-list {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.module-list fieldset {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid var(--line);
+  padding: 1rem;
+}
+
+.module-list legend {
+  padding: 0 0.35rem;
+  color: var(--muted);
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.module-drag-handle {
+  justify-self: start;
+  cursor: grab;
+  border-style: dashed;
+  color: var(--blueprint);
+  background: rgb(36 87 197 / 6%);
+}
+
+.module-drag-handle:active {
+  cursor: grabbing;
+}
+
+.assembly-preview ol {
+  display: grid;
+  gap: 0.45rem;
+  padding-left: 1.5rem;
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.assembly-preview li {
+  border-bottom: 1px dashed var(--line);
+  padding: 0.45rem;
+}
+
+.field-errors {
+  margin: 1rem 0;
+  border: 1px solid var(--vermilion);
+  color: var(--vermilion);
+  background: var(--surface);
+  padding: 0.8rem 1rem 0.8rem 2rem;
+}
+
+.import-review {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  padding: 1rem;
+}
+
+.import-review h3,
+.import-review p {
+  margin-bottom: 0.35rem;
+}
+
 .provider-settings-list {
   display: grid;
   gap: 1rem;
@@ -817,6 +982,73 @@ label {
   font-size: 1.25rem;
 }
 
+.preset-controls {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 0.8rem;
+}
+
+.preset-control-heading,
+.temperature-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.preset-control-heading > div {
+  min-width: 0;
+}
+
+.preset-control-heading strong {
+  overflow-wrap: anywhere;
+}
+
+.preset-control-heading p,
+.preset-control-heading small,
+.temperature-control p,
+.preset-saving,
+.preset-controls-status p {
+  margin: 0;
+}
+
+.preset-control-heading small,
+.temperature-control p {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.preset-controls select,
+.preset-controls input[type='range'] {
+  width: 100%;
+}
+
+.temperature-control {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.temperature-label output,
+.preset-saving {
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.preset-controls-status {
+  margin: 1rem 0 0;
+  border: 1px solid var(--line);
+  padding: 0.8rem;
+}
+
+.preset-controls-status button {
+  margin-top: 0.5rem;
+}
+
 .source-selector {
   margin: 1rem 0 0;
   border: 1px solid var(--line);
@@ -874,6 +1106,21 @@ label {
   border-radius: 2px;
   padding: 0.05rem 0.3rem;
   color: var(--muted);
+}
+
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.message-actions button {
+  border-color: var(--line);
+  background: var(--surface);
+  padding: 0.35rem 0.55rem;
+  color: var(--blueprint);
+  font-size: 0.76rem;
 }
 
 .chat-composer {
@@ -974,6 +1221,94 @@ label {
   margin-top: 1rem;
 }
 
+.prompt-inspector {
+  width: min(100%, 820px);
+}
+
+.inspector-sections {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.inspector-section {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.inspector-section pre {
+  overflow: auto;
+  max-height: 24rem;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.canonical-messages,
+.captured-sources {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.canonical-messages li,
+.captured-sources li {
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+}
+
+.canonical-messages pre,
+.captured-sources pre {
+  margin-bottom: 0;
+  border: 0;
+  padding: 0;
+}
+
+.inspector-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+}
+
+.inspector-facts dt {
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.inspector-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.response-warning {
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+}
+
+.response-warning .message-badge {
+  margin-left: 0;
+  color: var(--vermilion);
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.response-warning .dialog-copy {
+  margin-bottom: 0;
+}
+
 .import-dialog {
   max-height: min(90vh, 900px);
   overflow: auto;
@@ -1008,6 +1343,10 @@ label {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .generation-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .dialog-backdrop {
     place-items: center;
     padding: 1rem;
@@ -1022,6 +1361,16 @@ label {
 @media (min-width: 800px) {
   .site-header {
     padding-inline: 1.5rem;
+  }
+
+  .preset-studio-grid {
+    grid-template-columns: minmax(210px, 25%) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .preset-library {
+    position: sticky;
+    top: 1rem;
   }
 
   .app-main {
