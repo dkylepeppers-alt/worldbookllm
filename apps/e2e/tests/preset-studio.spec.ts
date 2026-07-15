@@ -79,11 +79,11 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
       .locator('..')
       .getByRole('listitem');
     await expect(previewItems).toHaveText([
-      'Preset marker',
+      'system: M4_PRESET_MARKER',
       '[Conversation history · older than depth 2]',
       'system: [Selected source excerpts] · at depth 2',
       '[Conversation history · newest 2 messages]',
-      'Depth directive · at depth 0',
+      'system: M4_DEPTH_DIRECTIVE · at depth 0',
       '[Newest user message]',
     ]);
   });
@@ -164,7 +164,6 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
     expect(context?.canonicalMessages.map((message) => message.role)).toEqual([
       'system',
       'system',
-      'system',
       'user',
     ]);
     expect(context?.sources).toHaveLength(1);
@@ -202,13 +201,12 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
     const messages = inspector
       .getByRole('list', { name: 'Canonical messages' })
       .getByRole('listitem');
-    await expect(messages).toHaveCount(4);
+    await expect(messages).toHaveCount(3);
     const expectedCanonical = [
       { role: 'system', content: PRESET_MARKER },
-      { role: 'system', content: DEPTH_DIRECTIVE },
       {
         role: 'system',
-        content: `<source id="${selectedSourceId}" title="${SOURCE_TITLE}">\n${SOURCE_CONTENT}\n</source>`,
+        content: `${DEPTH_DIRECTIVE}\n\n## Sources\n<source id="${selectedSourceId}" title="${SOURCE_TITLE}">\n${SOURCE_CONTENT}\n</source>`,
       },
       { role: 'user', content: QUESTION },
     ];
