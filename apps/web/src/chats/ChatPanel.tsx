@@ -1,4 +1,10 @@
-import type { Chat, ChatDetail, ProviderCatalogEntry, ProviderConfig } from '@worldbookllm/shared';
+import type {
+  Chat,
+  ChatDetail,
+  Message,
+  ProviderCatalogEntry,
+  ProviderConfig,
+} from '@worldbookllm/shared';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiClientError } from '../api/client.js';
@@ -10,7 +16,9 @@ import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js
 import { ProviderConfigDialog } from '../providers/ProviderConfigDialog.js';
 import { ChatMessages, type PendingExchange } from './ChatMessages.js';
 import { MessageComposer } from './MessageComposer.js';
+import { PromptInspectorDialog } from './PromptInspectorDialog.js';
 import { PresetControls } from './PresetControls.js';
+import { ResponseCaptureDialog } from './ResponseCaptureDialog.js';
 import { SourceSelector } from './SourceSelector.js';
 
 type ChatsState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; chats: Chat[] };
@@ -41,6 +49,8 @@ export function ChatPanel() {
   const [savingSources, setSavingSources] = useState(false);
   const [savingTemperature, setSavingTemperature] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [inspecting, setInspecting] = useState<Message | null>(null);
+  const [capturing, setCapturing] = useState<Message | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Mirrors selectedId so async completions (stream cleanup, refetches) can
   // tell whether their chat is still the selected one before writing state.
@@ -361,7 +371,12 @@ export function ChatPanel() {
                 onChatUpdated={adoptChat}
                 onSavingChange={setSavingSources}
               />
-              <ChatMessages messages={selectedDetail.messages} pending={pending} />
+              <ChatMessages
+                messages={selectedDetail.messages}
+                pending={pending}
+                onInspect={setInspecting}
+                onAddToSources={setCapturing}
+              />
               {streamError === null ? null : <p role="alert">{streamError}</p>}
               <MessageComposer
                 streaming={pending !== null}
@@ -425,6 +440,12 @@ export function ChatPanel() {
             Delete <strong>{deleting.title}</strong>? Its message history will also be removed.
           </p>
         </ConfirmDialog>
+      )}
+      {inspecting === null ? null : (
+        <PromptInspectorDialog message={inspecting} onClose={() => setInspecting(null)} />
+      )}
+      {capturing === null ? null : (
+        <ResponseCaptureDialog message={capturing} onClose={() => setCapturing(null)} />
       )}
     </div>
   );

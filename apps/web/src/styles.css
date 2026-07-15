@@ -1096,6 +1096,21 @@ label {
   color: var(--muted);
 }
 
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.message-actions button {
+  border-color: var(--line);
+  background: var(--surface);
+  padding: 0.35rem 0.55rem;
+  color: var(--blueprint);
+  font-size: 0.76rem;
+}
+
 .chat-composer {
   margin-top: 1rem;
 }
@@ -1192,6 +1207,94 @@ label {
 
 .source-dialog label:not(:first-of-type) {
   margin-top: 1rem;
+}
+
+.prompt-inspector {
+  width: min(100%, 820px);
+}
+
+.inspector-sections {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.inspector-section {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.inspector-section pre {
+  overflow: auto;
+  max-height: 24rem;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.canonical-messages,
+.captured-sources {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.canonical-messages li,
+.captured-sources li {
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+}
+
+.canonical-messages pre,
+.captured-sources pre {
+  margin-bottom: 0;
+  border: 0;
+  padding: 0;
+}
+
+.inspector-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+}
+
+.inspector-facts dt {
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.inspector-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.response-warning {
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+}
+
+.response-warning .message-badge {
+  margin-left: 0;
+  color: var(--vermilion);
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.response-warning .dialog-copy {
+  margin-bottom: 0;
 }
 
 .import-dialog {

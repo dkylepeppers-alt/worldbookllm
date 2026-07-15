@@ -754,6 +754,98 @@ describe('ChatPanel', () => {
     expect(await screen.findByText('2 of 2 sources selected')).toBeDefined();
   });
 
+  it('opens the inspector from stored context without using current source data', async () => {
+    const sourceId = '7d55ac1e-3f0a-4b8e-8a4e-1d2f3a4b5c60';
+    const currentSource: SourceMetadata = {
+      id: sourceId,
+      notebookId: notebook.id,
+      title: 'Currently renamed source',
+      slug: 'currently-renamed-source',
+      filePath: 'notebooks/current.md',
+      origin: { type: 'paste' },
+      conversionNotes: [],
+      wordCount: 2,
+      contentHash: 'b'.repeat(64),
+      createdAt: '2026-07-10T12:00:00.000Z',
+      updatedAt: '2026-07-10T13:00:00.000Z',
+    };
+    const captured: Message = {
+      ...assistantMessage,
+      context: {
+        contextVersion: 2,
+        preset: defaultPreset,
+        canonicalMessages: [{ role: 'user', content: 'Captured question' }],
+        sources: [
+          {
+            id: sourceId,
+            title: 'Deleted historical source',
+            contentHash: 'a'.repeat(64),
+            content: 'Exact historical content',
+          },
+        ],
+        requestedControls: defaultPreset.generation,
+        effectiveRequestBody: { model: 'nano-story', temperature: 0.7 },
+        provider: 'nanogpt',
+        model: 'nano-story',
+      },
+    };
+    await renderWorkspace({
+      listSources: () => Promise.resolve([currentSource]),
+      getChat: () => Promise.resolve(detailWith([captured], [sourceId])),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+    await user.click(await screen.findByRole('button', { name: 'Inspect prompt' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'What the model received' });
+    expect(within(dialog).getByText('Deleted historical source')).toBeDefined();
+    expect(within(dialog).getByText('Exact historical content')).toBeDefined();
+    expect(within(dialog).queryByText('Currently renamed source')).toBeNull();
+  });
+
+  it('allows the same assistant response to be saved repeatedly', async () => {
+    const source: SourceMetadata = {
+      id: '7d55ac1e-3f0a-4b8e-8a4e-1d2f3a4b5c60',
+      notebookId: notebook.id,
+      title: 'The coast is brass.',
+      slug: 'the-coast-is-brass',
+      filePath: 'notebooks/response.md',
+      origin: {
+        type: 'assistant-response',
+        chatId: chat.id,
+        messageId: assistantMessage.id,
+      },
+      conversionNotes: [],
+      wordCount: 4,
+      contentHash: 'a'.repeat(64),
+      createdAt: '2026-07-10T12:02:00.000Z',
+      updatedAt: '2026-07-10T12:02:00.000Z',
+    };
+    const second = { ...source, id: '8e66bd2f-4a1b-4c9f-9b5f-2e3a4b5c6d71' };
+    const createSource = vi.fn().mockResolvedValueOnce(source).mockResolvedValueOnce(second);
+    await renderWorkspace({
+      getChat: () => Promise.resolve(detailWith([assistantMessage])),
+      createSource,
+      getSource: (id: string) =>
+        Promise.resolve({
+          ...(id === source.id ? source : second),
+          content: assistantMessage.content,
+        }),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
+
+    await user.click(await screen.findByRole('button', { name: 'Add to sources' }));
+    await user.click(screen.getByRole('button', { name: 'Save source' }));
+    await waitFor(() => expect(createSource).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole('button', { name: 'Chat' }));
+    await user.click(await screen.findByRole('button', { name: 'Add to sources' }));
+    await user.click(screen.getByRole('button', { name: 'Save source' }));
+    await waitFor(() => expect(createSource).toHaveBeenCalledTimes(2));
+    expect(createSource.mock.calls[0]?.[1]).toEqual(createSource.mock.calls[1]?.[1]);
+  });
+
   it('retries an explicit chat-list failure', async () => {
     const listChats = vi
       .fn()

@@ -11,9 +11,11 @@ export interface PendingExchange {
 interface ChatMessagesProps {
   messages: Message[];
   pending: PendingExchange | null;
+  onInspect?: (message: Message) => void;
+  onAddToSources?: (message: Message) => void;
 }
 
-export function ChatMessages({ messages, pending }: ChatMessagesProps) {
+export function ChatMessages({ messages, pending, onInspect, onAddToSources }: ChatMessagesProps) {
   const ordered = [...messages].sort((a, b) => a.seq - b.seq);
 
   if (ordered.length === 0 && pending === null) {
@@ -36,6 +38,16 @@ export function ChatMessages({ messages, pending }: ChatMessagesProps) {
             {message.status === 'error' ? <span className="message-badge">Error</span> : null}
           </p>
           <MessageBody message={message} />
+          {message.role === 'assistant' && message.content.trim().length > 0 ? (
+            <div className="message-actions">
+              <button type="button" onClick={() => onInspect?.(message)}>
+                Inspect prompt
+              </button>
+              <button type="button" onClick={() => onAddToSources?.(message)}>
+                Add to sources
+              </button>
+            </div>
+          ) : null}
         </li>
       ))}
       {pending === null ? null : (
