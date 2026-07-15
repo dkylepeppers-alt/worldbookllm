@@ -22,6 +22,8 @@ worldbookllm is a **local-first web app**: a Node/TypeScript server and a browse
 
 - **`apps/web`** — a static React SPA built with Vite. In development, Vite proxies `/api` to the server; in production the server serves the built bundle. All state changes go through the API.
 - **`apps/server`** — a Fastify server that owns everything stateful: the data directory, the SQLite database, source ingestion, and calls to AI providers. Chat responses stream to the client (SSE).
+- **`apps/e2e`** — Playwright coverage for complete browser journeys, backed by a local stub provider for deterministic generation tests.
+- **`packages/providers`** — framework-free provider request building, message conversion, model discovery, and stream normalization.
 - **`packages/shared`** — TypeScript types and zod schemas shared by both sides, so API payloads are validated at the boundary and typed end to end.
 
 ## Data model: Markdown on disk + SQLite index
@@ -53,6 +55,8 @@ acquire → extract text → convert to Markdown → user review/edit → store 
 ```
 
 Conversion is best-effort and **transparent**: the user sees what was produced, can edit it, and the original origin is recorded in metadata. Nothing enters the knowledge base without being inspectable Markdown.
+
+The implemented upload path accepts Markdown, plain text, PDF, HTML, and SillyTavern lorebook or character-card JSON. Conversion produces a transient, editable preview; saving the reviewed preview writes the Markdown file and provenance metadata. Webpage acquisition by URL and editing or re-ingesting an existing source remain in progress for Milestone 2.
 
 ## Provider layer (model-agnostic AI)
 
@@ -92,6 +96,11 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0004 — pnpm workspace monorepo](decisions/0004-pnpm-monorepo.md)
 - [0005 — SillyTavern provider port; AGPL-3.0 relicense](decisions/0005-sillytavern-provider-port-agpl.md)
 - [0006 — better-sqlite3 for the index database](decisions/0006-better-sqlite3.md)
+<<<<<<< HEAD
 - [0007 — Fastify multipart for source uploads](decisions/0007-fastify-multipart-source-uploads.md)
 - [0008 — PDF and HTML conversion dependencies](decisions/0008-pdf-html-conversion-dependencies.md)
 - [0009 — Native global presets and immutable exchange snapshots](decisions/0009-native-global-presets.md)
+=======
+- [0007 — Parse source uploads with @fastify/multipart](decisions/0007-fastify-multipart-source-uploads.md)
+- [0008 — PDF and HTML conversion dependencies](decisions/0008-pdf-html-conversion-dependencies.md)
+>>>>>>> origin/main
