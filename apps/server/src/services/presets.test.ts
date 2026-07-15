@@ -86,7 +86,7 @@ describe('PresetService', () => {
     db.close();
   });
 
-  it('keeps suffixed create and patch collision names within the 200-character limit', () => {
+  it('keeps suffixed create collision names within the 200-character limit', () => {
     const { db, presets } = setup();
     const upperName = 'A'.repeat(200);
     const lowerName = 'a'.repeat(200);
@@ -96,15 +96,10 @@ describe('PresetService', () => {
     expect(duplicate.name).toBe(`${'a'.repeat(196)} (2)`);
     expect(duplicate.name).toHaveLength(200);
 
-    const renamed = presets.patch(presets.create({ ...portablePreset, name: 'Other' }).id, {
-      name: lowerName,
-    });
-    expect(renamed.name).toBe(`${'a'.repeat(196)} (3)`);
-    expect(renamed.name).toHaveLength(200);
     db.close();
   });
 
-  it('patches by merging a complete portable definition and suffixes name collisions', () => {
+  it('patches by merging a complete portable definition and rejects name collisions', () => {
     const { db, presets } = setup();
     const first = presets.create(portablePreset);
     const second = presets.create({ ...portablePreset, name: 'Other' });
@@ -119,9 +114,22 @@ describe('PresetService', () => {
       createdAt: NOW,
       updatedAt: NOW,
     });
-    expect(presets.patch(second.id, { name: 'FOCUSED DRAFTING' }).name).toBe(
-      'FOCUSED DRAFTING (2)',
+    expect(() => presets.patch(second.id, { name: 'FOCUSED DRAFTING' })).toThrow(ConflictError);
+    expect(presets.get(second.id).name).toBe('Other');
+    db.close();
+  });
+
+  it('rejects a case-insensitive 200-character patch collision without changing the preset', () => {
+    const { db, presets } = setup();
+    const upperName = 'A'.repeat(200);
+    const target = presets.create({ ...portablePreset, name: upperName });
+    const unchanged = presets.create({ ...portablePreset, name: 'Other' });
+
+    expect(() => presets.patch(unchanged.id, { name: upperName.toLowerCase() })).toThrow(
+      ConflictError,
     );
+    expect(presets.get(unchanged.id)).toEqual(unchanged);
+    expect(presets.get(target.id).name).toBe(upperName);
     db.close();
   });
 
