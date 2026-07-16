@@ -1,155 +1,82 @@
 ---
 name: worldbuilding
-description: "Diagnose world-level story problems. This skill should be used when settings feel thin, institutions feel designed rather than evolved, economies don't make sense, or non-human species feel like humans in costume. Keywords: worldbuilding, setting, world, institutions, economy, culture, species, consequences."
+description: Create coherent setting entries that connect history, institutions, culture, economy, power, environment, and daily life while matching established canon. Use broadly for generation or explicit critique.
 license: MIT
-compatibility: Works with any fiction genre. Pairs with story-sense for routing.
+compatibility: Works with any fiction genre as a broad worldbuilding entry point.
 metadata:
-  author: jwynia
-  version: "1.0"
-  type: diagnostic
-  mode: diagnostic
+  author: "jwynia; adapted by worldbookllm"
+  version: "2.0"
+  type: generator
+  mode: generative+explicit-critique
   domain: worldbuilding
 ---
 
-# Worldbuilding: Diagnostic Skill
+# Worldbuilding
 
-Diagnose world-level problems in fictional settings. Identify what's missing or unconvincing and recommend specific interventions.
+Create setting material that feels inherited, contested, inhabited, and capable of operating beyond
+the immediate needs of the plot.
 
-## When to Use This Skill
+## Creation Mode
 
-Use this skill when:
-- Setting feels like a painted backdrop
-- Technology/magic hasn't transformed society
-- Institutions feel designed rather than evolved
-- Economy doesn't make sense
-- Cultures lack depth
+Default to creating the requested culture, place, institution, technology, magic system, species,
+historical development, or integrated setting expansion. Produce the finished world source instead
+of assessing the user's existing material.
 
-Do NOT use this skill when:
-- Story problems are character-focused (use character-arc)
-- Plot structure issues (use scene-sequencing)
-- Need to generate worlds from scratch (use systemic-worldbuilding)
+Build outward from the request:
 
-## Core Principle
+1. Establish the element's material basis, limits, and immediate purpose.
+2. Give it a history of adaptations, accidents, crises, reforms, and competing memories.
+3. Connect it to institutions, resources, authority, status, and conflict.
+4. Show internal variation by region, class, generation, profession, faith, or faction.
+5. Translate it into daily routines, language, objects, spaces, relationships, and assumptions.
+6. Add pressures that can generate future decisions without turning every detail into a plot hook.
 
-**Worlds fail when they feel designed rather than evolved.**
+## Source-Ready Output Contract
 
-Good worldbuilding creates the perception that the setting has history, internal logic, and processes that operate independently of the plot.
+Return only the finished document in Markdown. Begin directly with its title or requested in-world
+form. Do not include a preamble, explanation, rationale, analysis, citations, provenance, references
+to source material, a list of recommendations, or an offer to revise or continue. Do not explain the
+worldbuilding method.
 
-## The World States
+If the user requests a chronicle, field report, law, legend, guide, archive entry, or other in-world
+artifact, write it directly. Otherwise create a polished reference entry with sections determined by
+the subject rather than a fixed template.
 
-### W1: Backdrop World
-**Symptoms:** Setting exists but has no independent logic
-**Interventions:** systemic-worldbuilding (trace consequences)
+## Canon and Ambiguity
 
-### W2: World Without Consequences
-**Symptoms:** Technology/magic exists but hasn't transformed society
-**Interventions:** Consequence Cascade Analysis
+Treat available material as invisible canon. Preserve established names, facts, chronology, world
+rules, tone, and relationships. Fill ordinary gaps with coherent invention that extends rather than
+replaces canon. If canon conflicts, or a missing decision would materially change established canon,
+ask one concise clarification question and stop without drafting alternatives.
 
-### W3: Institutions Without History
-**Symptoms:** Organizations feel designed last week
-**Interventions:** Organic Institutional Design
+## Worldbuilding Principles
 
-### W4: Economy Doesn't Make Sense
-**Symptoms:** Trade exists without supply chains; prices arbitrary
-**Interventions:** economic-systems
+- **Consequences:** important technologies, magic, ecologies, and historical events alter more than
+  one domain.
+- **History:** institutions contain obsolete offices, compromises, inherited borders, old grudges,
+  and repurposed practices.
+- **Diversity:** cultures argue with themselves; regions, classes, generations, and factions adapt
+  differently.
+- **Material life:** food, shelter, labor, transport, health, communication, and waste constrain
+  ideals.
+- **Power:** rules benefit some people, burden others, and create enforcement, evasion, and reform.
+- **Perspective:** inhabitants normalize much of their world and disagree about what its features
+  mean.
+- **Selective depth:** develop what affects the request deeply and imply the wider world through
+  dependencies and consequences.
 
-### W5: Belief Systems Are Shallow
-**Symptoms:** Religion is flavor without theological depth
-**Interventions:** belief-systems
+Avoid monocultures, static centuries, universally available conveniences, institutions without
+constituencies, and non-human peoples whose biology or environment never affects cognition or society.
 
-### W6: Culture Without Depth
-**Symptoms:** Traditions feel random; surface-level aesthetic
-**Interventions:** memetic-depth
+## Silent Completeness Check
 
-### W7: Flat Non-Humans
-**Symptoms:** Aliens/species are humans in costume
-**Interventions:** conlang, alien-sensory frameworks
+Before answering, silently verify historical cause, material support, internal variation, power,
+cross-domain consequences, lived detail, and future pressure. Ensure new facts connect to one another
+and to canon rather than forming an encyclopedia list.
 
-### W7.5: Language Feels Generic
-**Symptoms:** Names sound like English; no linguistic texture
-**Interventions:** conlang, language-evolution
+## Explicit Critique Mode
 
-## Consequence Cascade
-
-Apply to any major speculative element:
-
-```
-Initial Element
-├── 1st Order: Direct practical effects
-│   ├── Who gains immediate advantage?
-│   ├── What becomes obsolete?
-│   └── Technical limitations?
-├── 2nd Order: Systemic adaptations
-│   ├── How do economic structures adapt?
-│   ├── How do power structures respond?
-│   └── What resistance movements arise?
-└── 3rd Order: Cultural evolution
-    ├── What new language emerges?
-    ├── What ethical questions arise?
-    └── What becomes normalized?
-```
-
-## Key Diagnostic Questions
-
-### For Technology/Magic
-- What's your initial divergence from our world?
-- Who gains power? What becomes obsolete?
-- How would the powerful try to control this?
-
-### For Institutions
-- When was this organization founded?
-- What crises has it survived?
-- What are its internal contradictions?
-
-### For Economics
-- What's the fundamental scarcity?
-- How is value determined?
-- What's the underground economy?
-
-### For Belief Systems
-- What explains existence?
-- How do beliefs affect daily decisions?
-- What are the schisms and debates?
-
-## Common Anti-Patterns
-
-### The Monoculture
-One unified culture for entire planets/species.
-**Fix:** Add regional variation, class differences, schisms.
-
-### The Convenient Technology
-Technology exists when plot needs it.
-**Fix:** Trace consequence cascade.
-
-### The Static History
-World unchanged for centuries.
-**Fix:** Add recent disruptions, reforms in progress.
-
-### The Evil Empire
-Antagonist nation uniformly evil.
-**Fix:** Add internal debates, ordinary people.
-
-### The Rubber Forehead Alien
-Non-humans with minor cosmetic differences.
-**Fix:** Start with biology, trace to cognition, trace to culture.
-
-## Depth vs Breadth
-
-**Go Deep When:**
-- Element is central to plot
-- Element will be examined closely
-- Element creates ongoing conflict
-
-**Stay Shallow When:**
-- Element is background detail
-- POV character wouldn't know depth
-- Mystery is more interesting
-
-## Related Skills
-
-- **systemic-worldbuilding** - Build worlds from initial divergence
-- **belief-systems** - Deep theological design
-- **economic-systems** - Economic logic
-- **governance-systems** - Political structures
-- **conlang** - Language design
-- **settlement-design** - Cities and geography
+Activate critique only when the user explicitly asks to critique, assess, diagnose, review, or
+troubleshoot existing worldbuilding. Then examine consequences, history, material logic,
+institutional interests, internal diversity, power, and lived experience. Prioritize specific gaps
+without defaulting to critique merely because source material is supplied.
