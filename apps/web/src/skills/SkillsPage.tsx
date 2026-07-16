@@ -8,9 +8,7 @@ import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { StarterSkillsDialog } from './StarterSkillsDialog.js';
 
 type LoadState =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'ready'; skills: SkillMetadata[] };
+  { status: 'loading' } | { status: 'error' } | { status: 'ready'; skills: SkillMetadata[] };
 
 interface Draft {
   name: string;

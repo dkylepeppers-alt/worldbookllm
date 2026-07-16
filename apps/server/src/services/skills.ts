@@ -58,8 +58,7 @@ export class SkillService {
 
   private getRow(id: string): SkillRow {
     const row = this.db.prepare('SELECT * FROM skills WHERE id = ?').get(id) as
-      | SkillRow
-      | undefined;
+      SkillRow | undefined;
     if (!row) throw new NotFoundError(`Skill ${id} was not found`);
     return row;
   }
@@ -225,7 +224,15 @@ export class SkillService {
           .prepare(
             'UPDATE skills SET name = ?, description = ?, dir_path = ?, word_count = ?, content_hash = ?, updated_at = ? WHERE id = ?',
           )
-          .run(name, description, stored.dirPath, stored.wordCount, stored.contentHash, stored.updatedAt, id);
+          .run(
+            name,
+            description,
+            stored.dirPath,
+            stored.wordCount,
+            stored.contentHash,
+            stored.updatedAt,
+            id,
+          );
       })();
     } catch (error) {
       restoreFile();

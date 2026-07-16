@@ -11,9 +11,7 @@ interface StarterSkillsDialogProps {
 }
 
 type CatalogState =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'ready'; starters: StarterSkill[] };
+  { status: 'loading' } | { status: 'error' } | { status: 'ready'; starters: StarterSkill[] };
 
 /**
  * One-click install of the vendored starter skill catalog (fiction craft
@@ -39,9 +37,7 @@ export function StarterSkillsDialog({ onClose, onInstalled }: StarterSkillsDialo
         setCatalog({ status: 'ready', starters });
         setChecked(
           new Set(
-            starters
-              .filter((starter) => !starter.installed)
-              .map((starter) => starter.starterId),
+            starters.filter((starter) => !starter.installed).map((starter) => starter.starterId),
           ),
         );
       })
@@ -60,9 +56,7 @@ export function StarterSkillsDialog({ onClose, onInstalled }: StarterSkillsDialo
       await api.installStarterSkills([...checked]);
       onInstalled();
     } catch (caught) {
-      setError(
-        caught instanceof ApiClientError ? caught.message : 'Could not install the skills.',
-      );
+      setError(caught instanceof ApiClientError ? caught.message : 'Could not install the skills.');
       setBusy(false);
     }
   }

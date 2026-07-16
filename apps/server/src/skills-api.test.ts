@@ -141,9 +141,7 @@ describe('skills API', () => {
       payload: { starterIds: ['character-voice', 'settlement-design'] },
     });
     expect(again.statusCode).toBe(201);
-    expect(again.json<SkillMetadata[]>().map((entry) => entry.name)).toEqual([
-      'settlement-design',
-    ]);
+    expect(again.json<SkillMetadata[]>().map((entry) => entry.name)).toEqual(['settlement-design']);
 
     const after = await app.inject({ method: 'GET', url: '/api/skills-starter' });
     expect(after.json<Array<{ installed: boolean }>>().every((entry) => entry.installed)).toBe(
@@ -167,5 +165,30 @@ describe('skills API', () => {
     const listed = await emptyApp.inject({ method: 'GET', url: '/api/skills-starter' });
     expect(listed.json()).toEqual([]);
     await emptyApp.close();
+  });
+
+  it('parses and installs the real vendored catalog shipped with the server', async () => {
+    // No starterSkillsDir override: this exercises apps/server/skills-starter,
+    // guarding the vendored SKILL.md files against the shared schema limits.
+    const vendoredDataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-skills-vendored-'));
+    tempDirs.push(vendoredDataDir);
+    const vendoredApp = buildApp({ dataDir: vendoredDataDir, logger: false });
+
+    const listed = await vendoredApp.inject({ method: 'GET', url: '/api/skills-starter' });
+    expect(listed.statusCode).toBe(200);
+    const starters = listed.json<Array<{ starterId: string; installed: boolean }>>();
+    expect(starters.length).toBeGreaterThanOrEqual(16);
+    expect(starters.map((entry) => entry.starterId)).toEqual(
+      expect.arrayContaining(['story-sense', 'settlement-design', 'worldbuilding']),
+    );
+
+    const install = await vendoredApp.inject({
+      method: 'POST',
+      url: '/api/skills-starter/install',
+      payload: { starterIds: starters.map((entry) => entry.starterId) },
+    });
+    expect(install.statusCode).toBe(201);
+    expect(install.json<SkillMetadata[]>()).toHaveLength(starters.length);
+    await vendoredApp.close();
   });
 });

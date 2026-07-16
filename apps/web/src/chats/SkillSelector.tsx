@@ -14,9 +14,7 @@ interface SkillSelectorProps {
 }
 
 type SkillsState =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'ready'; skills: SkillMetadata[] };
+  { status: 'loading' } | { status: 'error' } | { status: 'ready'; skills: SkillMetadata[] };
 
 /**
  * Edits the chat-owned skill selection. Skills are a global library (unlike

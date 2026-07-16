@@ -71,11 +71,13 @@ describe('SkillService', () => {
     const parsed = matter(readFileSync(skillPath, 'utf8'));
     writeFileSync(
       skillPath,
-      matter.stringify('Hand-edited body', {
-        ...parsed.data,
-        description: 'Edited outside the app',
-        updatedAt: '2026-07-16T13:00:00.000Z',
-      }).replace(/\n$/u, ''),
+      matter
+        .stringify('Hand-edited body', {
+          ...parsed.data,
+          description: 'Edited outside the app',
+          updatedAt: '2026-07-16T13:00:00.000Z',
+        })
+        .replace(/\n$/u, ''),
       { mode: 0o600 },
     );
 

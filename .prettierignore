@@ -6,3 +6,6 @@ data/
 
 # Converter test fixtures are deliberate raw/malformed inputs; keep them verbatim.
 apps/server/src/services/converters/__fixtures__/
+
+# Vendored upstream skills stay verbatim (see apps/server/skills-starter/ATTRIBUTION.md).
+apps/server/skills-starter/
