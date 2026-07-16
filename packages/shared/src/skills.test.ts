@@ -44,6 +44,12 @@ describe('skill schemas', () => {
     for (const name of ['Character-Voice', '-leading', 'trailing-', 'double--hyphen', '', 'a b']) {
       expect(() => skillNameSchema.parse(name)).toThrow();
     }
+    // The name doubles as a directory: Windows-reserved device names must fail
+    // validation instead of erroring at mkdir time.
+    for (const name of ['con', 'nul', 'aux', 'prn', 'com1', 'lpt9']) {
+      expect(() => skillNameSchema.parse(name)).toThrow();
+    }
+    expect(skillNameSchema.parse('con-lang')).toBe('con-lang');
   });
 
   it('defaults creation origin/license and rejects blank content and empty patches', () => {

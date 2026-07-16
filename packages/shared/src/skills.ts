@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+// The name doubles as the on-disk directory, and Windows cannot create
+// directories named after reserved DOS devices.
+const WINDOWS_RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/u;
+
 // agentskills.io identity: lowercase alphanumerics and single hyphens, ≤64
 // characters, matching the skill's directory name.
 export const skillNameSchema = z
@@ -7,6 +11,9 @@ export const skillNameSchema = z
   .max(64)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, {
     message: 'Skill names use lowercase letters, numbers, and single hyphens',
+  })
+  .refine((name) => !WINDOWS_RESERVED_NAMES.test(name), {
+    message: 'Skill names cannot be reserved device names',
   });
 
 export const skillDescriptionSchema = z.string().trim().min(1).max(1024);

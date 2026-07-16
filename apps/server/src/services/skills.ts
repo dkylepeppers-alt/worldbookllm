@@ -120,13 +120,18 @@ export class SkillService {
         return mapSkill(this.getRow(id));
       })();
     } catch (error) {
-      if (stored !== undefined) this.skillFiles.remove(stored.dirPath);
       if (isUniqueConstraint(error)) {
+        // Deliberately do NOT remove the file on a name collision: the skill's
+        // directory is its name, so skills/<name> belongs to the already-indexed
+        // skill and removing it would destroy that skill's data. This branch is
+        // unreachable anyway — the synchronous DB and disk pre-checks above
+        // refuse duplicates before anything is written.
         throw new ConflictError(
           'skill_name_conflict',
           `A skill named ${normalized.name} already exists`,
         );
       }
+      if (stored !== undefined) this.skillFiles.remove(stored.dirPath);
       throw error;
     }
   }

@@ -38,6 +38,7 @@ export function SkillSelector({
   // soon as it is clicked; a failed save falls back to the persisted list.
   const [optimistic, setOptimistic] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [listReload, setListReload] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -49,9 +50,40 @@ export function SkillSelector({
           setSkillsState({ status: 'error' });
       });
     return () => controller.abort();
-  }, [api]);
+  }, [api, listReload]);
 
-  if (skillsState.status !== 'ready' || skillsState.skills.length === 0) return null;
+  // If the selector unmounts (e.g. the user switches chats) while a PATCH is
+  // still pending, release the parent's send-hold — otherwise a request that
+  // never settles would keep the composer disabled in every later chat.
+  useEffect(
+    () => () => {
+      if (savingRef.current) onSavingChange?.(false);
+    },
+    [onSavingChange],
+  );
+
+  // Loading and failure are only worth surfacing when this chat has attached
+  // skills the user cannot currently see or repair.
+  if (skillsState.status === 'loading') {
+    return selectedSkillIds.length === 0 ? null : (
+      <fieldset className="source-selector" disabled>
+        <legend>Craft skills</legend>
+        <p className="empty-inline">Loading attached skills…</p>
+      </fieldset>
+    );
+  }
+  if (skillsState.status === 'error') {
+    return (
+      <fieldset className="source-selector">
+        <legend>Craft skills</legend>
+        <p role="alert">The skills library could not be loaded.</p>
+        <button type="button" onClick={() => setListReload((value) => value + 1)}>
+          Retry
+        </button>
+      </fieldset>
+    );
+  }
+  if (skillsState.skills.length === 0) return null;
   const skills = skillsState.skills;
   const selected = new Set(optimistic ?? selectedSkillIds);
 

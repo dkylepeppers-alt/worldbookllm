@@ -71,20 +71,37 @@ export class StarterSkillService {
     return catalog;
   }
 
+  /**
+   * A starter counts as installed when a library skill carries its immutable
+   * `starterId` (renames keep the bundled origin), or when its catalog name is
+   * simply taken — installing over an occupied name could only 409.
+   */
+  private installedMarkers(): { starterIds: Set<string>; names: Set<string> } {
+    const starterIds = new Set<string>();
+    const names = new Set<string>();
+    for (const skill of this.skills.list()) {
+      names.add(skill.name.toLowerCase());
+      if (skill.origin.type === 'bundled') starterIds.add(skill.origin.starterId);
+    }
+    return { starterIds, names };
+  }
+
   list(): StarterSkill[] {
-    const installedNames = new Set(this.skills.list().map((skill) => skill.name.toLowerCase()));
+    const installed = this.installedMarkers();
     return this.readCatalog().map((entry) =>
       starterSkillSchema.parse({
         starterId: entry.starterId,
         name: entry.name,
         description: entry.description,
-        installed: installedNames.has(entry.name.toLowerCase()),
+        installed:
+          installed.starterIds.has(entry.starterId) ||
+          installed.names.has(entry.name.toLowerCase()),
       }),
     );
   }
 
   /**
-   * Installs the requested starters; already-installed names are skipped so
+   * Installs the requested starters; already-installed starters are skipped so
    * the call is idempotent. Returns the metadata of newly created skills.
    */
   install(starterIds: string[]): SkillMetadata[] {
@@ -93,11 +110,17 @@ export class StarterSkillService {
     if (missing.length > 0) {
       throw new NotFoundError(`Starter skill ${missing.join(', ')} was not found`);
     }
-    const installedNames = new Set(this.skills.list().map((skill) => skill.name.toLowerCase()));
+    const installed = this.installedMarkers();
     const created: SkillMetadata[] = [];
     for (const starterId of starterIds) {
       const entry = catalog.get(starterId);
-      if (!entry || installedNames.has(entry.name.toLowerCase())) continue;
+      if (
+        !entry ||
+        installed.starterIds.has(entry.starterId) ||
+        installed.names.has(entry.name.toLowerCase())
+      ) {
+        continue;
+      }
       created.push(
         this.skills.create({
           name: entry.name,
@@ -107,7 +130,8 @@ export class StarterSkillService {
           origin: { type: 'bundled', starterId: entry.starterId },
         }),
       );
-      installedNames.add(entry.name.toLowerCase());
+      installed.starterIds.add(entry.starterId);
+      installed.names.add(entry.name.toLowerCase());
     }
     return created;
   }

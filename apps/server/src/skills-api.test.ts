@@ -156,6 +156,36 @@ describe('skills API', () => {
     expect(unknown.statusCode).toBe(404);
   });
 
+  it('tracks installation by starter id so renamed starters are not duplicated', async () => {
+    const install = await app.inject({
+      method: 'POST',
+      url: '/api/skills-starter/install',
+      payload: { starterIds: ['character-voice'] },
+    });
+    const installed = install.json<SkillMetadata[]>()[0];
+    expect(installed).toBeDefined();
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/skills/${installed?.id ?? ''}`,
+      payload: { name: 'voice-craft' },
+    });
+
+    const catalog = await app.inject({ method: 'GET', url: '/api/skills-starter' });
+    const entry = catalog
+      .json<Array<{ starterId: string; installed: boolean }>>()
+      .find((starter) => starter.starterId === 'character-voice');
+    expect(entry?.installed).toBe(true);
+
+    const again = await app.inject({
+      method: 'POST',
+      url: '/api/skills-starter/install',
+      payload: { starterIds: ['character-voice'] },
+    });
+    expect(again.statusCode).toBe(201);
+    expect(again.json<SkillMetadata[]>()).toEqual([]);
+  });
+
   it('serves an empty starter catalog when the vendored directory is absent', async () => {
     const emptyApp = buildApp({
       dataDir: mkdtempSync(join(tmpdir(), 'worldbookllm-skills-empty-')),
