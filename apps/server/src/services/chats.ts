@@ -34,6 +34,7 @@ function mapChat(row: ChatRow): Chat {
       notebookId: row.notebook_id,
       title: row.title,
       sourceIds: JSON.parse(row.source_ids_json),
+      skillIds: JSON.parse(row.skill_ids_json),
       providerOverride: JSON.parse(row.provider_override_json),
       presetId: row.preset_id,
       createdAt: row.created_at,
@@ -125,6 +126,17 @@ export class ChatService {
     }
   }
 
+  private validateSkills(skillIds: string[]): void {
+    if (skillIds.length === 0) return;
+    const placeholders = skillIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(`SELECT id FROM skills WHERE id IN (${placeholders})`)
+      .all(...skillIds) as Array<{ id: string }>;
+    if (rows.length !== skillIds.length) {
+      throw new NotFoundError('One or more selected skills were not found');
+    }
+  }
+
   private validatePreset(presetId: string | null): void {
     if (presetId === null) return;
     if (!this.db.prepare('SELECT 1 FROM presets WHERE id = ?').get(presetId)) {
@@ -154,18 +166,20 @@ export class ChatService {
   create(notebookId: string, input: CreateChat): Chat {
     this.requireNotebook(notebookId);
     this.validateSources(notebookId, input.sourceIds);
+    this.validateSkills(input.skillIds);
     this.validatePreset(input.presetId);
     const id = randomUUID();
     const timestamp = this.now();
     this.db
       .prepare(
-        'INSERT INTO chats (id, notebook_id, title, source_ids_json, provider_override_json, preset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO chats (id, notebook_id, title, source_ids_json, skill_ids_json, provider_override_json, preset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         id,
         notebookId,
         input.title,
         JSON.stringify(input.sourceIds),
+        JSON.stringify(input.skillIds),
         JSON.stringify(input.providerOverride),
         input.presetId,
         timestamp,
@@ -177,16 +191,23 @@ export class ChatService {
   patch(id: string, input: PatchChat): Chat {
     const current = this.get(id);
     const sourceIds = input.sourceIds ?? current.sourceIds;
+    const skillIds = input.skillIds ?? current.skillIds;
     const presetId = input.presetId === undefined ? current.presetId : input.presetId;
     this.validateSources(current.notebookId, sourceIds);
+    // Only an explicit replacement is validated: a deleted skill leaves stale
+    // ids behind (like deleted sources), and unrelated edits — retitling,
+    // provider changes, or the `skillIds: []` repair itself — must not 404 on
+    // a selection this request does not touch.
+    if (input.skillIds !== undefined) this.validateSkills(input.skillIds);
     this.validatePreset(presetId);
     this.db
       .prepare(
-        'UPDATE chats SET title = ?, source_ids_json = ?, provider_override_json = ?, preset_id = ?, updated_at = ? WHERE id = ?',
+        'UPDATE chats SET title = ?, source_ids_json = ?, skill_ids_json = ?, provider_override_json = ?, preset_id = ?, updated_at = ? WHERE id = ?',
       )
       .run(
         input.title ?? current.title,
         JSON.stringify(sourceIds),
+        JSON.stringify(skillIds),
         JSON.stringify(
           input.providerOverride === undefined ? current.providerOverride : input.providerOverride,
         ),

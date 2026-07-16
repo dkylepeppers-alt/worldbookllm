@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { openDatabase } from '../db/database.js';
 import { ConflictError, ConfigurationError, InvalidStoredDataError } from '../errors.js';
+import { SkillFileStore } from '../files/skill-files.js';
 import { SourceFileStore } from '../files/source-files.js';
 import { ProviderHttpClient } from '../providers/http-client.js';
 import { SecretStore } from '../secrets/secret-store.js';
@@ -17,6 +18,7 @@ import { NotebookService } from './notebooks.js';
 import { PromptAssembler } from './prompt-assembler.js';
 import { ProviderService } from './providers.js';
 import { PresetService } from './presets.js';
+import { SkillService } from './skills.js';
 import { SourceService } from './sources.js';
 
 const tempDirs: string[] = [];
@@ -40,19 +42,21 @@ function setup(fetchImpl: typeof fetch, withConfig = true) {
   });
   const source = sources.create(notebook.id, { title: 'Lore', content: 'Amber is canon.' });
   const chat = chats.create(notebook.id, {
+    skillIds: [],
     title: 'Chat',
     sourceIds: [source.id],
     providerOverride: null,
     presetId: null,
   });
+  const skills = new SkillService(db, new SkillFileStore(dataDir));
   const generation = new GenerationService(
     chats,
     notebooks,
     presets,
-    new PromptAssembler(sources),
+    new PromptAssembler(sources, skills),
     providers,
   );
-  return { dataDir, db, chats, chat, generation, notebook, presets, source, sources };
+  return { dataDir, db, chats, chat, generation, notebook, presets, skills, source, sources };
 }
 
 const customPreset: PortablePreset = {
@@ -188,6 +192,40 @@ describe('GenerationService', () => {
     expect(chats.getDetail(chat.id).messages.at(-1)?.context).toEqual(captured);
     expect(captured.preset.name).toBe('Explicit mode');
     expect(captured.sources[0]).toMatchObject({ content: 'Amber is canon.' });
+    prepared.release();
+    db.close();
+  });
+
+  it('captures attached skill content in the exchange snapshot and injects it', () => {
+    const { db, chats, chat, generation, skills } = setup(async () =>
+      Promise.reject(new Error('not called')),
+    );
+    const skill = skills.create({
+      name: 'character-voice',
+      description: 'Keep voices distinct.',
+      content: 'Voice instructions.',
+    });
+    chats.patch(chat.id, { skillIds: [skill.id] });
+
+    const prepared = generation.prepare(chat.id, 'Question');
+    const captured = prepared.assistant.context as PresetGenerationContext;
+    expect(captured.skills).toEqual([
+      {
+        id: skill.id,
+        name: 'character-voice',
+        description: 'Keep voices distinct.',
+        contentHash: skill.contentHash,
+        content: 'Voice instructions.',
+      },
+    ]);
+    expect(captured.canonicalMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'system',
+          content: expect.stringContaining('<skill name="character-voice"'),
+        }),
+      ]),
+    );
     prepared.release();
     db.close();
   });

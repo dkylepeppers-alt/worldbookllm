@@ -42,6 +42,7 @@ const chat: Chat = {
   notebookId: notebook.id,
   title: 'Chat',
   sourceIds: [],
+  skillIds: [],
   providerOverride: null,
   presetId: null,
   createdAt: '2026-07-10T12:00:00.000Z',

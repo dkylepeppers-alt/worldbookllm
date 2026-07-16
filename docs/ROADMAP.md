@@ -97,6 +97,20 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Done when:** a worldbuilder can review a response-derived update before applying it to an existing source, then export a working SillyTavern lorebook and a shareable setting bible.
 
+## M6 — Creative skills library
+
+**Goal:** reusable craft instructions ("skills") the model can be given per chat — the foundation for a later integrated agent. See ADR 0011.
+
+**Scope:**
+
+- Skills as agentskills.io-compatible `SKILL.md` folders under `data/skills/`, indexed in SQLite, globally scoped like presets
+- Skills library UI: list, create, edit, delete
+- Per-chat skill attachment (parallel to source selection); attached skills injected as a `## Skills` system message beside the protected Sources module — no preset schema change, no provider-layer change
+- Skill content captured in the immutable exchange snapshot and shown in the Prompt Inspector
+- A curated, MIT-attributed starter set vendored from jwynia/agent-skills, installable in one click
+
+**Done when:** a user installs the starter set, attaches a skill to a chat, sends a message, and the Prompt Inspector shows the exact skill text the model received — with the skill visible and editable as Markdown on disk.
+
 ## Later / unscheduled
 
-Ideas that are real but not yet committed to a milestone: retrieval smarter than FTS (embeddings), contradiction detection sweeps, timeline visualization, multi-notebook cross-referencing, alternate-canon branches, collaborative/multi-user mode, desktop packaging (Tauri), SillyTavern legacy text-completion backends if ever needed.
+Ideas that are real but not yet committed to a milestone: retrieval smarter than FTS (embeddings), a model-driven skill activation loop (progressive disclosure over the M6 library, then orchestrator skills, then native tool calling — ADR 0011 phases 2–3), contradiction detection sweeps, timeline visualization, multi-notebook cross-referencing, alternate-canon branches, collaborative/multi-user mode, desktop packaging (Tauri), SillyTavern legacy text-completion backends if ever needed.

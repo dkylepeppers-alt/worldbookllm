@@ -714,7 +714,7 @@ describe('server data API', () => {
     expect(response.json()).toMatchObject({ id: notebook.id, name: 'Persistent' });
 
     const db = new Database(join(dataDir, 'worldbookllm.db'), { readonly: true });
-    expect(db.pragma('user_version', { simple: true })).toBe(4);
+    expect(db.pragma('user_version', { simple: true })).toBe(5);
     db.close();
   });
 });

@@ -14,6 +14,7 @@ import { PresetSchemaPage } from './pages/PresetSchemaPage.js';
 import { PresetsPage } from './presets/PresetsPage.js';
 import { PwaStatusBanner } from './pwa/PwaStatusBanner.js';
 import { SettingsPage } from './settings/SettingsPage.js';
+import { SkillsPage } from './skills/SkillsPage.js';
 import { ReaderRoute } from './sources/ReaderRoute.js';
 
 function KeyedReaderRoute() {
@@ -32,6 +33,7 @@ export function AppRoutes() {
         </Route>
         <Route path="settings" element={<SettingsPage />} />
         <Route path="presets" element={<PresetsPage />} />
+        <Route path="skills" element={<SkillsPage />} />
         <Route path="preset-schema" element={<PresetSchemaPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

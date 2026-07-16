@@ -2,12 +2,17 @@ import { z } from 'zod';
 
 import { providerConfigSchema, providerSourceSchema } from './provider-config.js';
 import { generationControlsSchema, presetSchema } from './presets.js';
+import { generationSkillSnapshotSchema } from './skills.js';
 
 const chatTitleSchema = z.string().trim().min(1).max(200);
 const sourceIdsSchema = z
   .array(z.uuid())
   .max(1_000)
   .refine((ids) => new Set(ids).size === ids.length, { message: 'Source IDs must be unique' });
+const skillIdsSchema = z
+  .array(z.uuid())
+  .max(100)
+  .refine((ids) => new Set(ids).size === ids.length, { message: 'Skill IDs must be unique' });
 
 export const legacyGenerationContextSchema = z.strictObject({
   sourceIds: z.array(z.uuid()).max(1_000),
@@ -48,6 +53,9 @@ export const presetGenerationContextSchema = z.strictObject({
   preset: presetSchema,
   canonicalMessages: z.array(canonicalMessageSchema),
   sources: z.array(generationSourceSnapshotSchema).max(1_000),
+  // Additive and contextVersion-2-compatible: optional so stored exchange
+  // snapshots authored before skills existed still validate.
+  skills: z.array(generationSkillSnapshotSchema).max(100).optional(),
   requestedControls: generationControlsSchema,
   effectiveRequestBody: z.record(z.string(), z.json()),
   provider: providerSourceSchema,
@@ -91,6 +99,7 @@ export const chatSchema = z.strictObject({
   notebookId: z.uuid(),
   title: chatTitleSchema,
   sourceIds: sourceIdsSchema,
+  skillIds: skillIdsSchema,
   providerOverride: providerConfigSchema.nullable(),
   presetId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
@@ -102,6 +111,7 @@ export const chatDetailSchema = chatSchema.extend({ messages: z.array(messageSch
 export const createChatSchema = z.strictObject({
   title: chatTitleSchema.default('New chat'),
   sourceIds: sourceIdsSchema.default([]),
+  skillIds: skillIdsSchema.default([]),
   providerOverride: providerConfigSchema.nullable().default(null),
   presetId: z.uuid().nullable().default(null),
 });
@@ -110,6 +120,7 @@ export const patchChatSchema = z
   .strictObject({
     title: chatTitleSchema.optional(),
     sourceIds: sourceIdsSchema.optional(),
+    skillIds: skillIdsSchema.optional(),
     providerOverride: providerConfigSchema.nullable().optional(),
     presetId: z.uuid().nullable().optional(),
   })
@@ -117,6 +128,7 @@ export const patchChatSchema = z
     (value) =>
       value.title !== undefined ||
       value.sourceIds !== undefined ||
+      value.skillIds !== undefined ||
       value.providerOverride !== undefined ||
       value.presetId !== undefined,
     { message: 'At least one chat field is required' },
