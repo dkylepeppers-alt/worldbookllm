@@ -16,3 +16,12 @@ const DEFAULT_WEB_DIST_DIR = fileURLToPath(new URL('../../../apps/web/dist', imp
 export function resolveWebDistDir(explicit?: string): string {
   return resolve(explicit ?? process.env.WEB_DIST_DIR ?? DEFAULT_WEB_DIST_DIR);
 }
+
+const DEFAULT_STARTER_SKILLS_DIR = fileURLToPath(
+  new URL('../../../apps/server/skills-starter', import.meta.url),
+);
+
+/** The vendored starter skill set shipped with the server (ADR 0011). */
+export function resolveStarterSkillsDir(explicit?: string): string {
+  return resolve(explicit ?? process.env.STARTER_SKILLS_DIR ?? DEFAULT_STARTER_SKILLS_DIR);
+}

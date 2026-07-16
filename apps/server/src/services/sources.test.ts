@@ -30,6 +30,7 @@ function setup() {
   const notebook = notebooks.create({ name: 'Atlas', settings: null });
   const otherNotebook = notebooks.create({ name: 'Other', settings: null });
   const chat = chats.create(notebook.id, {
+    skillIds: [],
     title: 'Chat',
     sourceIds: [],
     providerOverride: null,
@@ -70,6 +71,7 @@ describe('SourceService assistant-response provenance', () => {
   it('rejects every invalid assistant-response relationship before creating data', () => {
     const { dataDir, db, chats, sources, notebook, otherNotebook, chat, exchange } = setup();
     const otherChat = chats.create(notebook.id, {
+      skillIds: [],
       title: 'Other chat',
       sourceIds: [],
       providerOverride: null,
@@ -77,6 +79,7 @@ describe('SourceService assistant-response provenance', () => {
     });
     const otherExchange = chats.beginExchange(otherChat.id, 'Other question', context);
     const crossChat = chats.create(otherNotebook.id, {
+      skillIds: [],
       title: 'Cross notebook',
       sourceIds: [],
       providerOverride: null,

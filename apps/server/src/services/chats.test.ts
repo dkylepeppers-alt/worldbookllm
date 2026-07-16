@@ -58,6 +58,7 @@ describe('ChatService', () => {
     const input: CreateChat = {
       title: 'Continuity',
       sourceIds: ['f9942d0a-eaca-41a8-a3d8-87987cc173fd'],
+      skillIds: [],
       providerOverride: null,
       presetId: null,
     };
@@ -88,6 +89,7 @@ describe('ChatService', () => {
     const { db, chats } = setup();
     expect(() =>
       chats.create('62455a02-2fe1-4b6d-a6ce-4517bf06ada7', {
+        skillIds: [],
         title: 'Missing',
         sourceIds: [],
         providerOverride: null,
@@ -95,6 +97,7 @@ describe('ChatService', () => {
       }),
     ).toThrow(NotFoundError);
     const created = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      skillIds: [],
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
@@ -106,9 +109,54 @@ describe('ChatService', () => {
     db.close();
   });
 
+  it('validates and persists per-chat skill selections', () => {
+    const { db, chats, now } = setup();
+    db.prepare(
+      'INSERT INTO skills (id, name, description, dir_path, origin_json, license, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      '2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01',
+      'character-voice',
+      'Voices',
+      'skills/character-voice',
+      '{"type":"created"}',
+      null,
+      2,
+      'b'.repeat(64),
+      now,
+      now,
+    );
+
+    expect(() =>
+      chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+        title: 'Chat',
+        sourceIds: [],
+        skillIds: ['9c62ee9c-0f5f-4d33-9d61-1a2b3c4d5e6f'],
+        providerOverride: null,
+        presetId: null,
+      }),
+    ).toThrow(NotFoundError);
+
+    const created = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      title: 'Chat',
+      sourceIds: [],
+      skillIds: ['2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01'],
+      providerOverride: null,
+      presetId: null,
+    });
+    expect(created.skillIds).toEqual(['2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01']);
+
+    expect(() =>
+      chats.patch(created.id, { skillIds: ['9c62ee9c-0f5f-4d33-9d61-1a2b3c4d5e6f'] }),
+    ).toThrow(NotFoundError);
+    expect(chats.patch(created.id, { skillIds: [] }).skillIds).toEqual([]);
+    expect(chats.patch(created.id, { title: 'Renamed' }).skillIds).toEqual([]);
+    db.close();
+  });
+
   it('maps corrupt stored JSON to an internal stored-data error', () => {
     const { db, chats } = setup();
     const created = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      skillIds: [],
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
@@ -122,6 +170,7 @@ describe('ChatService', () => {
   it('allocates adjacent message sequences and updates assistants', () => {
     const { db, chats } = setup();
     const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      skillIds: [],
       title: 'Chat',
       sourceIds: ['f9942d0a-eaca-41a8-a3d8-87987cc173fd'],
       providerOverride: null,
@@ -164,6 +213,7 @@ describe('ChatService', () => {
   it('reads a pre-variants assistant message as a single implicit variant', () => {
     const { db, chats } = setup();
     const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      skillIds: [],
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
@@ -197,6 +247,7 @@ describe('ChatService', () => {
   it('regenerates into new variants and switches the active one', () => {
     const { db, chats } = setup();
     const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      skillIds: [],
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
@@ -246,6 +297,7 @@ describe('ChatService', () => {
   it('surfaces corrupt variant JSON as an internal stored-data error', () => {
     const { db, chats } = setup();
     const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      skillIds: [],
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
@@ -269,6 +321,7 @@ describe('ChatService', () => {
   it('refuses to update an assistant whose active_variant is out of range', () => {
     const { db, chats, now } = setup();
     const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      skillIds: [],
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
@@ -296,6 +349,7 @@ describe('ChatService', () => {
   it('deletes chats with cascading messages', () => {
     const { db, chats } = setup();
     const chat = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      skillIds: [],
       title: 'Chat',
       sourceIds: [],
       providerOverride: null,
@@ -320,6 +374,7 @@ describe('ChatService', () => {
       .pluck()
       .get() as string;
     const explicit = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      skillIds: [],
       title: 'Explicit',
       sourceIds: [],
       providerOverride: null,
@@ -331,6 +386,7 @@ describe('ChatService', () => {
     const missing = '62455a02-2fe1-4b6d-a6ce-4517bf06ada7';
     expect(() =>
       chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+        skillIds: [],
         title: 'Missing preset',
         sourceIds: [],
         providerOverride: null,

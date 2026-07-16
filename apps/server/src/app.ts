@@ -5,7 +5,8 @@ import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 
 import { openDatabase } from './db/database.js';
-import { resolveDataDir, resolveWebDistDir } from './env.js';
+import { resolveDataDir, resolveStarterSkillsDir, resolveWebDistDir } from './env.js';
+import { SkillFileStore } from './files/skill-files.js';
 import { SourceFileStore } from './files/source-files.js';
 import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
@@ -15,6 +16,7 @@ import { registerNotebookRoutes } from './routes/notebooks.js';
 import { registerProviderRoutes } from './routes/providers.js';
 import { registerPresetRoutes } from './routes/presets.js';
 import { registerSecretRoutes } from './routes/secrets.js';
+import { registerSkillRoutes } from './routes/skills.js';
 import { registerSourceRoutes } from './routes/sources.js';
 import { SecretStore } from './secrets/secret-store.js';
 import { ChatService } from './services/chats.js';
@@ -24,7 +26,9 @@ import { PromptAssembler } from './services/prompt-assembler.js';
 import { ProviderService } from './services/providers.js';
 import { PresetService } from './services/presets.js';
 import { UPLOAD_LIMIT_BYTES } from './services/converters/limits.js';
+import { SkillService } from './services/skills.js';
 import { SourceService } from './services/sources.js';
+import { StarterSkillService } from './services/starter-skills.js';
 
 /**
  * True for a request the SPA fallback should answer with index.html: a
@@ -45,6 +49,8 @@ function isSpaNavigation(method: string, url: string): boolean {
 export interface AppServices {
   notebooks: NotebookService;
   sources: SourceService;
+  skills: SkillService;
+  starterSkills: StarterSkillService;
   secrets: SecretStore;
   providers: ProviderService;
   presets: PresetService;
@@ -64,6 +70,8 @@ export interface BuildAppOptions {
   fetchImpl?: typeof fetch;
   /** Built web app to serve in production (ADR 0002); defaults via resolveWebDistDir. */
   webDistDir?: string;
+  /** Vendored starter skill catalog (ADR 0011); defaults via resolveStarterSkillsDir. */
+  starterSkillsDir?: string;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -80,11 +88,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const presets = new PresetService(db);
   const notebooks = new NotebookService(db, sourceFiles);
   const sources = new SourceService(db, sourceFiles);
+  const skills = new SkillService(db, new SkillFileStore(dataDir));
+  const starterSkills = new StarterSkillService(
+    resolveStarterSkillsDir(options.starterSkillsDir),
+    skills,
+  );
   const generation = new GenerationService(
     chats,
     notebooks,
     presets,
-    new PromptAssembler(sources),
+    new PromptAssembler(sources, skills),
     providers,
     (error) => app.log.error(error),
   );
@@ -92,6 +105,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.decorate('services', {
     notebooks,
     sources,
+    skills,
+    starterSkills,
     secrets,
     providers,
     presets,
@@ -120,6 +135,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerSecretRoutes(app);
   registerProviderRoutes(app);
   registerPresetRoutes(app);
+  registerSkillRoutes(app);
   registerChatRoutes(app);
   registerMessageRoutes(app);
 

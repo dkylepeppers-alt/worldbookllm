@@ -1,6 +1,7 @@
 import type {
   CanonicalMessage,
   Chat,
+  GenerationSkillSnapshot,
   GenerationSourceSnapshot,
   Message,
   Preset,
@@ -8,11 +9,13 @@ import type {
 } from '@worldbookllm/shared';
 import { coalesceCanonicalMessages } from '@worldbookllm/shared';
 
+import type { SkillService } from './skills.js';
 import type { SourceService } from './sources.js';
 
 export interface AssembledPrompt {
   messages: CanonicalMessage[];
   sources: GenerationSourceSnapshot[];
+  skills: GenerationSkillSnapshot[];
 }
 
 function escapeAttribute(value: string): string {
@@ -41,7 +44,10 @@ function moduleMessage(module: PresetModule, sourceContent: string): CanonicalMe
 }
 
 export class PromptAssembler {
-  constructor(private readonly sourceService: SourceService) {}
+  constructor(
+    private readonly sourceService: SourceService,
+    private readonly skillService: SkillService,
+  ) {}
 
   assemble(chat: Chat, history: Message[], newContent: string, preset: Preset): AssembledPrompt {
     const sources = chat.sourceIds.map((id) => {
@@ -53,6 +59,16 @@ export class PromptAssembler {
         content: source.content,
       };
     });
+    const skills = chat.skillIds.map((id) => {
+      const skill = this.skillService.get(id);
+      return {
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        contentHash: skill.contentHash,
+        content: skill.content,
+      };
+    });
     const sourceContent =
       sources.length === 0
         ? 'No sources selected.'
@@ -62,6 +78,21 @@ export class PromptAssembler {
                 `<source id="${source.id}" title="${escapeAttribute(source.title)}">\n${source.content}\n</source>`,
             )
             .join('\n\n');
+    // Attached skills ride with the protected Sources module (ADR 0011): they
+    // are emitted as one system message immediately after it, at the same
+    // insertion position, so adjacent system content coalesces predictably.
+    // No skills attached means no message — unlike sources, there is no
+    // placeholder, because the module itself is optional content.
+    const skillContent =
+      skills.length === 0
+        ? undefined
+        : `## Skills\nApply the following craft instructions when responding.\n\n${skills
+            .map(
+              (skill) =>
+                `<skill name="${escapeAttribute(skill.name)}" description="${escapeAttribute(skill.description)}">\n${skill.content}\n</skill>`,
+            )
+            .join('\n\n')}`;
+
     const eligibleHistory: CanonicalMessage[] = history.filter(includeHistory).map((entry) => ({
       role: entry.role,
       content: entry.content,
@@ -72,13 +103,17 @@ export class PromptAssembler {
     for (const module of preset.modules) {
       const emitted = moduleMessage(module, sourceContent);
       if (!emitted) continue;
+      const emittedGroup =
+        module.kind === 'sources' && skillContent !== undefined
+          ? [emitted, { role: 'system' as const, content: skillContent }]
+          : [emitted];
       if (module.insertion.position === 'before_history') {
-        beforeHistory.push(emitted);
+        beforeHistory.push(...emittedGroup);
         continue;
       }
       const boundary = Math.max(0, eligibleHistory.length - module.insertion.depth);
       const messages = atBoundaries.get(boundary) ?? [];
-      messages.push(emitted);
+      messages.push(...emittedGroup);
       atBoundaries.set(boundary, messages);
     }
 
@@ -89,6 +124,6 @@ export class PromptAssembler {
       if (historical) messages.push(historical);
     }
     messages.push({ role: 'user', content: newContent });
-    return { messages, sources };
+    return { messages, sources, skills };
   }
 }

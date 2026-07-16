@@ -25,8 +25,22 @@ export interface ChatRow {
   notebook_id: string;
   title: string;
   source_ids_json: string;
+  skill_ids_json: string;
   provider_override_json: string;
   preset_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillRow {
+  id: string;
+  name: string;
+  description: string;
+  dir_path: string;
+  origin_json: string;
+  license: string | null;
+  word_count: number;
+  content_hash: string;
   created_at: string;
   updated_at: string;
 }

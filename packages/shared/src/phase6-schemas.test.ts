@@ -42,6 +42,7 @@ describe('Phase 6 shared schemas', () => {
     expect(createChatSchema.parse({})).toEqual({
       title: 'New chat',
       sourceIds: [],
+      skillIds: [],
       providerOverride: null,
       presetId: null,
     });
@@ -149,6 +150,7 @@ describe('Phase 6 shared schemas', () => {
         notebookId: NOTEBOOK_ID,
         title: 'Continuity',
         sourceIds: [SOURCE_ID],
+        skillIds: [],
         providerOverride: null,
         presetId: null,
         createdAt: NOW,
