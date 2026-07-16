@@ -9,7 +9,7 @@ const NOTEBOOK_NAME = 'M6 Skillful Steppe';
 const SOURCE_TITLE = 'M6 caravan ledger';
 const SOURCE_CONTENT = 'The salt caravans cross the steppe every third moon.';
 const SKILL_NAME = 'story-sense';
-const SKILL_PHRASE = 'Assess → Diagnose → Intervene → Reassess';
+const SKILL_PHRASE = '## Source-Ready Output Contract';
 const QUESTION = 'What is broken in my caravan story?';
 const CUSTOM_PROVIDER_LABEL = 'Custom (OpenAI-compatible)';
 
