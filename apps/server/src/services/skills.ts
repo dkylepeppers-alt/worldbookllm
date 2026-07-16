@@ -120,13 +120,13 @@ export class SkillService {
         return mapSkill(this.getRow(id));
       })();
     } catch (error) {
+      if (stored !== undefined) this.skillFiles.remove(stored.dirPath);
       if (isUniqueConstraint(error)) {
         throw new ConflictError(
           'skill_name_conflict',
           `A skill named ${normalized.name} already exists`,
         );
       }
-      if (stored !== undefined) this.skillFiles.remove(stored.dirPath);
       throw error;
     }
   }
