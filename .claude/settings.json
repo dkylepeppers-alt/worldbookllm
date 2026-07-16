@@ -1,4 +1,32 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh",
+            "timeout": 600,
+            "statusMessage": "Installing workspace dependencies"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; [ -n \"$f\" ] && pnpm exec prettier --write --ignore-unknown \"$f\"; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+{
   "permissions": {
     "allow": [
       "Bash(pnpm test)",
