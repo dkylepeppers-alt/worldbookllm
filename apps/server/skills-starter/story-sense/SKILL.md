@@ -1,161 +1,76 @@
 ---
 name: story-sense
-description: "Diagnose what any story needs regardless of its current state. This skill should be used when a writer is stuck, evaluating story problems, when narrative feels broken, or when someone asks 'what's wrong with my story?'. Keywords: story, diagnosis, stuck, narrative, plot, character, worldbuilding, revision."
+description: Create the narrative material a story currently needs by connecting character, conflict, world, causality, escalation, and resolution into a coherent new document. Use broadly for creation or explicit critique.
 license: MIT
-compatibility: Works with any fiction format. Entry point for fiction diagnostics.
+compatibility: Works with any fiction format as a broad creative entry point.
 metadata:
-  author: jwynia
-  version: "1.0"
-  type: diagnostic
-  mode: diagnostic
+  author: "jwynia; adapted by worldbookllm"
+  version: "2.0"
+  type: generator
+  mode: generative+explicit-critique
   domain: fiction
 ---
 
-# Story Sense: Diagnostic Skill
+# Story Sense
 
-Identify what state a story is in and what it needs to move forward. This is not a linear process but a diagnostic model: Assess → Diagnose → Intervene → Reassess.
+Create the most useful narrative material for the user's current request while keeping character,
+world, conflict, causality, and emotional movement connected.
 
-## When to Use This Skill
+## Creation Mode
 
-Use this skill when:
-- Writer is stuck and doesn't know why
-- Story feels broken but root cause unclear
-- Need to evaluate story problems systematically
-- Someone asks "what's wrong with my story?"
+Default to creation. Infer the requested artifact from the user's language: premise, character,
+world entry, conflict, scene, sequence, ending, synopsis, or prose. If several layers are involved,
+synthesize them into one coherent document rather than routing the user through a diagnosis.
 
-Do NOT use this skill when:
-- Writer wants you to write the story (use story-collaborator)
-- Writer wants coaching questions only (use story-coach)
-- Publishing/marketing questions (use book-marketing)
+Silently determine:
 
-## Core Principle
+- what the document needs to accomplish in the larger story;
+- whose desire or decision gives the material direction;
+- what force opposes or complicates that desire;
+- which established world conditions make the conflict specific;
+- how the situation changes rather than returning to its starting state; and
+- what emotional or thematic tension should remain active after the document ends.
 
-**Story Sense is the ability to know what any story needs, regardless of its current state or intended medium.**
+## Source-Ready Output Contract
 
-**There's no such thing as "stuck."** There's only:
-- Not yet having diagnosed the problem
-- Not yet applying the right intervention
+Return only the finished document in Markdown. Begin directly with its title or requested narrative
+form. Do not include a preamble, explanation, rationale, analysis, citations, provenance, references
+to source material, a diagnosis, or an offer to revise or continue. Do not describe which story
+framework or skill would be useful.
 
-## The Story States
+When the user asks for an in-world or narrative artifact, write it directly. Otherwise create a
+polished reference document whose organization follows the material rather than a universal template.
 
-### State 0: No Story (Blank Page)
-**Symptoms:** Nothing exists yet
-**Interventions:** story-idea-generator, elemental genres
+## Canon and Ambiguity
 
-### State 1: Concept Without Foundation
-**Symptoms:** Have idea but world/characters/plot feel thin
-**Interventions:** cliche-transcendence, systemic-worldbuilding, key-moments
+Treat available material as invisible canon. Preserve established facts, character knowledge,
+relationships, chronology, world rules, promises, and tone. Fill ordinary gaps with the least
+disruptive coherent invention. If canon conflicts, or a missing decision would materially change
+established canon, ask one concise clarification question and stop without drafting alternatives.
 
-### State 2: World Without Life
-**Symptoms:** Setting exists but feels like backdrop
-**Interventions:** worldbuilding skill suite (belief-systems, economic-systems, governance-systems)
+## Narrative Synthesis
 
-### State 3: Flat Non-Humans
-**Symptoms:** Aliens/fantasy species feel like humans in costume
-**Interventions:** conlang, species development frameworks
+Choose depth according to relevance. Develop the element that drives the current request and connect
+supporting elements only as far as needed. A faction entry should still imply people and pressures; a
+scene should still obey world rules; a character arc should still cause external consequences.
 
-### State 4: Characters Without Dimension
-**Symptoms:** Characters serve plot rather than driving it
-**Interventions:** character-arc, underdog-unit, positional-revelation
+Prefer causal chains over collections of interesting facts. New material should create decisions,
+constraints, opportunities, obligations, or consequences that later material can use. Preserve
+productive uncertainty, but do not substitute vagueness for invention.
 
-### State 4.5: Plot Without Pacing
-**Symptoms:** Scenes work individually but don't accumulate
-**Interventions:** scene-sequencing
+When expanding a thin element, add specificity along multiple connected axes: history, motive,
+material condition, relationship, lived practice, and future pressure. Avoid adding breadth that does
+not affect anyone's choices.
 
-### State 5: Plot Without Purpose
-**Symptoms:** Events happen but don't accumulate meaning
-**Interventions:** moral-parallax, key-moments
+## Silent Completeness Check
 
-### State 5.5: Dialogue Feels Flat
-**Symptoms:** Characters sound alike, conversations lifeless
-**Interventions:** dialogue
+Before answering, silently verify that the document answers the actual request, belongs to the
+established canon, contains concrete usable material, creates causal or emotional movement, and does
+not lapse into coaching, analysis, or a menu of possibilities.
 
-### State 5.75: Ending Doesn't Land
-**Symptoms:** Story builds well but resolution disappoints
-**Interventions:** endings
+## Explicit Critique Mode
 
-### State 5.85: Draft Not Progressing
-**Symptoms:** Planning done but draft isn't happening
-**Interventions:** drafting
-
-### State 5.9: Prose Feels Flat
-**Symptoms:** Story works but sentences are functional not memorable
-**Interventions:** prose-style
-
-### State 6: Draft Complete, Needs Revision
-**Symptoms:** Draft exists but revision feels overwhelming
-**Interventions:** revision
-
-### State 7: Ready for Evaluation
-**Symptoms:** Story exists but quality uncertain
-**Interventions:** sensitivity-check, story-analysis
-
-## Decision Tree
-
-```
-Is there anything on the page?
-├── NO → story-idea-generator
-└── YES → What's the problem?
-    ├── Feels generic → cliche-transcendence
-    ├── World feels thin → worldbuilding
-    ├── Non-humans feel fake → conlang
-    ├── Characters flat → character-arc
-    ├── Pacing off → scene-sequencing
-    ├── Dialogue wooden → dialogue
-    ├── Ending weak → endings
-    ├── Meaning unclear → moral-parallax
-    ├── Draft not progressing → drafting
-    ├── Prose flat → prose-style
-    └── Draft needs revision → revision
-```
-
-## Diagnostic Process
-
-1. **Listen for symptoms** - What are they describing as the problem?
-2. **Ask clarifying questions** - Get specific about where they're stuck
-3. **Identify the state** - Match symptoms to state list
-4. **Name the diagnosis** - Explain what you're seeing
-5. **Recommend intervention** - Point to specific skill
-6. **Offer next steps** - What should they try first?
-
-## Available Scripts
-
-### entropy.ts
-Injects creative randomness from curated lists.
-
-```bash
-deno run --allow-read scripts/entropy.ts lies
-deno run --allow-read scripts/entropy.ts disasters --count 3
-deno run --allow-read scripts/entropy.ts --combo
-```
-
-**Lists:** lies, ghosts, disasters, dilemmas, professions, locations, collisions, openings
-
-### functions.ts
-Generates characters from abstract story functions.
-
-```bash
-deno run --allow-read scripts/functions.ts
-deno run --allow-read scripts/functions.ts --setting scifi
-deno run --allow-read scripts/functions.ts healer --setting fantasy
-```
-
-**Functions:** healer, enforcer, keeper_of_secrets, maker, trader, guide, entertainer, death_worker, transgressor
-
-## Anti-Patterns
-
-### Prescribing Instead of Diagnosing
-**Fix:** Always ask clarifying questions before diagnosing.
-
-### Framework Overload
-**Fix:** Recommend one intervention. Expand after reassessment.
-
-### Ignoring Writer's Energy
-**Fix:** Balance diagnostic accuracy with what energizes the writer.
-
-### Treating Structure as Story
-**Fix:** Keep asking "Does this feel right?" alongside structural diagnosis.
-
-## Related Skills
-
-Routes to all fiction skills based on diagnosed state.
+Activate critique only when the user explicitly asks to critique, assess, diagnose, review, or
+troubleshoot existing work. Then identify the story layer creating the largest downstream problem,
+explain the causal evidence, and recommend one prioritized intervention before secondary issues. Do
+not diagnose merely because the user supplies incomplete material or says they are expanding it.

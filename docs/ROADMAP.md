@@ -107,7 +107,7 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 - Skills library UI: list, create, edit, delete
 - Per-chat skill attachment (parallel to source selection); attached skills injected as a `## Skills` system message beside the protected Sources module — no preset schema change, no provider-layer change
 - Skill content captured in the immutable exchange snapshot and shown in the Prompt Inspector
-- A curated, MIT-attributed starter set vendored from jwynia/agent-skills, installable in one click
+- A curated, MIT-attributed starter set adapted from jwynia/agent-skills for generative-first, source-ready output, installable in one click
 
 **Done when:** a user installs the starter set, attaches a skill to a chat, sends a message, and the Prompt Inspector shows the exact skill text the model received — with the skill visible and editable as Markdown on disk.
 

@@ -1,15 +1,19 @@
 # Starter skill attribution
 
-The skills in this directory are vendored verbatim from
+The skills in this directory are adapted from
 [jwynia/agent-skills](https://github.com/jwynia/agent-skills)
 (`skills/creative/fiction/`), commit
 `e02ec7e226a6e4f8419fd3b88a1d8e472d421b32`, fetched 2026-07-16.
 
-Each skill's `SKILL.md` declares `license: MIT` in its frontmatter and names
-`jwynia` as its author; the MIT license text is reproduced in `LICENSE`
-alongside this file. Only the `SKILL.md` instruction files are vendored — the
-upstream `scripts/` companions (optional Deno analysis tools some skill bodies
-mention) are not included, because worldbookllm injects skill instructions
+Each skill's `SKILL.md` declares `license: MIT` and credits `jwynia` alongside
+the worldbookllm adaptation. The upstream MIT license text is reproduced in
+`LICENSE` beside this file. The original domain frameworks informed these
+skills, while worldbookllm rewrote the instruction bodies on 2026-07-16 for a
+generative-first workflow: attached skills create standalone, source-ready
+documents by default and enter critique mode only on an explicit request.
+
+Only the `SKILL.md` instruction files were adapted. Upstream `scripts/`
+companions are not included because worldbookllm injects skill instructions
 into prompts and does not execute skill code (ADR 0011).
 
 ## Included skills
@@ -37,15 +41,20 @@ into prompts and does not execute skill code (ADR 0011).
 
 - Prioritize what a worldbuilding workspace needs: the full self-contained
   `worldbuilding/*` frameworks, core character and story-craft skills, and the
-  `story-sense` diagnostic entry point.
-- Bodies stay verbatim (no edits), ≤ 520 lines, well under the app's 200k
-  character limit.
+  broad `story-sense` creative entry point.
+- Preserve useful domain craft while converting coaching, diagnostic state
+  machines, and feedback workflows into silent creation procedures.
+- Require every skill to emit only standalone source content in creation mode,
+  respect canon, stop for material conflicts, and gate critique behind an
+  explicit request.
 - Skills whose workflow depends on an agent loop we do not have yet
   (orchestrators) or on heavy `references/` trees were skipped; they can join
-  a later vendoring pass (ADR 0011 phase 2).
+  a later adaptation pass (ADR 0011 phase 2).
 
 ## Updating
 
-Re-vendor manually: copy the upstream `SKILL.md` files over these directories,
-update the commit hash above, and re-run the server test suite
-(`skills-api.test.ts` exercises the catalog).
+Update manually: review upstream changes, adapt useful revisions to the local
+generative-first contract, update the commit hash above, and run the server
+suite. `starter-skills-content.test.ts` enforces the behavioral contract and
+`skills-api.test.ts` exercises catalog installation. Do not overwrite these
+files with unadapted upstream bodies.
