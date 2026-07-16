@@ -10,6 +10,7 @@ export function AppShell() {
         <nav className="site-nav" aria-label="Primary">
           <Link to="/">Notebooks</Link>
           <Link to="/presets">Presets</Link>
+          <Link to="/skills">Skills</Link>
           <Link to="/settings">Settings</Link>
         </nav>
       </header>

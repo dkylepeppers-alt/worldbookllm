@@ -19,6 +19,7 @@ import { MessageComposer } from './MessageComposer.js';
 import { PromptInspectorDialog } from './PromptInspectorDialog.js';
 import { PresetControls } from './PresetControls.js';
 import { ResponseCaptureDialog } from './ResponseCaptureDialog.js';
+import { SkillSelector } from './SkillSelector.js';
 import { SourceSelector } from './SourceSelector.js';
 
 type ChatsState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; chats: Chat[] };
@@ -49,6 +50,7 @@ export function ChatPanel() {
   const [regen, setRegen] = useState<RegenStream | null>(null);
   const [switchingVariant, setSwitchingVariant] = useState(false);
   const [savingSources, setSavingSources] = useState(false);
+  const [savingSkills, setSavingSkills] = useState(false);
   const [presetMutationBusyOwners, setPresetMutationBusyOwners] = useState<ReadonlySet<symbol>>(
     () => new Set(),
   );
@@ -472,6 +474,12 @@ export function ChatPanel() {
                 onChatUpdated={adoptChat}
                 onSavingChange={setSavingSources}
               />
+              <SkillSelector
+                chatId={selectedDetail.id}
+                selectedSkillIds={selectedDetail.skillIds}
+                onChatUpdated={adoptChat}
+                onSavingChange={setSavingSkills}
+              />
               <ChatMessages
                 messages={selectedDetail.messages}
                 pending={pending}
@@ -486,7 +494,7 @@ export function ChatPanel() {
               <MessageComposer
                 streaming={pending !== null || regen !== null}
                 stopping={pending?.stopping ?? regen?.stopping ?? false}
-                sendDisabled={savingSources || presetMutationBusyOwners.size > 0}
+                sendDisabled={savingSources || savingSkills || presetMutationBusyOwners.size > 0}
                 onSend={send}
                 onStop={stopStreaming}
               />

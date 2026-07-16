@@ -15,6 +15,10 @@ import {
   providerCatalogEntrySchema,
   secretStateSchema,
   messageSchema,
+  skillDetailSchema,
+  skillMetadataSchema,
+  skillMetadataListSchema,
+  starterSkillSchema,
   sourceDetailSchema,
   sourceMetadataListSchema,
   sourceMetadataSchema,
@@ -40,7 +44,12 @@ import {
   type ProviderConfig,
   type ProviderConnection,
   type Preset,
+  type CreateSkillInput,
+  type PatchSkill,
   type SecretState,
+  type SkillDetail,
+  type SkillMetadata,
+  type StarterSkill,
   type SourceDetail,
   type SourceMetadata,
   type SourcePreview,
@@ -101,6 +110,13 @@ export interface ApiClient {
   deleteChat(id: string, signal?: AbortSignal): Promise<void>;
   regenerateMessage(chatId: string, options: StreamMessageOptions): Promise<void>;
   selectVariant(messageId: string, activeVariant: number, signal?: AbortSignal): Promise<Message>;
+  listSkills(signal?: AbortSignal): Promise<SkillMetadata[]>;
+  createSkill(input: CreateSkillInput, signal?: AbortSignal): Promise<SkillMetadata>;
+  getSkill(id: string, signal?: AbortSignal): Promise<SkillDetail>;
+  updateSkill(id: string, input: PatchSkill, signal?: AbortSignal): Promise<SkillDetail>;
+  deleteSkill(id: string, signal?: AbortSignal): Promise<void>;
+  listStarterSkills(signal?: AbortSignal): Promise<StarterSkill[]>;
+  installStarterSkills(starterIds: string[], signal?: AbortSignal): Promise<SkillMetadata[]>;
   listPresets(signal?: AbortSignal): Promise<Preset[]>;
   createPreset(input: CreatePreset, signal?: AbortSignal): Promise<Preset>;
   getPreset(id: string, signal?: AbortSignal): Promise<Preset>;
@@ -134,6 +150,7 @@ function isAbortError(error: unknown): boolean {
 export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): ApiClient {
   const providerCatalogSchema = z.array(providerCatalogEntrySchema);
   const chatListSchema = z.array(chatSchema);
+  const starterSkillListSchema = z.array(starterSkillSchema);
 
   async function request<T>(path: string, options: RequestOptions<T> = {}): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
@@ -305,6 +322,34 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         method: 'PATCH',
         body: { activeVariant },
         schema: messageSchema,
+        signal,
+      }),
+    listSkills: (signal) => request('/api/skills', { schema: skillMetadataListSchema, signal }),
+    createSkill: (input, signal) =>
+      request('/api/skills', {
+        method: 'POST',
+        body: input,
+        schema: skillMetadataSchema,
+        signal,
+      }),
+    getSkill: (id, signal) =>
+      request(`/api/skills/${encodeURIComponent(id)}`, { schema: skillDetailSchema, signal }),
+    updateSkill: (id, input, signal) =>
+      request(`/api/skills/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: input,
+        schema: skillDetailSchema,
+        signal,
+      }),
+    deleteSkill: (id, signal) =>
+      request(`/api/skills/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
+    listStarterSkills: (signal) =>
+      request('/api/skills-starter', { schema: starterSkillListSchema, signal }),
+    installStarterSkills: (starterIds, signal) =>
+      request('/api/skills-starter/install', {
+        method: 'POST',
+        body: { starterIds },
+        schema: skillMetadataListSchema,
         signal,
       }),
     listPresets: (signal) => request('/api/presets', { schema: presetListSchema, signal }),

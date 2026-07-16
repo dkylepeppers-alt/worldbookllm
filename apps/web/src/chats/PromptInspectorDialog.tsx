@@ -111,6 +111,25 @@ function PresetInspector({ context }: { context: PresetGenerationContext }) {
           </ol>
         )}
       </section>
+      {context.skills !== undefined && context.skills.length > 0 && (
+        <section className="inspector-section">
+          <h3>Captured skills</h3>
+          <ol className="captured-sources">
+            {context.skills.map((skill) => (
+              <li key={skill.id}>
+                <h4>{skill.name}</h4>
+                <dl className="inspector-facts">
+                  <dt>Skill ID</dt>
+                  <dd>{skill.id}</dd>
+                  <dt>Content hash</dt>
+                  <dd>{skill.contentHash}</dd>
+                </dl>
+                <pre>{skill.content}</pre>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       <section className="inspector-section">
         <h3>Effective request body</h3>
         <p className="dialog-copy">
