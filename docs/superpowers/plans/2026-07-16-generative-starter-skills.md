@@ -107,7 +107,7 @@ Keep each existing `name` and `license: MIT`. Rewrite `description` to begin wit
 ```yaml
 metadata:
   author: jwynia; adapted by worldbookllm
-  version: "2.0"
+  version: '2.0'
   type: generator
   mode: generative+explicit-critique
   domain: <existing-domain>
