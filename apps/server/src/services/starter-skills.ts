@@ -111,7 +111,7 @@ export class StarterSkillService {
       throw new NotFoundError(`Starter skill ${missing.join(', ')} was not found`);
     }
     const installed = this.installedMarkers();
-    const created: SkillMetadata[] = [];
+    const toInstall: StarterSkillFile[] = [];
     for (const starterId of starterIds) {
       const entry = catalog.get(starterId);
       if (
@@ -121,18 +121,20 @@ export class StarterSkillService {
       ) {
         continue;
       }
-      created.push(
-        this.skills.create({
-          name: entry.name,
-          description: entry.description,
-          content: entry.content,
-          license: entry.license,
-          origin: { type: 'bundled', starterId: entry.starterId },
-        }),
-      );
+      toInstall.push(entry);
       installed.starterIds.add(entry.starterId);
       installed.names.add(entry.name.toLowerCase());
     }
-    return created;
+    // All-or-nothing: a conflict on any entry (e.g. an unindexed folder
+    // occupying a destination) must not leave the batch partially installed.
+    return this.skills.createMany(
+      toInstall.map((entry) => ({
+        name: entry.name,
+        description: entry.description,
+        content: entry.content,
+        license: entry.license,
+        origin: { type: 'bundled' as const, starterId: entry.starterId },
+      })),
+    );
   }
 }

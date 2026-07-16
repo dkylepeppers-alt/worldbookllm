@@ -136,6 +136,25 @@ export class SkillService {
     }
   }
 
+  /**
+   * Creates a batch atomically: the wrapping transaction rolls the rows back
+   * on any failure, and every file written for the batch is removed, so a
+   * conflict on a later entry cannot leave earlier entries half-installed.
+   */
+  createMany(inputs: CreateSkillInput[]): SkillMetadata[] {
+    const created: SkillMetadata[] = [];
+    const createAll = this.db.transaction(() => {
+      for (const input of inputs) created.push(this.create(input));
+    });
+    try {
+      createAll();
+      return created;
+    } catch (error) {
+      for (const skill of created) this.skillFiles.remove(skill.dirPath);
+      throw error;
+    }
+  }
+
   get(id: string): SkillDetail {
     const row = this.getRow(id);
     const file = this.skillFiles.read(row.dir_path);

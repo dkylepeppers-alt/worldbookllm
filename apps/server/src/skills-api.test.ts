@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -154,6 +154,27 @@ describe('skills API', () => {
       payload: { starterIds: ['nope'] },
     });
     expect(unknown.statusCode).toBe(404);
+  });
+
+  it('installs a batch all-or-nothing when one destination is blocked', async () => {
+    // An unindexed folder occupying a later starter's destination must fail
+    // the whole batch without leaving earlier starters half-installed.
+    mkdirSync(join(dataDir, 'skills/settlement-design'), { recursive: true });
+    writeFileSync(join(dataDir, 'skills/settlement-design/SKILL.md'), 'user-authored', {
+      mode: 0o600,
+    });
+
+    const install = await app.inject({
+      method: 'POST',
+      url: '/api/skills-starter/install',
+      payload: { starterIds: ['character-voice', 'settlement-design'] },
+    });
+    expect(install.statusCode).toBe(409);
+    expect((await app.inject({ method: 'GET', url: '/api/skills' })).json()).toEqual([]);
+    expect(existsSync(join(dataDir, 'skills/character-voice'))).toBe(false);
+    expect(readFileSync(join(dataDir, 'skills/settlement-design/SKILL.md'), 'utf8')).toBe(
+      'user-authored',
+    );
   });
 
   it('tracks installation by starter id so renamed starters are not duplicated', async () => {

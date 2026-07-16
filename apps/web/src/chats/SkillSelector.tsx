@@ -34,6 +34,12 @@ export function SkillSelector({
   // Synchronous in-flight guard: `saving` state lags a render behind, so two
   // rapid toggles could otherwise both pass the check and race their PATCHes.
   const savingRef = useRef(false);
+  // Each acquisition of the parent send-hold gets a token, and only the
+  // holder of the *current* token may release it. Without this, a stale save
+  // (from before a chat switch) settling late would clear the hold a newer
+  // save legitimately owns, re-enabling sends too early.
+  const holdCounterRef = useRef(0);
+  const activeHoldRef = useRef<number | null>(null);
   // Selection shown while a PATCH is in flight, so the checkbox flips as
   // soon as it is clicked; a failed save falls back to the persisted list.
   const [optimistic, setOptimistic] = useState<string[] | null>(null);
@@ -52,12 +58,29 @@ export function SkillSelector({
     return () => controller.abort();
   }, [api, listReload]);
 
+  function acquireHold(): number {
+    const token = ++holdCounterRef.current;
+    activeHoldRef.current = token;
+    onSavingChange?.(true);
+    return token;
+  }
+
+  function releaseHold(token: number) {
+    if (token !== activeHoldRef.current) return;
+    activeHoldRef.current = null;
+    onSavingChange?.(false);
+  }
+
   // If the selector unmounts (e.g. the user switches chats) while a PATCH is
   // still pending, release the parent's send-hold — otherwise a request that
-  // never settles would keep the composer disabled in every later chat.
+  // never settles would keep the composer disabled in every later chat. The
+  // settled request's own release then no-ops on its stale token.
   useEffect(
     () => () => {
-      if (savingRef.current) onSavingChange?.(false);
+      if (activeHoldRef.current !== null) {
+        activeHoldRef.current = null;
+        onSavingChange?.(false);
+      }
     },
     [onSavingChange],
   );
@@ -91,7 +114,7 @@ export function SkillSelector({
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
-    onSavingChange?.(true);
+    const hold = acquireHold();
     setOptimistic(skillIds);
     setError(null);
     try {
@@ -102,7 +125,7 @@ export function SkillSelector({
       setOptimistic(null);
       savingRef.current = false;
       setSaving(false);
-      onSavingChange?.(false);
+      releaseHold(hold);
     }
   }
 
