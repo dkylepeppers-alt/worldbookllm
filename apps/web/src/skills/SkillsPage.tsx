@@ -175,6 +175,12 @@ export function SkillsPage() {
                     className={skill.id === selectedId ? 'active' : undefined}
                     onClick={() => {
                       setCreating(false);
+                      // Drop the previous skill's editor immediately so Save
+                      // and Delete can never act on A while B is loading.
+                      if (skill.id !== selectedId) {
+                        setDetail(null);
+                        setDraft(null);
+                      }
                       setSelectedId(skill.id);
                     }}
                   >

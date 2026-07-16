@@ -194,7 +194,11 @@ export class ChatService {
     const skillIds = input.skillIds ?? current.skillIds;
     const presetId = input.presetId === undefined ? current.presetId : input.presetId;
     this.validateSources(current.notebookId, sourceIds);
-    this.validateSkills(skillIds);
+    // Only an explicit replacement is validated: a deleted skill leaves stale
+    // ids behind (like deleted sources), and unrelated edits — retitling,
+    // provider changes, or the `skillIds: []` repair itself — must not 404 on
+    // a selection this request does not touch.
+    if (input.skillIds !== undefined) this.validateSkills(input.skillIds);
     this.validatePreset(presetId);
     this.db
       .prepare(

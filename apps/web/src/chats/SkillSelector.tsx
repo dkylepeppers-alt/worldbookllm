@@ -1,5 +1,5 @@
 import type { Chat, SkillMetadata } from '@worldbookllm/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
@@ -31,6 +31,9 @@ export function SkillSelector({
   const api = useApi();
   const [skillsState, setSkillsState] = useState<SkillsState>({ status: 'loading' });
   const [saving, setSaving] = useState(false);
+  // Synchronous in-flight guard: `saving` state lags a render behind, so two
+  // rapid toggles could otherwise both pass the check and race their PATCHes.
+  const savingRef = useRef(false);
   // Selection shown while a PATCH is in flight, so the checkbox flips as
   // soon as it is clicked; a failed save falls back to the persisted list.
   const [optimistic, setOptimistic] = useState<string[] | null>(null);
@@ -53,7 +56,8 @@ export function SkillSelector({
   const selected = new Set(optimistic ?? selectedSkillIds);
 
   async function persistSelection(skillIds: string[]) {
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     onSavingChange?.(true);
     setOptimistic(skillIds);
@@ -64,6 +68,7 @@ export function SkillSelector({
       setError(caught instanceof ApiClientError ? caught.message : 'Could not update the skills.');
     } finally {
       setOptimistic(null);
+      savingRef.current = false;
       setSaving(false);
       onSavingChange?.(false);
     }

@@ -75,10 +75,12 @@ export class SkillService {
     // The skill's directory is its name, so a duplicate create would overwrite
     // the existing skill's SKILL.md before the unique index could refuse the
     // row. Check first; better-sqlite3 is synchronous, so there is no race.
+    // The disk check also protects files that exist without an index row —
+    // e.g. a folder the user copied in that has not been reconciled yet.
     const taken = this.db
       .prepare('SELECT 1 FROM skills WHERE name = ? COLLATE NOCASE')
       .get(normalized.name);
-    if (taken) {
+    if (taken || this.skillFiles.has(`skills/${normalized.name}`)) {
       throw new ConflictError(
         'skill_name_conflict',
         `A skill named ${normalized.name} already exists`,
@@ -182,7 +184,7 @@ export class SkillService {
       const taken = this.db
         .prepare('SELECT 1 FROM skills WHERE name = ? COLLATE NOCASE AND id != ?')
         .get(name, id);
-      if (taken) {
+      if (taken || this.skillFiles.has(`skills/${name}`)) {
         throw new ConflictError('skill_name_conflict', `A skill named ${name} already exists`);
       }
       this.skillFiles.move(current.dirPath, `skills/${name}`);

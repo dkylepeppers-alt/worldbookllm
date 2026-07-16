@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   chmodSync,
   closeSync,
+  existsSync,
   fsyncSync,
   mkdirSync,
   openSync,
@@ -157,6 +158,11 @@ export class SkillFileStore {
         cause: error,
       });
     }
+  }
+
+  /** True when a SKILL.md already exists at this directory path on disk. */
+  has(dirPath: string): boolean {
+    return existsSync(this.resolveRelative(join(dirPath, 'SKILL.md')));
   }
 
   /**

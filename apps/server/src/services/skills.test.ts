@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -61,6 +61,25 @@ describe('SkillService', () => {
     expect(skills.get(created.id).description).toBe(input.description);
     expect(readFileSync(join(dataDir, 'skills/character-voice/SKILL.md'), 'utf8')).toContain(
       input.description,
+    );
+  });
+
+  it('refuses to overwrite an on-disk skill folder that has no index row', () => {
+    const { dataDir, skills } = setup();
+    mkdirSync(join(dataDir, 'skills/character-voice'), { recursive: true });
+    writeFileSync(join(dataDir, 'skills/character-voice/SKILL.md'), 'user-authored', {
+      mode: 0o600,
+    });
+
+    expect(() => skills.create(input)).toThrow(ConflictError);
+    expect(readFileSync(join(dataDir, 'skills/character-voice/SKILL.md'), 'utf8')).toBe(
+      'user-authored',
+    );
+
+    const other = skills.create({ ...input, name: 'voice-craft' });
+    expect(() => skills.patch(other.id, { name: 'character-voice' })).toThrow(ConflictError);
+    expect(readFileSync(join(dataDir, 'skills/character-voice/SKILL.md'), 'utf8')).toBe(
+      'user-authored',
     );
   });
 

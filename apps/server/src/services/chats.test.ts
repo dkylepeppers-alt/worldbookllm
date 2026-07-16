@@ -153,6 +153,37 @@ describe('ChatService', () => {
     db.close();
   });
 
+  it('keeps unrelated patches working when an attached skill was deleted', () => {
+    const { db, chats, now } = setup();
+    db.prepare(
+      'INSERT INTO skills (id, name, description, dir_path, origin_json, license, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      '2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01',
+      'character-voice',
+      'Voices',
+      'skills/character-voice',
+      '{"type":"created"}',
+      null,
+      2,
+      'b'.repeat(64),
+      now,
+      now,
+    );
+    const created = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
+      title: 'Chat',
+      sourceIds: [],
+      skillIds: ['2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01'],
+      providerOverride: null,
+      presetId: null,
+    });
+    db.prepare('DELETE FROM skills WHERE id = ?').run('2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01');
+
+    // Stale ids only fail when the selection itself is replaced with them.
+    expect(chats.patch(created.id, { title: 'Renamed' }).title).toBe('Renamed');
+    expect(chats.patch(created.id, { skillIds: [] }).skillIds).toEqual([]);
+    db.close();
+  });
+
   it('maps corrupt stored JSON to an internal stored-data error', () => {
     const { db, chats } = setup();
     const created = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', {
