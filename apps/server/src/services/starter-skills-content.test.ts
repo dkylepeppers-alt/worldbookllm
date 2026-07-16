@@ -50,7 +50,9 @@ describe('bundled starter skill content', () => {
   });
 
   it.each(EXPECTED_STARTERS)('%s is a generative-first, source-ready skill', (starterId) => {
-    const parsed = matter(readFileSync(`${starterDir}/${starterId}/SKILL.md`, 'utf8'));
+    const parsed = matter(
+      readFileSync(new URL(`../../skills-starter/${starterId}/SKILL.md`, import.meta.url), 'utf8'),
+    );
 
     expect(parsed.data.name).toBe(starterId);
     expect(parsed.data.license).toBe('MIT');
