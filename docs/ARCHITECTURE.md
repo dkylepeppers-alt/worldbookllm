@@ -38,10 +38,13 @@ Planned data directory layout (created at first run, gitignored):
 ```
 data/
 ├── worldbookllm.db            # SQLite: metadata, search index, chats, settings
-└── notebooks/
-    └── <notebook-id>/
-        └── sources/
-            └── <source-id>-<slug>.md
+├── notebooks/
+│   └── <notebook-id>/
+│       └── sources/
+│           └── <source-id>-<slug>.md
+└── skills/
+    └── <name>/
+        └── SKILL.md           # agentskills.io-compatible craft instructions
 ```
 
 Each source file carries YAML frontmatter (id, title, category, origin) so the files are self-describing even without the database; the database can be rebuilt from the files if it is lost.
@@ -81,6 +84,10 @@ Each preset contains generation controls and an ordered module list. Custom modu
 Generation resolves the chat-to-global inheritance once at request preparation. It stores an immutable exchange context containing the resolved preset definition, canonical messages after module/depth assembly, source IDs, hashes and content, requested controls, and the provider-effective request body after provider conversion. Headers, API keys, request URLs, and other secret material are never included. Later preset or source edits therefore affect future generations but cannot rewrite what a completed or interrupted exchange says the model received.
 
 Assistant responses can be reviewed and saved through the normal source-creation boundary. The result is a visible Markdown file with structured `assistant-response` origin metadata containing the originating `chatId` and `messageId`; SQLite keeps the same provenance as a rebuildable index. Updating existing sources, diff review, and export remain separate later workflows.
+
+## Creative skills library
+
+Skills are reusable craft instructions (character voice, settlement design, story diagnosis) in the agentskills.io format: a directory per skill at `data/skills/<name>/` whose `SKILL.md` carries `name`/`description` frontmatter and a Markdown instruction body. Like sources, the files are the source of truth and SQLite is a rebuildable index; like presets, skills are global rather than per-notebook. A chat attaches skills the same way it selects sources (`skillIds`), and the assembler injects the attached skill bodies as a `## Skills` system message immediately after the protected Sources module — prompt-orchestrated, with no provider-layer or preset-schema change. Injected skill content is captured in the immutable exchange snapshot, so the Prompt Inspector always shows exactly what craft text the model received. A curated MIT-attributed starter set from jwynia/agent-skills ships with the server and installs idempotently. See ADR 0011, including the staged path from this foundation to a model-driven skill activation loop.
 
 Two generation controls extend this beyond the M4 scope: an optional `thinking` flag (additive to the schemaVersion-1 generation controls) asks the provider to reason before answering and surface that reasoning, rendered collapsed in the chat UI; and each assistant turn can be regenerated, keeping every prior response as a variant on the same message (`messages.variants_json` + `active_variant`, with the existing `content`/`reasoning`/`status`/`context` columns always mirroring the active variant so the assembler and every other reader are unchanged). A chat's source selection also supports bulk Select all/Clear all, still a single `sourceIds` replacement under the hood.
 
