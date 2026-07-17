@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { CHAT_COMPLETION_SOURCES } from '@worldbookllm/providers';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ConfigurationError } from '../errors.js';
 import { ProviderHttpClient } from '../providers/http-client.js';
@@ -99,6 +99,35 @@ describe('ProviderService', () => {
     await expect(
       service.testConnection({ source: 'claude', model: 'claude-sonnet-4-20250514' }),
     ).resolves.toEqual({ ok: true, detail: 'Completion endpoint reachable' });
+  });
+
+  it('performs a normalized non-streaming completion for internal model tasks', async () => {
+    const secrets = store();
+    secrets.add('api_key_nanogpt', 'classification-key', 'Primary');
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ choices: [{ message: { content: '{"suggestions":[]}' } }] })),
+      );
+    const service = new ProviderService(secrets, new ProviderHttpClient(fetchImpl));
+    const signal = new AbortController().signal;
+
+    await expect(
+      service.completeChat(
+        { source: 'nanogpt', model: 'gpt-4o-mini' },
+        [{ role: 'user', content: 'Classify this source.' }],
+        { temperature: 0, maxTokens: 512 },
+        signal,
+      ),
+    ).resolves.toBe('{"suggestions":[]}');
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.stringContaining('/chat/completions'),
+      expect.objectContaining({
+        body: expect.stringContaining('"stream":false'),
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it('builds generation requests using the active key', () => {
