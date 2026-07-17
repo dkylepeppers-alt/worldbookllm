@@ -2,6 +2,24 @@ import { z } from 'zod';
 
 const sourceTitleSchema = z.string().trim().min(1).max(300);
 
+/** Canonical source categories (M3). The UI derives its pickers from this list. */
+export const SOURCE_CATEGORIES = [
+  'characters',
+  'places',
+  'factions',
+  'timelines',
+  'lore',
+  'rules',
+  'style',
+  'plot',
+  'research',
+  'misc',
+] as const;
+
+export const sourceCategorySchema = z.enum(SOURCE_CATEGORIES);
+
+export const sourceTagsSchema = z.array(z.string().trim().min(1).max(50)).max(20);
+
 export const sourceOriginSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('paste') }),
   z.strictObject({
@@ -32,6 +50,8 @@ export const sourceMetadataSchema = z.strictObject({
   filePath: z.string().min(1).max(4096),
   origin: sourceOriginSchema,
   conversionNotes: conversionNotesSchema,
+  category: sourceCategorySchema.nullable(),
+  tags: sourceTagsSchema,
   wordCount: z.number().int().nonnegative(),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/u),
   createdAt: z.iso.datetime(),
@@ -49,19 +69,35 @@ export const createSourceSchema = z.strictObject({
   content: z.string().min(1).max(10_485_760),
   origin: sourceOriginSchema.default({ type: 'paste' }),
   conversionNotes: conversionNotesSchema.default([]),
+  category: sourceCategorySchema.nullable().default(null),
+  tags: sourceTagsSchema.default([]),
 });
 export const createSourcesSchema = z.array(createSourceSchema).min(1).max(1_000);
 
-// Ordinary edit of a saved source: title and/or content. Origin, conversion notes,
-// id, and createdAt are preserved by the server; re-ingestion is a separate concern.
+// Ordinary edit of a saved source: title, content, category, and/or tags.
+// Origin, conversion notes, id, and createdAt are preserved by the server;
+// re-ingestion is a separate concern. `category: null` clears the category.
 export const patchSourceSchema = z
   .strictObject({
     title: sourceTitleSchema.optional(),
     content: z.string().min(1).max(10_485_760).optional(),
+    category: sourceCategorySchema.nullable().optional(),
+    tags: sourceTagsSchema.optional(),
   })
-  .refine((value) => value.title !== undefined || value.content !== undefined, {
+  .refine((value) => Object.values(value).some((field) => field !== undefined), {
     message: 'At least one source field is required',
   });
+
+export const sourceSearchQuerySchema = z.object({
+  q: z.string().trim().min(1).max(200),
+});
+
+// A ranked full-text hit: the source's metadata plus a plain-text excerpt
+// around the match (no highlight markers in M3).
+export const sourceSearchResultSchema = sourceMetadataSchema.extend({
+  excerpt: z.string().max(1000),
+});
+export const sourceSearchResultListSchema = z.array(sourceSearchResultSchema);
 
 export const sourcePreviewFormatSchema = z.enum([
   'markdown',
@@ -89,6 +125,9 @@ export const sourcePreviewSchema = z.strictObject({
 });
 
 export type SourceOrigin = z.infer<typeof sourceOriginSchema>;
+export type SourceCategory = z.infer<typeof sourceCategorySchema>;
+export type SourceSearchQuery = z.infer<typeof sourceSearchQuerySchema>;
+export type SourceSearchResult = z.infer<typeof sourceSearchResultSchema>;
 export type SourceMetadata = z.infer<typeof sourceMetadataSchema>;
 export type SourceMetadataList = z.infer<typeof sourceMetadataListSchema>;
 export type SourceDetail = z.infer<typeof sourceDetailSchema>;

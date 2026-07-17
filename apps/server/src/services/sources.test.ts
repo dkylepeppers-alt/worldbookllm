@@ -215,3 +215,74 @@ describe('SourceService.patch', () => {
     db.close();
   });
 });
+
+describe('SourceService categories and tags', () => {
+  it('persists category and tags on create, lowercasing and deduplicating tags', () => {
+    const { db, sources, notebook } = setup();
+    const created = sources.create(notebook.id, {
+      title: 'Iron Compact',
+      content: 'A smugglers cartel.',
+      category: 'factions',
+      tags: ['Iron-Compact', 'iron-compact', 'Smugglers'],
+    });
+    expect(created.category).toBe('factions');
+    expect(created.tags).toEqual(['iron-compact', 'smugglers']);
+    expect(sources.get(created.id)).toMatchObject({
+      category: 'factions',
+      tags: ['iron-compact', 'smugglers'],
+    });
+    expect(sources.list(notebook.id)[0]).toMatchObject({ category: 'factions' });
+    db.close();
+  });
+
+  it('sets, keeps, and clears category and tags through patch', () => {
+    const { db, sources, notebook } = setup();
+    const created = sources.create(notebook.id, { title: 'Lore', content: 'Body' });
+    expect(created.category).toBeNull();
+    expect(created.tags).toEqual([]);
+
+    const categorized = sources.patch(created.id, { category: 'lore', tags: ['Canon'] });
+    expect(categorized).toMatchObject({ category: 'lore', tags: ['canon'] });
+
+    // A patch that touches other fields leaves category/tags alone.
+    const retitled = sources.patch(created.id, { title: 'Deep Lore' });
+    expect(retitled).toMatchObject({ category: 'lore', tags: ['canon'] });
+
+    const cleared = sources.patch(created.id, { category: null, tags: [] });
+    expect(cleared.category).toBeNull();
+    expect(cleared.tags).toEqual([]);
+    db.close();
+  });
+
+  it('reconciles category and tags from an out-of-band frontmatter edit on read', () => {
+    const { db, dataDir, sources, notebook } = setup();
+    const files = new SourceFileStore(dataDir);
+    const created = sources.create(notebook.id, {
+      title: 'The Glass Marsh',
+      content: 'Wetlands.',
+      category: 'places',
+      tags: ['wetlands'],
+    });
+
+    // Simulate a user editing the Markdown file directly: frontmatter wins.
+    files.write({
+      id: created.id,
+      notebookId: notebook.id,
+      title: created.title,
+      content: 'Wetlands.',
+      origin: { type: 'paste' },
+      conversionNotes: [],
+      category: 'lore',
+      tags: ['wetlands', 'salt'],
+      createdAt: created.createdAt,
+      updatedAt: '2026-07-17T09:00:00.000Z',
+    });
+
+    expect(sources.get(created.id)).toMatchObject({ category: 'lore', tags: ['wetlands', 'salt'] });
+    expect(sources.list(notebook.id)[0]).toMatchObject({
+      category: 'lore',
+      tags: ['wetlands', 'salt'],
+    });
+    db.close();
+  });
+});

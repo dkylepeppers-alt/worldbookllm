@@ -7,9 +7,11 @@ import {
   type PatchSource,
   type SourceDetail,
   type SourceMetadata,
+  sourceCategorySchema,
   sourceDetailSchema,
   sourceMetadataSchema,
   sourceOriginSchema,
+  sourceTagsSchema,
   conversionNotesSchema,
   createSourceSchema,
   patchSourceSchema,
@@ -20,10 +22,17 @@ import type { SourceRow } from '../db/types.js';
 import { InvalidStoredDataError, NotFoundError } from '../errors.js';
 import { type ReadSourceFile, SourceFileStore } from '../files/source-files.js';
 
+/** Filter/search need stable casing, so tags are lowercased and deduped on write. */
+function normalizeTags(tags: string[]): string[] {
+  return [...new Set(tags.map((tag) => tag.toLowerCase()))];
+}
+
 function mapSource(row: SourceRow): SourceMetadata {
   try {
     const origin = sourceOriginSchema.parse(JSON.parse(row.origin_json));
     const conversionNotes = conversionNotesSchema.parse(JSON.parse(row.conversion_notes_json));
+    const category = sourceCategorySchema.nullable().parse(row.category);
+    const tags = sourceTagsSchema.parse(JSON.parse(row.tags_json));
     return sourceMetadataSchema.parse({
       id: row.id,
       notebookId: row.notebook_id,
@@ -32,6 +41,8 @@ function mapSource(row: SourceRow): SourceMetadata {
       filePath: row.file_path,
       origin,
       conversionNotes,
+      category,
+      tags,
       wordCount: row.word_count,
       contentHash: row.content_hash,
       createdAt: row.created_at,
@@ -98,6 +109,7 @@ export class SourceService {
 
   create(notebookId: string, input: CreateSourceInput): SourceMetadata {
     const normalized = createSourceSchema.parse(input);
+    const tags = normalizeTags(normalized.tags);
     const id = randomUUID();
     const timestamp = this.now();
     let stored: ReturnType<SourceFileStore['write']> | undefined;
@@ -113,11 +125,13 @@ export class SourceService {
           content: normalized.content,
           origin: normalized.origin,
           conversionNotes: normalized.conversionNotes,
+          category: normalized.category,
+          tags,
           createdAt: timestamp,
         });
         this.db
           .prepare(
-            'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin_json, conversion_notes_json, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin_json, conversion_notes_json, category, tags_json, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           )
           .run(
             id,
@@ -127,6 +141,8 @@ export class SourceService {
             stored.filePath,
             JSON.stringify(normalized.origin),
             JSON.stringify(normalized.conversionNotes),
+            normalized.category,
+            JSON.stringify(tags),
             stored.wordCount,
             stored.contentHash,
             stored.createdAt,
@@ -166,13 +182,23 @@ export class SourceService {
       file.title !== row.title ||
       file.wordCount !== row.word_count ||
       file.contentHash !== row.content_hash ||
-      file.updatedAt !== row.updated_at
+      file.updatedAt !== row.updated_at ||
+      file.category !== row.category ||
+      JSON.stringify(file.tags) !== row.tags_json
     ) {
       this.db
         .prepare(
-          'UPDATE sources SET title = ?, word_count = ?, content_hash = ?, updated_at = ? WHERE id = ?',
+          'UPDATE sources SET title = ?, word_count = ?, content_hash = ?, updated_at = ?, category = ?, tags_json = ? WHERE id = ?',
         )
-        .run(file.title, file.wordCount, file.contentHash, file.updatedAt, id);
+        .run(
+          file.title,
+          file.wordCount,
+          file.contentHash,
+          file.updatedAt,
+          file.category,
+          JSON.stringify(file.tags),
+          id,
+        );
     }
 
     try {
@@ -189,18 +215,22 @@ export class SourceService {
   }
 
   /**
-   * Edits a saved source's title and/or content. Source identity (`id`,
-   * `createdAt`, `origin`, conversion notes) is preserved; the Markdown file is
-   * the source of truth, so it is rewritten first (recomputing slug, hash, and
-   * word count) and the index row is updated to match. A title change moves the
-   * slugged file path, so the old file is removed only after the index commits.
-   * Any failure rolls the file back so no orphan or stale-path row is left behind.
+   * Edits a saved source's title, content, category, and/or tags. Source
+   * identity (`id`, `createdAt`, `origin`, conversion notes) is preserved; the
+   * Markdown file is the source of truth, so it is rewritten first (recomputing
+   * slug, hash, and word count) and the index row is updated to match. A title
+   * change moves the slugged file path, so the old file is removed only after
+   * the index commits. Any failure rolls the file back so no orphan or
+   * stale-path row is left behind.
    */
   patch(id: string, input: PatchSource): SourceDetail {
     const normalized = patchSourceSchema.parse(input);
     const current = this.get(id);
     const title = normalized.title ?? current.title;
     const content = normalized.content ?? current.content;
+    // `category: null` clears the category, so undefined alone means "keep".
+    const category = normalized.category === undefined ? current.category : normalized.category;
+    const tags = normalized.tags === undefined ? current.tags : normalizeTags(normalized.tags);
     const timestamp = this.now();
 
     const stored = this.sourceFiles.write({
@@ -210,6 +240,8 @@ export class SourceService {
       content,
       origin: current.origin,
       conversionNotes: current.conversionNotes,
+      category,
+      tags,
       createdAt: current.createdAt,
       updatedAt: timestamp,
     });
@@ -219,7 +251,7 @@ export class SourceService {
       this.db.transaction(() => {
         this.db
           .prepare(
-            'UPDATE sources SET title = ?, slug = ?, file_path = ?, word_count = ?, content_hash = ?, updated_at = ? WHERE id = ?',
+            'UPDATE sources SET title = ?, slug = ?, file_path = ?, word_count = ?, content_hash = ?, updated_at = ?, category = ?, tags_json = ? WHERE id = ?',
           )
           .run(
             title,
@@ -228,6 +260,8 @@ export class SourceService {
             stored.wordCount,
             stored.contentHash,
             stored.updatedAt,
+            category,
+            JSON.stringify(tags),
             id,
           );
         this.db
@@ -246,6 +280,8 @@ export class SourceService {
           content: current.content,
           origin: current.origin,
           conversionNotes: current.conversionNotes,
+          category: current.category,
+          tags: current.tags,
           createdAt: current.createdAt,
           updatedAt: current.updatedAt,
         });

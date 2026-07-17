@@ -25,6 +25,8 @@ const source: SourceDetail = {
   filePath: 'notebooks/lore.md',
   origin: { type: 'paste' },
   conversionNotes: [],
+  category: null,
+  tags: [],
   wordCount: 2,
   contentHash: 'a'.repeat(64),
   createdAt: '2026-07-10T12:00:00.000Z',

@@ -14,6 +14,8 @@ export interface SourceRow {
   file_path: string;
   origin_json: string;
   conversion_notes_json: string;
+  category: string | null;
+  tags_json: string;
   word_count: number;
   content_hash: string;
   created_at: string;

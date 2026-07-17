@@ -56,6 +56,8 @@ export function SourceViewer({ source, onUpdated }: SourceViewerProps) {
         filePath: updated.filePath,
         origin: updated.origin,
         conversionNotes: updated.conversionNotes,
+        category: updated.category,
+        tags: updated.tags,
         wordCount: updated.wordCount,
         contentHash: updated.contentHash,
         createdAt: updated.createdAt,

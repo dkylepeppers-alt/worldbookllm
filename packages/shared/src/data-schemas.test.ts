@@ -104,7 +104,20 @@ describe('data API schemas', () => {
       content: '# Lore',
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
     });
+    expect(
+      createSourceSchema.parse({
+        title: 'Lore',
+        content: '# Lore',
+        category: 'factions',
+        tags: ['iron-compact'],
+      }),
+    ).toMatchObject({ category: 'factions', tags: ['iron-compact'] });
+    expect(() =>
+      createSourceSchema.parse({ title: 'Lore', content: '# Lore', category: 'weather' }),
+    ).toThrow();
     expect(() =>
       createSourceSchema.parse({ title: 'Lore', content: 'x'.repeat(10_485_761) }),
     ).toThrow();
@@ -118,6 +131,8 @@ describe('data API schemas', () => {
         'notebooks/a0c7607c-b365-438b-a7e6-31b2308464b6/sources/f9942d0a-eaca-41a8-a3d8-87987cc173fd-lore.md',
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       wordCount: 2,
       contentHash: 'a'.repeat(64),
       createdAt: '2026-07-10T12:00:00.000Z',
@@ -134,9 +149,16 @@ describe('data API schemas', () => {
       title: 'A',
       content: 'B',
     });
+    expect(patchSourceSchema.parse({ category: 'places' })).toEqual({ category: 'places' });
+    expect(patchSourceSchema.parse({ category: null })).toEqual({ category: null });
+    expect(patchSourceSchema.parse({ tags: [' Iron-Compact '] })).toEqual({
+      tags: ['Iron-Compact'],
+    });
     expect(() => patchSourceSchema.parse({})).toThrow();
     expect(() => patchSourceSchema.parse({ title: '' })).toThrow();
     expect(() => patchSourceSchema.parse({ content: '' })).toThrow();
+    expect(() => patchSourceSchema.parse({ category: 'weather' })).toThrow();
+    expect(() => patchSourceSchema.parse({ tags: [''] })).toThrow();
     expect(() => patchSourceSchema.parse({ origin: { type: 'paste' } })).toThrow();
   });
 
@@ -191,6 +213,8 @@ describe('data API schemas', () => {
       filePath: `notebooks/${notebook.id}/sources/f9942d0a-eaca-41a8-a3d8-87987cc173fd-lore.md`,
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       wordCount: 2,
       contentHash: 'a'.repeat(64),
       createdAt: '2026-07-10T12:00:00.000Z',

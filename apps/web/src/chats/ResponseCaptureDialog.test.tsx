@@ -36,6 +36,8 @@ const created: SourceMetadata = {
   filePath: 'notebooks/source.md',
   origin: { type: 'assistant-response', chatId: message.chatId, messageId: message.id },
   conversionNotes: [],
+  category: null,
+  tags: [],
   wordCount: 3,
   contentHash: 'a'.repeat(64),
   createdAt: '2026-07-10T12:02:00.000Z',

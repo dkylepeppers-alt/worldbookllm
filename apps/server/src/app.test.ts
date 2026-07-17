@@ -156,6 +156,8 @@ describe('server data API', () => {
       filePath: expect.stringMatching(/\.md$/u),
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       wordCount: 5,
       contentHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
       createdAt: expect.any(String),
@@ -714,7 +716,7 @@ describe('server data API', () => {
     expect(response.json()).toMatchObject({ id: notebook.id, name: 'Persistent' });
 
     const db = new Database(join(dataDir, 'worldbookllm.db'), { readonly: true });
-    expect(db.pragma('user_version', { simple: true })).toBe(5);
+    expect(db.pragma('user_version', { simple: true })).toBe(6);
     db.close();
   });
 });

@@ -25,6 +25,8 @@ function source(id: string, title: string): SourceMetadata {
     filePath: `notebooks/${id}.md`,
     origin: { type: 'paste' },
     conversionNotes: [],
+    category: null,
+    tags: [],
     wordCount: 1,
     contentHash: 'a'.repeat(64),
     createdAt: '2026-07-10T12:00:00.000Z',

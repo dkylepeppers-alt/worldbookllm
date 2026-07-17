@@ -46,6 +46,8 @@ describe('SourceFileStore', () => {
       content,
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       createdAt: CREATED_AT,
     });
 
@@ -76,6 +78,39 @@ describe('SourceFileStore', () => {
     ]);
   });
 
+  it('round-trips category and tags through frontmatter and reads legacy files without them', () => {
+    const { dataDir, store } = makeStore();
+    const stored = store.write({
+      id: SOURCE_ID,
+      notebookId: NOTEBOOK_ID,
+      title: 'Iron Compact',
+      content: 'A smugglers cartel.',
+      origin: { type: 'paste' },
+      conversionNotes: [],
+      category: 'factions',
+      tags: ['iron-compact', 'smugglers'],
+      createdAt: CREATED_AT,
+    });
+
+    const parsed = matter(readFileSync(join(dataDir, stored.filePath), 'utf8'));
+    expect(parsed.data.category).toBe('factions');
+    expect(parsed.data.tags).toEqual(['iron-compact', 'smugglers']);
+    expect(store.read(stored.filePath)).toMatchObject({
+      category: 'factions',
+      tags: ['iron-compact', 'smugglers'],
+    });
+
+    // A pre-M3 file (no category/tags keys) still parses with defaults.
+    const legacyPath = `notebooks/${NOTEBOOK_ID}/sources/legacy.md`;
+    const legacy = matter(readFileSync(join(dataDir, stored.filePath), 'utf8'));
+    delete legacy.data.category;
+    delete legacy.data.tags;
+    writeFileSync(join(dataDir, legacyPath), matter.stringify('legacy body', legacy.data), {
+      mode: 0o600,
+    });
+    expect(store.read(legacyPath)).toMatchObject({ category: null, tags: [] });
+  });
+
   it('reads fresh content and derived metadata after an external edit', () => {
     const { dataDir, store } = makeStore();
     const stored = store.write({
@@ -85,6 +120,8 @@ describe('SourceFileStore', () => {
       content: 'old body',
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       createdAt: CREATED_AT,
     });
     const absolutePath = join(dataDir, stored.filePath);
@@ -102,6 +139,8 @@ describe('SourceFileStore', () => {
       title: 'Externally renamed',
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       createdAt: CREATED_AT,
       updatedAt: editedAt,
       content: editedContent,
@@ -119,6 +158,8 @@ describe('SourceFileStore', () => {
       content: 'body',
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       createdAt: CREATED_AT,
     });
 
@@ -138,6 +179,8 @@ describe('SourceFileStore', () => {
       content: 'body',
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       createdAt: CREATED_AT,
     });
     const realPath = join(dataDir, `notebooks/${NOTEBOOK_ID}/sources/${SOURCE_ID}-valid-first.md`);
@@ -156,6 +199,8 @@ describe('SourceFileStore', () => {
       content: 'body',
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       createdAt: CREATED_AT,
     });
 
@@ -168,6 +213,8 @@ describe('SourceFileStore', () => {
       content: 'body',
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       createdAt: CREATED_AT,
     });
     expect(() => store.removeNotebook(NOTEBOOK_ID)).not.toThrow();
