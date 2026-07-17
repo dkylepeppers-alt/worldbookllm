@@ -256,6 +256,23 @@ describe('server data API', () => {
     db.close();
   });
 
+  it('creates and immediately reads reviewed Markdown with frontmatter', async () => {
+    const notebook = await createNotebook();
+    const content = '---\nsubtitle: Imported notes\nstatus: Draft\n---\n# Body\n\nVisible.\n';
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/sources`,
+      payload: { title: 'Imported body', content },
+    });
+    expect(created.statusCode).toBe(201);
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/sources/${created.json<{ id: string }>().id}`,
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({ title: 'Imported body', content });
+  });
+
   it('previews lorebook JSON and saves reviewed entries as individual sources', async () => {
     const notebook = await createNotebook();
     const lorebook = Buffer.from(
