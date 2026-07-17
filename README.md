@@ -1,60 +1,119 @@
 # worldbookllm
 
-A model-agnostic creative writing and worldbuilding workspace that ingests your sources, converts them into organized Markdown, and lets you chat with your project knowledge base using reusable native presets you can inspect and tune.
+worldbookllm is a tool for **generating new lore**. You feed it your existing material — setting notes, character sheets, campaign logs, half-finished wiki pages — and then work with an AI model of your choice to produce _new_ source documents: factions, settlements, belief systems, character histories, timelines, story ideas. Everything the model generates can be reviewed, edited, and saved back into your project as a plain Markdown file, where it becomes canon the next generation is grounded in.
 
-## What it is
+It runs entirely on your own machine (or phone — see [Termux](#install-on-android-termux) below). Your writing, chat history, and API keys stay local; the only outbound traffic is the model call itself, to whichever provider you choose.
 
-worldbookllm is a **local-first**, source-grounded creative development environment for writers, worldbuilders, game masters, roleplay designers, and fiction developers. Think NotebookLM, but built for creative work instead of research — and with your choice of AI model instead of a fixed one.
+## The loop
 
-- **Part source manager** — upload, paste, or import your material; the app converts it into clean, inspectable Markdown that stays visible and editable, never hidden inside an opaque AI context.
-- **Part Markdown knowledge base** — organize characters, places, factions, timelines, lore, rules, plot material, and rough fragments into per-project notebooks.
-- **Part AI chat interface** — ask questions of your canon, find contradictions, expand ideas, draft prose, and generate new worldbuilding grounded in _your_ selected sources.
-- **Part preset studio** — import or author versioned native presets, order prompt modules, choose depth insertion, tune generation controls, and select one global default with optional per-chat overrides.
-- **Part inspectable creative collaborator** — choose the AI provider and model per notebook or chat, inspect the immutable prompt and provider-effective request behind a response, then review and save that response as a Markdown source.
+Worldbuilding in worldbookllm is a cycle, not a chat log:
 
-Your data stays on your machine: sources are plain Markdown files on disk, metadata lives in a local SQLite database, and API keys never leave your computer.
+1. **Bring canon in.** Paste text, or upload `.md`, `.txt`, PDF, HTML, or SillyTavern lorebook/character-card JSON. Everything is converted to Markdown you review and can fix _before_ it's saved — nothing enters your notebook as an opaque blob.
+2. **Select what grounds the generation.** Each chat message is sent with the exact sources you've selected, injected whole. The Prompt Inspector shows you, per exchange, precisely what the model received.
+3. **Generate with craft, not just vibes.** Attach **skills** — reusable craft instructions like _settlement design_, _belief systems_, _character naming_, or _story idea generation_ — and tune a **preset** (temperature, prompt modules, prefill, an optional thinking mode). A starter set of sixteen generative-first skills installs in one click.
+4. **Save what's good.** Any assistant response can be reviewed and saved as a new Markdown source, with provenance recording which chat and message it came from. Your setting bible grows out of your own generations.
 
-## Status
+Because sources are plain `.md` files on disk (SQLite is just a rebuildable index — [ADR 0003](docs/decisions/0003-markdown-files-sqlite-index.md)), you can also edit, grep, sync, and version your world with any tool you already use.
 
-**Milestone 1 — walking skeleton (complete).** Create a notebook, paste a source, pick a provider, and watch a grounded answer stream into chat; stop/interrupt, reload persistence, stub-provider E2E, and the required live-provider verification are complete. The current app also includes native Preset Studio controls, per-exchange prompt inspection, review-before-save response capture, an optional "thinking" toggle with regenerate-as-swipeable-variants, bulk source selection, and editing a saved source after ingestion. The app is an installable PWA and the server serves the built web app single-origin in production. Search-backed organization and richer update/diff/export workflows remain later [roadmap](docs/ROADMAP.md) work.
+## Choose your model
 
-## Quick start
+The provider layer is ported from SillyTavern's battle-tested backends and supports **26 chat-completion providers** — OpenAI, Anthropic Claude, OpenRouter, NanoGPT, Google Gemini/Vertex, Mistral, Cohere, DeepSeek, Groq, xAI, Perplexity, Azure OpenAI, and more — plus any OpenAI-compatible endpoint (Ollama, LM Studio, llama.cpp, self-hosted). Keys are stored locally in `data/secrets.json`, never displayed unmasked, and never sent anywhere except the provider you picked. Provider and model are set per notebook and can be overridden per chat; switching models never requires rebuilding a project.
 
-Requires Node.js ≥ 20.19 and [pnpm](https://pnpm.io) 9.
+## What works today
+
+- Notebooks with paste and file-upload ingestion (`.md`, `.txt`, PDF, HTML, SillyTavern lorebook/character-card JSON), editable conversion previews, and post-save editing
+- Streaming chat (SSE) grounded in per-chat source selection, with stop/interrupt and regenerate-as-variants (swipe between takes on the same message)
+- Preset Studio: versioned presets with generation controls, ordered prompt modules, depth insertion, JSON import, one global default — see the [preset schema](docs/PRESET_SCHEMA.md)
+- Skills library with the generative starter set, attached per chat like sources
+- Per-exchange Prompt Inspector: the immutable record of what the model was actually sent
+- Save-response-as-source with chat/message provenance
+- Installable PWA, served single-origin by the server in production
+
+Not there yet (see the [roadmap](docs/ROADMAP.md)): fetching webpages by URL, categories/tags/full-text search across large notebooks, diff-reviewed updates to existing sources, and lorebook/setting-bible export.
+
+## Requirements
+
+- **Node.js ≥ 20.19** and **pnpm 9** (`corepack enable` activates the pinned version automatically)
+- Roughly 1 GB of disk for dependencies and build output
+- An API key for at least one supported provider, or a local OpenAI-compatible server such as Ollama
+
+## Install and run
 
 ```bash
+git clone https://github.com/dkylepeppers-alt/worldbookllm.git
+cd worldbookllm
+corepack enable          # or: npm install -g pnpm@9
 pnpm install
-pnpm dev        # starts the API server (:3001) and the web UI (:5173)
 ```
 
-Other commands:
+**For everyday use** — build once, run one process on one port:
 
 ```bash
-pnpm build      # build all packages
-pnpm test       # run all tests
-pnpm lint       # lint
-pnpm typecheck  # typecheck all packages
-pnpm format     # format with prettier
+pnpm build
+pnpm start               # http://127.0.0.1:3001
 ```
 
-## Production
+Open http://127.0.0.1:3001, add a provider key under Settings, create a notebook, and add your first source. Your data lives under `./data` (change with `DATA_DIR=...`), and that directory is the only thing you need to back up.
+
+**For development** — two processes with hot reload:
 
 ```bash
-pnpm build      # builds packages/*, apps/web (incl. PWA manifest + service worker), apps/server
-pnpm start      # one process, one port: apps/server serves its API and the built web app
+pnpm dev                 # API on :3001, web UI on :5173
 ```
 
-See [Deployment](docs/DEPLOYMENT.md) for environment variables, the Docker/compose path, a reverse-proxy/HTTPS setup (needed for the service worker and installability off `localhost`), and backup guidance.
+Docker, reverse-proxy/HTTPS setup (needed to install the PWA from another device), systemd, environment variables, and backup guidance are all covered in [Deployment](docs/DEPLOYMENT.md).
+
+## Install on Android (Termux)
+
+worldbookllm runs well as a pocket worldbuilding notebook under [Termux](https://termux.dev) (install it from F-Droid or the Play Store — the F-Droid build is the commonly recommended one). The one platform quirk: `better-sqlite3` has no prebuilt binary for Android, so it compiles from source during `pnpm install` — that's what the compiler packages below are for, and why the install takes a few extra minutes.
+
+```bash
+# 1. Base packages and build tools
+pkg update && pkg upgrade
+pkg install nodejs-lts git python clang make binutils
+
+# 2. pnpm
+corepack enable          # or: npm install -g pnpm@9
+
+# 3. Clone and install (better-sqlite3 compiles here — be patient)
+git clone https://github.com/dkylepeppers-alt/worldbookllm.git
+cd worldbookllm
+pnpm install
+
+# 4. Build and run
+pnpm build
+pnpm start
+```
+
+Then open **http://localhost:3001** in your Android browser. Because `localhost` counts as a secure origin, you can install it as a PWA straight from the browser menu ("Add to Home Screen" / "Install app") — no HTTPS setup needed.
+
+Termux-specific tips:
+
+- **Keep it running:** acquire a wake lock with `termux-wake-lock` (or the persistent Termux notification's "Acquire wakelock" button) before long sessions, and exclude Termux from battery optimization in Android settings, or Android will kill the server in the background.
+- **Keep `data/` in Termux home.** Don't set `DATA_DIR` to shared storage (`/sdcard`, `~/storage/shared`) — Android shared storage doesn't support the file locking SQLite needs. To back up, archive the data directory and _copy_ the archive out: `tar czf ~/storage/shared/worldbook-backup.tar.gz -C ~/worldbookllm data` (run `termux-setup-storage` once first).
+- **If the build runs out of memory** on a low-RAM device, retry with `NODE_OPTIONS=--max-old-space-size=2048 pnpm build`, closing other apps first.
+- **Sharp warnings are harmless.** The `sharp` image library has no Android build; it's only used by a manual icon-regeneration script, and the icons are already committed. Install and build don't need it.
+- **Local models:** a phone won't run a serious model, but Termux + a provider key works fine — or point the `custom` provider at an Ollama/llama.cpp server on another machine on your network.
+
+## Updating
+
+```bash
+git pull
+pnpm install
+pnpm build
+```
+
+Then restart (`pnpm start`, or however you run it). Database migrations run automatically on startup; your Markdown sources are never touched by upgrades.
 
 ## Repository layout
 
 ```
-apps/server/      Fastify API server — owns files, SQLite, and AI provider calls
-apps/web/         React + Vite web UI
-apps/e2e/         Playwright end-to-end tests and stub provider
+apps/server/         Fastify API server — owns the data dir, SQLite, and provider calls
+apps/web/            React + Vite web UI (installable PWA)
+apps/e2e/            Playwright end-to-end tests and a deterministic stub provider
 packages/providers/  Framework-free multi-provider request and streaming layer
-packages/shared/  Types and schemas shared between server and web
-docs/             Architecture, roadmap, and decision records
+packages/shared/     Types and zod schemas shared between server and web
+docs/                Architecture, roadmap, deployment, and decision records
 ```
 
 ## Documentation
@@ -62,7 +121,7 @@ docs/             Architecture, roadmap, and decision records
 - [Architecture](docs/ARCHITECTURE.md) — system design and data model
 - [Roadmap](docs/ROADMAP.md) — milestones and "done when" criteria
 - [Deployment](docs/DEPLOYMENT.md) — production build/run, environment variables, Docker, reverse proxy/HTTPS, backups
-- [Native preset JSON schema and import reference](docs/PRESET_SCHEMA.md) — portable format, limits, insertion semantics, and examples
+- [Preset JSON schema](docs/PRESET_SCHEMA.md) — the portable preset format, limits, insertion semantics, and examples
 - [Decision records](docs/decisions/) — why the stack looks the way it does
 
 ## License & attribution
@@ -70,7 +129,7 @@ docs/             Architecture, roadmap, and decision records
 worldbookllm is licensed under the [GNU AGPL-3.0](LICENSE).
 
 The multi-provider AI layer (`packages/providers`) is ported from
-[SillyTavern](https://github.com/SillyTavern/SillyTavern) (AGPL-3.0) — the
-per-provider request building, message conversion, and streaming logic there is
-derived from SillyTavern's battle-tested backends. Ported files carry
-attribution headers referencing the SillyTavern commit they derive from.
+[SillyTavern](https://github.com/SillyTavern/SillyTavern) (AGPL-3.0); ported files
+carry attribution headers referencing the SillyTavern commit they derive from.
+The starter skills are adapted from [jwynia/agent-skills](https://github.com/jwynia/agent-skills)
+(MIT) — see `apps/server/skills-starter/ATTRIBUTION.md`.

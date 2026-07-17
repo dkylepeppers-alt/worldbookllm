@@ -31,13 +31,14 @@ worldbookllm is a **local-first web app**: a Node/TypeScript server and a browse
 The guiding principle from the product spec: **sources remain visible and manageable by the user**, never hidden inside an opaque context system.
 
 - **Sources are plain `.md` files on disk.** Users can read, grep, edit, back up, and version them with any tool. Editing a file outside the app is legal; the app reconciles on next access.
-- **SQLite holds everything that is _about_ the files**, plus app state: source metadata (origin, conversion notes, category, tags), the full-text search index (FTS5), chat sessions and messages, notebook settings, and provider/model configuration.
+- **SQLite holds everything that is _about_ the files**, plus app state: source metadata (origin, conversion notes), chat sessions and messages, notebook settings, presets, the skills index, and provider/model configuration. Source categories, tags, and the FTS5 full-text search index arrive with Milestone 3 (see the [roadmap](ROADMAP.md)).
 
-Planned data directory layout (created at first run, gitignored):
+Data directory layout (created at first run, gitignored):
 
 ```
 data/
-├── worldbookllm.db            # SQLite: metadata, search index, chats, settings
+├── worldbookllm.db            # SQLite: metadata, chats, presets, settings
+├── secrets.json               # named provider API keys (local only)
 ├── notebooks/
 │   └── <notebook-id>/
 │       └── sources/
@@ -47,7 +48,7 @@ data/
         └── SKILL.md           # agentskills.io-compatible craft instructions
 ```
 
-Each source file carries YAML frontmatter (id, title, category, origin) so the files are self-describing even without the database; the database can be rebuilt from the files if it is lost.
+Each source file carries YAML frontmatter (id, notebook id, title, origin, conversion notes, timestamps) so the files are self-describing even without the database; the database can be rebuilt from the files if it is lost.
 
 ## Source ingestion pipeline
 
@@ -115,3 +116,4 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0008 — PDF and HTML conversion dependencies](decisions/0008-pdf-html-conversion-dependencies.md)
 - [0009 — Native global presets and immutable exchange snapshots](decisions/0009-native-global-presets.md)
 - [0010 — Installable PWA, served single-origin in production](decisions/0010-pwa-single-origin-serving.md)
+- [0011 — Prompt-orchestrated creative skills library](decisions/0011-prompt-orchestrated-skills-library.md)

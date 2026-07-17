@@ -97,9 +97,11 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Done when:** a worldbuilder can review a response-derived update before applying it to an existing source, then export a working SillyTavern lorebook and a shareable setting bible.
 
-## M6 — Creative skills library
+## M6 — Creative skills library ✅
 
 **Goal:** reusable craft instructions ("skills") the model can be given per chat — the foundation for a later integrated agent. See ADR 0011.
+
+**Status (2026-07-17):** complete. Skills CRUD (server and UI), per-chat attachment with `## Skills` injection, exchange-snapshot capture shown in the Prompt Inspector, the one-click starter-set install, and stub-provider E2E coverage are all implemented. The starter set was subsequently rewritten to be generative-first (produce source-ready Markdown, not just critique) with provenance recorded in `apps/server/skills-starter/ATTRIBUTION.md`.
 
 **Scope:**
 

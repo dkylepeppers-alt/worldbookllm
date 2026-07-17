@@ -14,13 +14,14 @@ needs lives under one data directory on the machine you run it on.
 
 ## Environment variables
 
-| Variable           | Default                 | Meaning                                                                                                                                        |
-| ------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HOST`             | `127.0.0.1`             | Interface the server binds to. Set to `0.0.0.0` to accept connections from other machines/containers.                                          |
-| `PORT`             | `3001`                  | Port the server (API + built web app) listens on.                                                                                              |
-| `DATA_DIR`         | `<repo>/data`           | Where the SQLite database, source Markdown files, and secrets file live. **The only directory you need to back up.**                           |
-| `WEB_DIST_DIR`     | `<repo>/apps/web/dist`  | The built web app the server serves. Only relevant if you build/host the web app somewhere other than its default location next to the server. |
-| `API_PROXY_TARGET` | `http://127.0.0.1:3001` | **Dev only** — where `pnpm dev`'s Vite server proxies `/api`. Not used in production, where there is only one server.                          |
+| Variable             | Default                             | Meaning                                                                                                                                        |
+| -------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HOST`               | `127.0.0.1`                         | Interface the server binds to. Set to `0.0.0.0` to accept connections from other machines/containers.                                          |
+| `PORT`               | `3001`                              | Port the server (API + built web app) listens on.                                                                                              |
+| `DATA_DIR`           | `<repo>/data`                       | Where the SQLite database, source Markdown files, and secrets file live. **The only directory you need to back up.**                           |
+| `WEB_DIST_DIR`       | `<repo>/apps/web/dist`              | The built web app the server serves. Only relevant if you build/host the web app somewhere other than its default location next to the server. |
+| `API_PROXY_TARGET`   | `http://127.0.0.1:3001`             | **Dev only** — where `pnpm dev`'s Vite server proxies `/api`. Not used in production, where there is only one server.                          |
+| `STARTER_SKILLS_DIR` | `<repo>/apps/server/skills-starter` | Where the vendored starter skill set is read from when a user installs it. Only relevant if you relocate the server away from the repo layout. |
 
 Every variable has a sensible default; a bare `pnpm start` after `pnpm build` works with no
 configuration at all.
@@ -158,8 +159,10 @@ Everything worth keeping lives under `DATA_DIR`:
 data/
 ├── worldbookllm.db      # SQLite: metadata, chats, settings — a rebuildable index (ADR 0003)
 ├── secrets.json          # your AI provider API keys, stored locally, never sent anywhere but the provider
-└── notebooks/
-    └── <notebook-id>/sources/<source-id>-<slug>.md   # your actual source-of-truth Markdown
+├── notebooks/
+│   └── <notebook-id>/sources/<source-id>-<slug>.md   # your actual source-of-truth Markdown
+└── skills/
+    └── <name>/SKILL.md   # your creative skills, also source-of-truth Markdown (ADR 0011)
 ```
 
 A plain file copy or archive of `DATA_DIR` while the process is stopped is a complete, restorable
