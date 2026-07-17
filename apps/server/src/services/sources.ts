@@ -276,7 +276,18 @@ export class SourceService {
     const row = this.getRow(id);
     const file = this.sourceFiles.read(row.file_path);
     this.assertFileIdentity(row, file);
-    this.reconcileFromFile(row, file);
+    const drifted = this.reconcileFromFile(row, file);
+    // A successful read restores an index entry dropped while the file was
+    // unreadable (ensureSearchIndex removes entries it cannot validate), even
+    // when the file came back with nothing drifted.
+    if (!drifted && !this.searchIndex.has(id)) {
+      this.searchIndex.index({
+        sourceId: id,
+        notebookId: row.notebook_id,
+        title: file.title,
+        content: file.content,
+      });
+    }
 
     try {
       return sourceDetailSchema.parse({

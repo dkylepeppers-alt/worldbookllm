@@ -63,6 +63,12 @@ export class SourceSearchIndex {
     return this.db.prepare('SELECT source_id FROM source_search').pluck().all() as string[];
   }
 
+  has(sourceId: string): boolean {
+    return (
+      this.db.prepare('SELECT 1 FROM source_search WHERE source_id = ?').get(sourceId) !== undefined
+    );
+  }
+
   /**
    * Ranked full-text hits for one notebook: the matching source rows plus a
    * plain-text excerpt around the first content match. Titles weigh five

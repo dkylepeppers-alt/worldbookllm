@@ -180,6 +180,34 @@ describe('SourceService.ensureSearchIndex', () => {
     db.close();
   });
 
+  it('restores a dropped index entry on the next successful read', () => {
+    const { db, files, sources, notebook } = setup();
+    const created = sources.create(notebook.id, { title: 'Flicker', content: 'Transient light.' });
+    files.remove(created.filePath);
+    sources.ensureSearchIndex(() => undefined);
+    expect(sources.search(notebook.id, 'transient')).toEqual([]);
+
+    // The file comes back unchanged (e.g. a mount or permissions recover):
+    // the read succeeds with nothing drifted, and must still reindex.
+    files.write({
+      id: created.id,
+      notebookId: notebook.id,
+      title: created.title,
+      content: 'Transient light.',
+      origin: { type: 'paste' },
+      conversionNotes: [],
+      category: null,
+      tags: [],
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
+    });
+    sources.get(created.id);
+    expect(sources.search(notebook.id, 'transient').map((result) => result.id)).toEqual([
+      created.id,
+    ]);
+    db.close();
+  });
+
   it('backfills missing entries and drops entries whose files became unreadable', () => {
     const { db, files, sources, notebook } = setup();
     const kept = sources.create(notebook.id, { title: 'Kept', content: 'Indexed normally.' });
