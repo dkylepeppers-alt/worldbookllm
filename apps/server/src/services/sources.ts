@@ -7,6 +7,7 @@ import {
   type PatchSource,
   type SourceDetail,
   type SourceMetadata,
+  type SourceSearchResult,
   sourceCategorySchema,
   sourceDetailSchema,
   sourceMetadataSchema,
@@ -21,6 +22,7 @@ import type Database from 'better-sqlite3';
 import type { SourceRow } from '../db/types.js';
 import { InvalidStoredDataError, NotFoundError } from '../errors.js';
 import { type ReadSourceFile, SourceFileStore } from '../files/source-files.js';
+import { SourceSearchIndex } from './source-search.js';
 
 /** Filter/search need stable casing, so tags are lowercased and deduped on write. */
 function normalizeTags(tags: string[]): string[] {
@@ -56,11 +58,15 @@ function mapSource(row: SourceRow): SourceMetadata {
 }
 
 export class SourceService {
+  private readonly searchIndex: SourceSearchIndex;
+
   constructor(
     private readonly db: Database.Database,
     private readonly sourceFiles: SourceFileStore,
     private readonly now: () => string = () => new Date().toISOString(),
-  ) {}
+  ) {
+    this.searchIndex = new SourceSearchIndex(db);
+  }
 
   private getRow(id: string): SourceRow {
     const row = this.db.prepare('SELECT * FROM sources WHERE id = ?').get(id) as
@@ -107,6 +113,37 @@ export class SourceService {
     return rows.map(mapSource);
   }
 
+  /** Ranked full-text search across one notebook's sources (titles weigh more). */
+  search(notebookId: string, query: string): SourceSearchResult[] {
+    this.requireNotebook(notebookId);
+    return this.searchIndex
+      .search(notebookId, query)
+      .map(({ row, excerpt }) => ({ ...mapSource(row), excerpt }));
+  }
+
+  /**
+   * Backfills the FTS index for any source row it is missing (a pre-M3 data
+   * dir, or an index that diverged) by reading the Markdown files on disk.
+   * Unreadable files are reported and skipped so one corrupt source cannot
+   * stop startup; ordinary reads reconcile them later.
+   */
+  ensureSearchIndex(onError?: (sourceId: string, error: unknown) => void): void {
+    for (const id of this.searchIndex.missingSourceIds()) {
+      try {
+        const row = this.getRow(id);
+        const file = this.sourceFiles.read(row.file_path);
+        this.searchIndex.index({
+          sourceId: id,
+          notebookId: row.notebook_id,
+          title: file.title,
+          content: file.content,
+        });
+      } catch (error) {
+        onError?.(id, error);
+      }
+    }
+  }
+
   create(notebookId: string, input: CreateSourceInput): SourceMetadata {
     const normalized = createSourceSchema.parse(input);
     const tags = normalizeTags(normalized.tags);
@@ -151,6 +188,12 @@ export class SourceService {
         this.db
           .prepare('UPDATE notebooks SET updated_at = ? WHERE id = ?')
           .run(timestamp, notebookId);
+        this.searchIndex.index({
+          sourceId: id,
+          notebookId,
+          title: normalized.title,
+          content: normalized.content,
+        });
         return mapSource(this.getRow(id));
       })();
     } catch (error) {
@@ -199,6 +242,12 @@ export class SourceService {
           JSON.stringify(file.tags),
           id,
         );
+      this.searchIndex.index({
+        sourceId: id,
+        notebookId: row.notebook_id,
+        title: file.title,
+        content: file.content,
+      });
     }
 
     try {
@@ -267,6 +316,12 @@ export class SourceService {
         this.db
           .prepare('UPDATE notebooks SET updated_at = ? WHERE id = ?')
           .run(timestamp, current.notebookId);
+        this.searchIndex.index({
+          sourceId: id,
+          notebookId: current.notebookId,
+          title,
+          content,
+        });
       })();
     } catch (error) {
       // Restore the file so the on-disk state matches the unchanged index row.
@@ -319,6 +374,7 @@ export class SourceService {
     const row = this.getRow(id);
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM sources WHERE id = ?').run(id);
+      this.searchIndex.remove(id);
       this.sourceFiles.remove(row.file_path);
     })();
   }
