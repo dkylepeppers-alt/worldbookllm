@@ -38,6 +38,8 @@ test('M1 walking skeleton', async ({ page }) => {
     await page.getByRole('button', { name: 'Paste source' }).click();
     await page.getByLabel('Source title').fill(SOURCE_TITLE);
     await page.getByLabel('Markdown content').fill(SOURCE_SENTENCE);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Review pasted source' })).toBeVisible();
     await page.getByRole('button', { name: 'Save source' }).click();
     await page.getByRole('link', { name: SOURCE_TITLE }).click();
     await expect(page.getByRole('region', { name: 'Reader' })).toContainText(SOURCE_SENTENCE);

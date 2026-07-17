@@ -60,6 +60,8 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Status (2026-07-17):** complete. Categories and tags persist in frontmatter (files stay the source of truth, reconciled on read), full-text search runs on a standalone FTS5 index kept in sync by the source services (ADR 0012), the source browser filters/searches/sorts with ranked excerpts, and the chat source selector supports search plus "Select results". Stub-provider E2E coverage in `apps/e2e/tests/organization.spec.ts`.
 
+**Later enhancement (2026-07-17):** new-source review flows now use the notebook's configured model to suggest an editable canonical category and tags. Suggestions are transient and failure-tolerant; accepted metadata still persists through Markdown frontmatter.
+
 **Scope:**
 
 - Source categories (characters, places, factions, timelines, lore, rules, style, plot, research, misc) and free-form tags
