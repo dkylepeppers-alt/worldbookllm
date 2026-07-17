@@ -420,9 +420,16 @@ describe('notebook source workspace', () => {
       'lore',
     );
     await user.type(screen.getByRole('textbox', { name: 'Tags for Source 1' }), 'atlas, archive');
-    await user.click(screen.getByRole('button', { name: 'Save 1 source' }));
 
+    // "Suggest again" re-checks the bounds instead of spending a request
+    // that the server would reject.
+    await user.click(screen.getByRole('button', { name: 'Suggest again' }));
     expect(suggestSourceOrganization).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Couldn't suggest organization. You can choose it manually."),
+    ).toBeDefined();
+
+    await user.click(screen.getByRole('button', { name: 'Save 1 source' }));
     await waitFor(() =>
       expect(createSources).toHaveBeenCalledWith(notebook.id, [
         {
@@ -435,6 +442,113 @@ describe('notebook source workspace', () => {
         },
       ]),
     );
+  });
+
+  it('does not reclassify a pasted source when returning to the review step', async () => {
+    const suggestSourceOrganization = vi.fn().mockResolvedValue({
+      suggestions: [{ index: 0, category: 'places', tags: ['glass-marsh'] }],
+      warning: null,
+    });
+    renderPath(`/notebooks/${notebook.id}`, {
+      listSources: () => Promise.resolve([]),
+      suggestSourceOrganization,
+    });
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Paste source' }));
+    await user.type(screen.getByRole('textbox', { name: 'Source title' }), source.title);
+    await user.type(screen.getByRole('textbox', { name: 'Markdown content' }), '# Marsh lore');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    const tags = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Tags' });
+    await waitFor(() => expect(tags.value).toBe('glass-marsh'));
+
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Review pasted source' })).toBeDefined();
+    // Reclassification stays behind the explicit action; Back → Continue is
+    // not a request for another provider call.
+    expect(suggestSourceOrganization).toHaveBeenCalledTimes(1);
+    expect(tags.value).toBe('glass-marsh');
+  });
+
+  it('rejects whitespace-only pasted content before requesting suggestions', async () => {
+    const suggestSourceOrganization = vi.fn();
+    renderPath(`/notebooks/${notebook.id}`, {
+      listSources: () => Promise.resolve([]),
+      suggestSourceOrganization,
+    });
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Paste source' }));
+    await user.type(screen.getByRole('textbox', { name: 'Source title' }), source.title);
+    await user.type(screen.getByRole('textbox', { name: 'Markdown content' }), '   ');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Paste Markdown content.');
+    expect(screen.getByRole('dialog', { name: 'Paste a Markdown source' })).toBeDefined();
+    expect(suggestSourceOrganization).not.toHaveBeenCalled();
+  });
+
+  it('keeps other entries’ manual edits when suggesting again for one entry', async () => {
+    const previewFileImport = vi.fn().mockResolvedValue({
+      format: 'lorebook',
+      origin: { type: 'file', fileName: 'atlas.json', mediaType: 'application/json' },
+      entries: [
+        { title: 'Amber Court', markdown: 'Amber lore.' },
+        { title: 'Glass Marsh', markdown: 'Marsh lore.' },
+      ],
+      conversionNotes: [],
+    });
+    const suggestSourceOrganization = vi
+      .fn()
+      .mockResolvedValueOnce({
+        suggestions: [
+          { index: 0, category: 'factions', tags: ['amber-court'] },
+          { index: 1, category: 'places', tags: ['glass-marsh'] },
+        ],
+        warning: null,
+      })
+      .mockResolvedValueOnce({
+        suggestions: [
+          { index: 0, category: 'lore', tags: ['amber-history'] },
+          { index: 1, category: 'places', tags: ['tide-cycles'] },
+        ],
+        warning: null,
+      });
+    const { container } = renderPath(`/notebooks/${notebook.id}`, {
+      listSources: () => Promise.resolve([]),
+      previewFileImport,
+      suggestSourceOrganization,
+    });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Import file' }));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (fileInput === null) throw new Error('file input not found');
+    await user.upload(
+      fileInput,
+      new File(['{"entries":{}}'], 'atlas.json', { type: 'application/json' }),
+    );
+    const firstTags = await screen.findByRole<HTMLInputElement>('textbox', {
+      name: 'Tags for Source 1',
+    });
+    await waitFor(() => expect(firstTags.value).toBe('amber-court'));
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Category for Source 1' }),
+      'rules',
+    );
+    const suggestButtons = screen.getAllByRole('button', { name: 'Suggest again' });
+    await user.click(suggestButtons[1] as HTMLElement);
+
+    const secondTags = screen.getByRole<HTMLInputElement>('textbox', { name: 'Tags for Source 2' });
+    await waitFor(() => expect(secondTags.value).toBe('tide-cycles'));
+    // Source 1 was manually edited, so retrying Source 2 leaves it alone.
+    expect(
+      screen.getByRole<HTMLSelectElement>('combobox', { name: 'Category for Source 1' }).value,
+    ).toBe('rules');
+    expect(firstTags.value).toBe('amber-court');
   });
 
   it('closes the chat tab when navigating to a reader route', async () => {

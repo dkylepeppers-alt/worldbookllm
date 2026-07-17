@@ -35,7 +35,7 @@ export function SourcePasteDialog({ onClose }: SourcePasteDialogProps) {
       setError('Enter a source title.');
       return false;
     }
-    if (content.length === 0) {
+    if (content.trim().length === 0) {
       setError('Paste Markdown content.');
       return false;
     }
@@ -54,6 +54,10 @@ export function SourcePasteDialog({ onClose }: SourcePasteDialogProps) {
     event.preventDefault();
     if (!validateDraft()) return;
     setStep('review');
+    // Classify automatically only on the first visit to the review step;
+    // re-entering via Back → Continue keeps reclassification behind the
+    // explicit "Suggest again" action instead of spending provider calls.
+    if (organization.response !== null || organization.loading) return;
     void organization.suggest([{ index: 0, title: title.trim(), content }]).then(applySuggestion);
   }
 

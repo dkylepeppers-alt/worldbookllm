@@ -43,6 +43,21 @@ describe('source organization prompt and parsing', () => {
     });
   });
 
+  it('warns when a row loses every generated tag to normalization', () => {
+    const result = parseSourceOrganizationCompletion(
+      '{"suggestions":[{"index":0,"category":"factions","tags":["bad,tag",7]},{"index":3,"category":"places","tags":["tides"]}]}',
+      drafts,
+      [],
+    );
+    expect(result).toEqual({
+      suggestions: [
+        { index: 0, category: 'factions', tags: [] },
+        { index: 3, category: 'places', tags: ['tides'] },
+      ],
+      warning: SOURCE_ORGANIZATION_WARNING,
+    });
+  });
+
   it('blanks ambiguous and missing indices while preserving valid siblings', () => {
     const result = parseSourceOrganizationCompletion(
       '{"suggestions":[{"index":0,"category":"factions","tags":[]},{"index":0,"category":"lore","tags":[]}]}',

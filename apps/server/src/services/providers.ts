@@ -135,6 +135,14 @@ export class ProviderService {
         extra: config.extra,
         temperature: options.temperature,
         maxTokens: options.maxTokens,
+        // Internal completions never want reasoning, but the Google builder
+        // treats an omitted effort as 'auto' (dynamic thinking on Gemini
+        // 2.5+), which can burn the small output budget before any JSON is
+        // emitted. 'min' pins Google to its smallest budget; other sources
+        // stay untouched because 'min' would *enable* thinking on Claude.
+        ...(config.source === 'makersuite' || config.source === 'vertexai'
+          ? { reasoningEffort: 'min' as const }
+          : {}),
       });
     } catch (error) {
       if (error instanceof ProviderError) throw new ConfigurationError(error.message);

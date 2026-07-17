@@ -51,4 +51,36 @@ describe('useSourceOrganization', () => {
     unmount();
     expect(pendingSignal?.aborted).toBe(true);
   });
+
+  it('resolves a superseded call to null even when its api promise still fulfills', async () => {
+    // An injected client that ignores the abort signal must not let the
+    // older call hand a stale suggestion back to its caller.
+    const resolvers: Array<(value: SourceOrganizationResponse) => void> = [];
+    const suggestSourceOrganization = vi.fn(
+      () => new Promise<SourceOrganizationResponse>((resolve) => resolvers.push(resolve)),
+    );
+    const { result } = renderHook(() => useSourceOrganization(notebook.id), {
+      wrapper: apiWrapper(createTestClient({ suggestSourceOrganization })),
+    });
+    let stale: Promise<SourceOrganizationResponse | null> | undefined;
+    act(() => {
+      stale = result.current.suggest([{ index: 0, title: 'First', content: 'One' }]);
+    });
+    act(() => void result.current.suggest([{ index: 0, title: 'Second', content: 'Two' }]));
+    await act(async () =>
+      resolvers[0]?.({
+        suggestions: [{ index: 0, category: 'misc', tags: ['first'] }],
+        warning: null,
+      }),
+    );
+    await expect(stale).resolves.toBeNull();
+    expect(result.current.response).toBeNull();
+    await act(async () =>
+      resolvers[1]?.({
+        suggestions: [{ index: 0, category: 'lore', tags: ['second'] }],
+        warning: null,
+      }),
+    );
+    expect(result.current.response?.suggestions[0]?.tags).toEqual(['second']);
+  });
 });

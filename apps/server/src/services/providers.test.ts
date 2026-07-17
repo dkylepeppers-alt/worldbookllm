@@ -130,6 +130,34 @@ describe('ProviderService', () => {
     );
   });
 
+  it('pins Google internal completions to the minimum reasoning effort', async () => {
+    const secrets = store();
+    secrets.add('api_key_makersuite', 'google-key', 'Primary');
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: '{"suggestions":[]}' }] } }],
+        }),
+      ),
+    );
+    const service = new ProviderService(secrets, new ProviderHttpClient(fetchImpl));
+
+    await expect(
+      service.completeChat(
+        { source: 'makersuite', model: 'gemini-2.5-flash' },
+        [{ role: 'user', content: 'Classify this source.' }],
+        { temperature: 0, maxTokens: 512 },
+      ),
+    ).resolves.toBe('{"suggestions":[]}');
+
+    // Without an explicit effort the Google builder falls back to 'auto'
+    // (thinkingBudget -1: dynamic thinking); 'min' turns it off entirely.
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ body: expect.stringContaining('"thinkingBudget":0') }),
+    );
+  });
+
   it('builds generation requests using the active key', () => {
     const secrets = store();
     secrets.add('api_key_nanogpt', 'generation-key', 'Primary');

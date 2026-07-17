@@ -129,24 +129,20 @@ describe('server data API', () => {
 
   it('suggests source organization through the notebook provider', async () => {
     await app.close();
-    app = buildApp({
-      dataDir,
-      logger: false,
-      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content:
-                    '{"suggestions":[{"index":0,"category":"places","tags":["glass-marsh"]}]}',
-                },
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: '{"suggestions":[{"index":0,"category":"places","tags":["glass-marsh"]}]}',
               },
-            ],
-          }),
-        ),
+            },
+          ],
+        }),
       ),
-    });
+    );
+    app = buildApp({ dataDir, logger: false, fetchImpl });
     const notebook = await createNotebook();
     await app.inject({
       method: 'PATCH',
@@ -155,6 +151,7 @@ describe('server data API', () => {
         settings: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
       },
     });
+    const suggest = vi.spyOn(app.services.sourceOrganization, 'suggest');
     const response = await app.inject({
       method: 'POST',
       url: `/api/notebooks/${notebook.id}/source-organization-suggestions`,
@@ -165,6 +162,13 @@ describe('server data API', () => {
       suggestions: [{ index: 0, category: 'places', tags: ['glass-marsh'] }],
       warning: null,
     });
+    // The route binds the client connection to an abort signal so a
+    // disconnect cancels the in-flight provider completion.
+    expect(suggest).toHaveBeenCalledWith(
+      notebook.id,
+      [{ index: 0, title: 'Glass Marsh', content: 'A tidal wetland.' }],
+      expect.any(AbortSignal),
+    );
   });
 
   it('returns safe blanks without a configured provider and validates request bounds', async () => {
