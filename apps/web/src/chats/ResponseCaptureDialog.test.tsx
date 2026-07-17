@@ -99,20 +99,48 @@ describe('ResponseCaptureDialog', () => {
   });
 
   it('saves exact edits with assistant provenance, closes, and navigates to the source', async () => {
+    const suggestSourceOrganization = vi.fn().mockResolvedValue({
+      suggestions: [{ index: 0, category: 'lore', tags: ['brass-coast'] }],
+      warning: null,
+    });
     const createSource = vi.fn().mockResolvedValue(created);
     const onClose = vi.fn();
-    const { addSource, setLastSourceId } = renderDialog({ createSource }, message, onClose);
+    const { addSource, setLastSourceId } = renderDialog(
+      { createSource, suggestSourceOrganization },
+      message,
+      onClose,
+    );
     const user = userEvent.setup();
+    await waitFor(() =>
+      expect(suggestSourceOrganization).toHaveBeenCalledWith(
+        notebook.id,
+        {
+          drafts: [
+            {
+              index: 0,
+              title: 'The Brass Coast',
+              content: message.content,
+            },
+          ],
+        },
+        expect.any(AbortSignal),
+      ),
+    );
     await user.clear(screen.getByLabelText('Source title'));
     await user.type(screen.getByLabelText('Source title'), '  Edited title  ');
     await user.clear(screen.getByLabelText('Markdown content'));
     await user.type(screen.getByLabelText('Markdown content'), 'Edited **Markdown**.');
+    await user.selectOptions(screen.getByLabelText('Category'), 'places');
+    await user.clear(screen.getByLabelText('Tags'));
+    await user.type(screen.getByLabelText('Tags'), 'brass-coast, coastline');
     await user.click(screen.getByRole('button', { name: 'Save source' }));
 
     await waitFor(() =>
       expect(createSource).toHaveBeenCalledWith(notebook.id, {
         title: 'Edited title',
         content: 'Edited **Markdown**.',
+        category: 'places',
+        tags: ['brass-coast', 'coastline'],
         origin: { type: 'assistant-response', chatId: message.chatId, messageId: message.id },
         conversionNotes: [],
       }),
@@ -122,6 +150,34 @@ describe('ResponseCaptureDialog', () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(screen.getByTestId('location').textContent).toBe(
       `/notebooks/${notebook.id}/sources/${created.id}`,
+    );
+  });
+
+  it('protects manual organization edits from a late suggestion', async () => {
+    let resolveSuggestion!: (value: {
+      suggestions: { index: number; category: 'lore'; tags: string[] }[];
+      warning: null;
+    }) => void;
+    const suggestSourceOrganization = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveSuggestion = resolve;
+      }),
+    );
+    renderDialog({ suggestSourceOrganization });
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(suggestSourceOrganization).toHaveBeenCalledOnce());
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save source' });
+    expect(save.disabled).toBe(true);
+    await user.selectOptions(screen.getByLabelText('Category'), 'misc');
+    resolveSuggestion({
+      suggestions: [{ index: 0, category: 'lore', tags: ['brass-coast'] }],
+      warning: null,
+    });
+
+    await waitFor(() => expect(save.disabled).toBe(false));
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Category' }).value).toBe(
+      'misc',
     );
   });
 

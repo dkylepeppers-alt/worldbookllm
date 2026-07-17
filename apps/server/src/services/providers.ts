@@ -117,6 +117,33 @@ export class ProviderService {
     return { ok: true, detail: 'Completion endpoint reachable' };
   }
 
+  async completeChat(
+    config: ProviderConfig,
+    messages: ChatMessage[],
+    options: { temperature: number; maxTokens: number },
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const apiKey = this.requireApiKey(config);
+    let request: ProviderChatRequest;
+    try {
+      request = buildChatRequest(config.source, {
+        model: config.model,
+        messages,
+        stream: false,
+        apiKey,
+        baseUrl: config.baseUrl,
+        extra: config.extra,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+      });
+    } catch (error) {
+      if (error instanceof ProviderError) throw new ConfigurationError(error.message);
+      throw error;
+    }
+    const data = await this.http.fetchJson(config.source, request, signal);
+    return parseCompletionResponse(config.source, data).text;
+  }
+
   createChatRequest(
     config: ProviderConfig,
     messages: ChatMessage[],

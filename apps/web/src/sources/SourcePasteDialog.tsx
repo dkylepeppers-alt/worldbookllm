@@ -1,3 +1,4 @@
+import type { SourceCategory } from '@worldbookllm/shared';
 import { type FormEvent, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -5,6 +6,8 @@ import { useApi } from '../api/useApi.js';
 import { ApiClientError } from '../api/client.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
+import { SourceOrganizationFields } from './SourceOrganizationFields.js';
+import { useSourceOrganization } from './useSourceOrganization.js';
 
 interface SourcePasteDialogProps {
   onClose: () => void;
@@ -14,28 +17,65 @@ export function SourcePasteDialog({ onClose }: SourcePasteDialogProps) {
   const api = useApi();
   const navigate = useNavigate();
   const { notebookId, addSource, setLastSourceId } = useNotebookWorkspace();
+  const organization = useSourceOrganization(notebookId);
+  const [step, setStep] = useState<'draft' | 'review'>('draft');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [category, setCategory] = useState<SourceCategory | null>(null);
+  const [tags, setTags] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const organizationTouched = useRef(false);
   const titleRef = useRef<HTMLInputElement>(null);
 
   useDialogLifecycle(titleRef, onClose);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function validateDraft() {
     if (title.trim().length === 0) {
       setError('Enter a source title.');
-      return;
+      return false;
     }
     if (content.length === 0) {
       setError('Paste Markdown content.');
-      return;
+      return false;
     }
-    setSaving(true);
     setError(null);
+    return true;
+  }
+
+  function applySuggestion(result: Awaited<ReturnType<typeof organization.suggest>>) {
+    if (result === null || organizationTouched.current) return;
+    const suggestion = result.suggestions.find((item) => item.index === 0);
+    setCategory(suggestion?.category ?? null);
+    setTags(suggestion?.tags.join(', ') ?? '');
+  }
+
+  function continueToReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!validateDraft()) return;
+    setStep('review');
+    void organization.suggest([{ index: 0, title: title.trim(), content }]).then(applySuggestion);
+  }
+
+  function suggestAgain() {
+    organizationTouched.current = false;
+    void organization.suggest([{ index: 0, title: title.trim(), content }]).then(applySuggestion);
+  }
+
+  async function saveSource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!validateDraft()) return;
+    setSaving(true);
     try {
-      const created = await api.createSource(notebookId, { title: title.trim(), content });
+      const created = await api.createSource(notebookId, {
+        title: title.trim(),
+        content,
+        category,
+        tags: tags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter((tag) => tag !== ''),
+      });
       addSource(created);
       setLastSourceId(created.id);
       await navigate(`/notebooks/${notebookId}/sources/${created.id}`);
@@ -56,8 +96,14 @@ export function SourcePasteDialog({ onClose }: SourcePasteDialogProps) {
         aria-labelledby="paste-source-title"
       >
         <p className="coordinate-label">New source · paste origin</p>
-        <h2 id="paste-source-title">Paste a Markdown source</h2>
-        <form onSubmit={(event) => void handleSubmit(event)}>
+        <h2 id="paste-source-title">
+          {step === 'draft' ? 'Paste a Markdown source' : 'Review pasted source'}
+        </h2>
+        <form
+          onSubmit={(event) =>
+            step === 'draft' ? continueToReview(event) : void saveSource(event)
+          }
+        >
           <label htmlFor="source-title">Source title</label>
           <input
             ref={titleRef}
@@ -74,13 +120,47 @@ export function SourcePasteDialog({ onClose }: SourcePasteDialogProps) {
             value={content}
             onChange={(event) => setContent(event.target.value)}
           />
+          {step === 'review' ? (
+            <SourceOrganizationFields
+              idPrefix="pasted-source"
+              category={category}
+              tags={tags}
+              loading={organization.loading}
+              warning={organization.response?.warning ?? null}
+              disabled={saving}
+              onCategoryChange={(value) => {
+                organizationTouched.current = true;
+                setCategory(value);
+              }}
+              onTagsChange={(value) => {
+                organizationTouched.current = true;
+                setTags(value);
+              }}
+              onSuggestAgain={suggestAgain}
+            />
+          ) : null}
           {error === null ? null : <p role="alert">{error}</p>}
           <div className="dialog-actions">
-            <button type="button" className="button-secondary" onClick={onClose}>
-              Cancel
-            </button>
-            <button type="submit" className="button-primary" disabled={saving}>
-              {saving ? 'Saving…' : 'Save source'}
+            {step === 'draft' ? (
+              <button type="button" className="button-secondary" onClick={onClose}>
+                Cancel
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={saving}
+                onClick={() => setStep('draft')}
+              >
+                Back
+              </button>
+            )}
+            <button
+              type="submit"
+              className="button-primary"
+              disabled={step === 'review' && (organization.loading || saving)}
+            >
+              {step === 'draft' ? 'Continue' : saving ? 'Saving…' : 'Save source'}
             </button>
           </div>
         </form>

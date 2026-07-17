@@ -17,6 +17,11 @@ import {
   sourceMetadataListSchema,
   sourceOriginSchema,
 } from './index.js';
+import {
+  SOURCE_ORGANIZATION_MAX_CONTENT,
+  sourceOrganizationRequestSchema,
+  sourceOrganizationResponseSchema,
+} from './sources.js';
 
 describe('data API schemas', () => {
   it('coalesces only adjacent canonical messages with the same role without mutating input', () => {
@@ -261,5 +266,75 @@ describe('data API schemas', () => {
       }),
     ).toBeTruthy();
     expect(() => createSecretSchema.parse({ key: '../bad', value: 'secret' })).toThrow();
+  });
+});
+
+describe('source organization schemas', () => {
+  it('accepts indexed drafts and canonical suggestions', () => {
+    expect(
+      sourceOrganizationRequestSchema.parse({
+        drafts: [
+          { index: 0, title: 'Iron Compact', content: 'A trade league.' },
+          { index: 7, title: 'Glass Marsh', content: 'A tidal wetland.' },
+        ],
+      }),
+    ).toEqual({
+      drafts: [
+        { index: 0, title: 'Iron Compact', content: 'A trade league.' },
+        { index: 7, title: 'Glass Marsh', content: 'A tidal wetland.' },
+      ],
+    });
+
+    expect(
+      sourceOrganizationResponseSchema.parse({
+        suggestions: [{ index: 0, category: 'factions', tags: ['iron-compact', 'trade-league'] }],
+        warning: null,
+      }),
+    ).toEqual({
+      suggestions: [{ index: 0, category: 'factions', tags: ['iron-compact', 'trade-league'] }],
+      warning: null,
+    });
+  });
+
+  it('rejects duplicate indices, oversized batches, and oversized cumulative content', () => {
+    expect(() =>
+      sourceOrganizationRequestSchema.parse({
+        drafts: [
+          { index: 0, title: 'One', content: 'One' },
+          { index: 0, title: 'Two', content: 'Two' },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      sourceOrganizationRequestSchema.parse({
+        drafts: Array.from({ length: 101 }, (_, index) => ({
+          index,
+          title: `Source ${index}`,
+          content: 'Body',
+        })),
+      }),
+    ).toThrow();
+    expect(() =>
+      sourceOrganizationRequestSchema.parse({
+        drafts: [
+          { index: 0, title: 'Large', content: 'x'.repeat(SOURCE_ORGANIZATION_MAX_CONTENT + 1) },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it('rejects noncanonical categories and more than five suggested tags', () => {
+    expect(() =>
+      sourceOrganizationResponseSchema.parse({
+        suggestions: [{ index: 0, category: 'ships', tags: [] }],
+        warning: null,
+      }),
+    ).toThrow();
+    expect(() =>
+      sourceOrganizationResponseSchema.parse({
+        suggestions: [{ index: 0, category: null, tags: ['a', 'b', 'c', 'd', 'e', 'f'] }],
+        warning: null,
+      }),
+    ).toThrow();
   });
 });

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const sourceTitleSchema = z.string().trim().min(1).max(300);
+export const sourceTitleSchema = z.string().trim().min(1).max(300);
 
 /** Canonical source categories (M3). The UI derives its pickers from this list. */
 export const SOURCE_CATEGORIES = [
@@ -29,6 +29,54 @@ export const sourceTagsSchema = z
       .refine((tag) => !tag.includes(','), { message: 'Tags cannot contain commas' }),
   )
   .max(20);
+
+export const SOURCE_ORGANIZATION_MAX_DRAFTS = 100;
+export const SOURCE_ORGANIZATION_MAX_CONTENT = 500_000;
+
+export const sourceOrganizationDraftSchema = z.strictObject({
+  index: z.number().int().nonnegative(),
+  title: sourceTitleSchema,
+  content: z.string().min(1).max(10_485_760),
+});
+
+export const sourceOrganizationRequestSchema = z
+  .strictObject({
+    drafts: z.array(sourceOrganizationDraftSchema).min(1).max(SOURCE_ORGANIZATION_MAX_DRAFTS),
+  })
+  .superRefine(({ drafts }, context) => {
+    const seen = new Set<number>();
+    for (const draft of drafts) {
+      if (seen.has(draft.index)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['drafts'],
+          message: 'Draft indices must be unique',
+        });
+      }
+      seen.add(draft.index);
+    }
+    if (
+      drafts.reduce((total, draft) => total + draft.content.length, 0) >
+      SOURCE_ORGANIZATION_MAX_CONTENT
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['drafts'],
+        message: `Draft content cannot exceed ${SOURCE_ORGANIZATION_MAX_CONTENT} characters`,
+      });
+    }
+  });
+
+export const sourceOrganizationSuggestionSchema = z.strictObject({
+  index: z.number().int().nonnegative(),
+  category: sourceCategorySchema.nullable(),
+  tags: sourceTagsSchema.max(5),
+});
+
+export const sourceOrganizationResponseSchema = z.strictObject({
+  suggestions: z.array(sourceOrganizationSuggestionSchema),
+  warning: z.string().min(1).nullable(),
+});
 
 export const sourceOriginSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('paste') }),
@@ -136,6 +184,10 @@ export const sourcePreviewSchema = z.strictObject({
 
 export type SourceOrigin = z.infer<typeof sourceOriginSchema>;
 export type SourceCategory = z.infer<typeof sourceCategorySchema>;
+export type SourceOrganizationDraft = z.infer<typeof sourceOrganizationDraftSchema>;
+export type SourceOrganizationRequest = z.infer<typeof sourceOrganizationRequestSchema>;
+export type SourceOrganizationSuggestion = z.infer<typeof sourceOrganizationSuggestionSchema>;
+export type SourceOrganizationResponse = z.infer<typeof sourceOrganizationResponseSchema>;
 export type SourceSearchQuery = z.infer<typeof sourceSearchQuerySchema>;
 export type SourceSearchResult = z.infer<typeof sourceSearchResultSchema>;
 export type SourceMetadata = z.infer<typeof sourceMetadataSchema>;

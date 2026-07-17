@@ -22,6 +22,7 @@ import {
   sourceDetailSchema,
   sourceMetadataListSchema,
   sourceMetadataSchema,
+  sourceOrganizationResponseSchema,
   sourcePreviewSchema,
   sourceSearchResultListSchema,
   type ApiErrorIssue,
@@ -53,6 +54,8 @@ import {
   type StarterSkill,
   type SourceDetail,
   type SourceMetadata,
+  type SourceOrganizationRequest,
+  type SourceOrganizationResponse,
   type SourcePreview,
   type SourceSearchResult,
   type StreamEvent,
@@ -95,6 +98,11 @@ export interface ApiClient {
     input: CreateSourcesInput,
     signal?: AbortSignal,
   ): Promise<SourceMetadata[]>;
+  suggestSourceOrganization(
+    notebookId: string,
+    input: SourceOrganizationRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceOrganizationResponse>;
   previewFileImport(notebookId: string, file: File, signal?: AbortSignal): Promise<SourcePreview>;
   getSource(id: string, signal?: AbortSignal): Promise<SourceDetail>;
   updateSource(id: string, input: PatchSource, signal?: AbortSignal): Promise<SourceDetail>;
@@ -244,6 +252,13 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         method: 'POST',
         body: input,
         schema: sourceMetadataListSchema,
+        signal,
+      }),
+    suggestSourceOrganization: (notebookId, input, signal) =>
+      request(`/api/notebooks/${encodeURIComponent(notebookId)}/source-organization-suggestions`, {
+        method: 'POST',
+        body: input,
+        schema: sourceOrganizationResponseSchema,
         signal,
       }),
     previewFileImport: (notebookId, file, signal) => {

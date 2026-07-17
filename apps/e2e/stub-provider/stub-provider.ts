@@ -3,6 +3,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 export const STUB_MODEL_ID = 'stub-model';
 export const STUB_MODEL_NAME = 'Stub Model';
 export const STUB_REPLY = 'Stub reply: the word is brass.';
+export const STUB_ORGANIZATION_REPLY = JSON.stringify({
+  suggestions: [
+    { index: 0, category: 'factions', tags: ['iron-compact', 'smugglers'] },
+    { index: 1, category: 'places', tags: ['glass-marsh', 'tides'] },
+  ],
+});
 
 // A message containing this marker switches the stream to a slow drip so a
 // test can exercise stop/abort behavior before the stream finishes.
@@ -67,7 +73,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       choices: [
         {
           index: 0,
-          message: { role: 'assistant', content: STUB_REPLY },
+          message: {
+            role: 'assistant',
+            content: isOrganizationRequest(body) ? STUB_ORGANIZATION_REPLY : STUB_REPLY,
+          },
           finish_reason: 'stop',
         },
       ],
@@ -75,6 +84,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return;
   }
   json(res, 404, { error: { message: `no stub route for ${req.method ?? ''} ${path}` } });
+}
+
+function isOrganizationRequest(body: ChatCompletionRequest): boolean {
+  return JSON.stringify(body.messages ?? []).includes('Allowed categories: characters');
 }
 
 function wantsSlowStream(body: ChatCompletionRequest): boolean {

@@ -22,6 +22,8 @@ test('M1 walking skeleton against live NanoGPT', async ({ page }) => {
     await page.getByRole('button', { name: 'Paste source' }).click();
     await page.getByLabel('Source title').fill('Smoke notes');
     await page.getByLabel('Markdown content').fill('The required reply word is brass.');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Review pasted source' })).toBeVisible();
     await page.getByRole('button', { name: 'Save source' }).click();
     await expect(page.getByRole('link', { name: 'Smoke notes' })).toBeVisible();
   });

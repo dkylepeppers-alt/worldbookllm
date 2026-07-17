@@ -65,6 +65,8 @@ test('M6 skills library, chat attachment, and inspector journey', async ({ page 
     await page.getByRole('button', { name: 'Paste source' }).click();
     await page.getByLabel('Source title').fill(SOURCE_TITLE);
     await page.getByLabel('Markdown content').fill(SOURCE_CONTENT);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Review pasted source' })).toBeVisible();
     await page.getByRole('button', { name: 'Save source' }).click();
     await expect(page.getByRole('link', { name: SOURCE_TITLE })).toBeVisible();
 
