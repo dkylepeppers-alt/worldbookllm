@@ -151,6 +151,10 @@ export class SourceService {
           });
         }
       } catch (error) {
+        // A file that cannot be read or validated must not keep serving
+        // search hits from its old content; a later successful read (or the
+        // next startup) reindexes it.
+        this.searchIndex.remove(row.id);
         onError?.(row.id, error);
       }
     }

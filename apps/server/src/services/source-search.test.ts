@@ -180,15 +180,18 @@ describe('SourceService.ensureSearchIndex', () => {
     db.close();
   });
 
-  it('backfills rows missing from the index and skips unreadable files', () => {
+  it('backfills missing entries and drops entries whose files became unreadable', () => {
     const { db, files, sources, notebook } = setup();
     const kept = sources.create(notebook.id, { title: 'Kept', content: 'Indexed normally.' });
     const stale = sources.create(notebook.id, { title: 'Stale', content: 'Missing from index.' });
     const broken = sources.create(notebook.id, { title: 'Broken', content: 'File vanishes.' });
+    // Still indexed, but its file disappeared while the app was closed.
+    const ghost = sources.create(notebook.id, { title: 'Ghost', content: 'Haunting text.' });
 
     // Simulate a pre-M3 database: rows exist but the index entries do not.
     db.prepare('DELETE FROM source_search WHERE source_id IN (?, ?)').run(stale.id, broken.id);
     files.remove(broken.filePath);
+    files.remove(ghost.filePath);
     expect(sources.search(notebook.id, 'missing')).toEqual([]);
 
     const failures: string[] = [];
@@ -196,7 +199,9 @@ describe('SourceService.ensureSearchIndex', () => {
 
     expect(sources.search(notebook.id, 'missing').map((result) => result.id)).toEqual([stale.id]);
     expect(sources.search(notebook.id, 'indexed').map((result) => result.id)).toEqual([kept.id]);
-    expect(failures).toEqual([broken.id]);
+    // The ghost's old content no longer serves search hits.
+    expect(sources.search(notebook.id, 'haunting')).toEqual([]);
+    expect(failures.sort()).toEqual([broken.id, ghost.id].sort());
     db.close();
   });
 });

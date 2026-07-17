@@ -44,7 +44,11 @@ export function SourceSelector({
   const debouncedQuery = useDebouncedValue(query.trim(), 250);
 
   useEffect(() => {
-    if (debouncedQuery === '') return;
+    // Depending on sourcesState re-runs the active search after any source
+    // mutation, so the narrowed checkbox list tracks the collection. (The
+    // visible list already intersects results with the fresh sources, so
+    // deleted hits drop out even before the refreshed search lands.)
+    if (debouncedQuery === '' || sourcesState.status !== 'ready') return;
     const controller = new AbortController();
     api
       .searchSources(notebookId, debouncedQuery, controller.signal)
@@ -53,7 +57,7 @@ export function SourceSelector({
         if (!controller.signal.aborted) setCompleted({ query: debouncedQuery, results: null });
       });
     return () => controller.abort();
-  }, [api, notebookId, debouncedQuery]);
+  }, [api, notebookId, debouncedQuery, sourcesState]);
 
   if (sourcesState.status !== 'ready') return null;
   const sources = sourcesState.sources;

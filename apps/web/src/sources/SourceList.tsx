@@ -86,7 +86,10 @@ export function SourceList() {
   const debouncedQuery = useDebouncedValue(query.trim(), 250);
 
   useEffect(() => {
-    if (debouncedQuery === '') return;
+    // Depending on sourcesState re-runs the active search after any source
+    // mutation (edit, delete, import), so results and excerpts track the
+    // collection instead of going stale until the query changes.
+    if (debouncedQuery === '' || sourcesState.status !== 'ready') return;
     const controller = new AbortController();
     api
       .searchSources(notebookId, debouncedQuery, controller.signal)
@@ -95,7 +98,7 @@ export function SourceList() {
         if (!controller.signal.aborted) setCompleted({ query: debouncedQuery, results: null });
       });
     return () => controller.abort();
-  }, [api, notebookId, debouncedQuery]);
+  }, [api, notebookId, debouncedQuery, sourcesState]);
 
   const availableTags = useMemo(
     () =>
@@ -126,8 +129,17 @@ export function SourceList() {
   if (searching) {
     const results = searchState.status === 'ready' ? searchState.results : [];
     for (const result of results) excerpts.set(result.id, result.excerpt);
-    // Results keep the server's relevance order; filters intersect client-side.
-    visible = results.filter((result) => matchesFilters(result, category, activeTag));
+    // Results keep the server's relevance order but rows render the fresh
+    // workspace metadata (results carry a snapshot): edits show immediately
+    // and deleted sources drop out while the refreshed search is in flight.
+    // Filters intersect client-side.
+    const bySourceId = new Map(sources.map((source) => [source.id, source]));
+    visible = results
+      .flatMap((result) => {
+        const source = bySourceId.get(result.id);
+        return source === undefined ? [] : [source];
+      })
+      .filter((source) => matchesFilters(source, category, activeTag));
   } else {
     visible = sortSources(
       sources.filter((source) => matchesFilters(source, category, activeTag)),

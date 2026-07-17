@@ -145,6 +145,22 @@ describe('SourceList browsing', () => {
     expect(visibleTitles()).toEqual(['Charter', 'Marsh', 'Gossip']);
   });
 
+  it('drops search hits whose source is no longer in the workspace', async () => {
+    // A hit for a just-deleted source (the refreshed search hasn't landed
+    // yet) must not render as a broken link.
+    const deleted: SourceSearchResult = {
+      ...source('44444444-4444-4444-8444-444444444444', 'Deleted'),
+      excerpt: 'vanished content',
+    };
+    const searchSources = vi.fn(() => Promise.resolve([deleted, { ...charter, excerpt: 'kept' }]));
+    renderList([charter], { searchSources });
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText('Search'), 'vanished');
+    await waitFor(() => expect(visibleTitles()).toEqual(['Charter']));
+    expect(screen.queryByText('vanished content')).toBeNull();
+  });
+
   it('shows an empty bearing message when nothing matches', async () => {
     const searchSources = vi.fn(() => Promise.resolve([]));
     renderList([charter], { searchSources });
