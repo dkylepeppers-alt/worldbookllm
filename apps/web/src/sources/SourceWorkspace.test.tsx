@@ -1,4 +1,9 @@
-import type { Notebook, SourceDetail, SourceMetadata } from '@worldbookllm/shared';
+import {
+  SOURCE_ORGANIZATION_MAX_CONTENT,
+  type Notebook,
+  type SourceDetail,
+  type SourceMetadata,
+} from '@worldbookllm/shared';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
@@ -123,7 +128,7 @@ describe('notebook source workspace', () => {
     );
   });
 
-  it('reviews a lorebook import and saves each entry as a source', async () => {
+  it('reviews a lorebook import with automatic organization and saves each entry', async () => {
     const imported = [
       {
         ...source,
@@ -157,10 +162,18 @@ describe('notebook source workspace', () => {
       ],
       conversionNotes: ['Activation metadata omitted.'],
     });
+    const suggestSourceOrganization = vi.fn().mockResolvedValue({
+      suggestions: [
+        { index: 0, category: 'factions', tags: ['amber-court'] },
+        { index: 1, category: 'places', tags: ['glass-marsh'] },
+      ],
+      warning: null,
+    });
     const createSources = vi.fn().mockResolvedValue(imported);
     const { container } = renderPath(`/notebooks/${notebook.id}`, {
       listSources: () => Promise.resolve([]),
       previewFileImport,
+      suggestSourceOrganization,
       createSources,
     });
     const user = userEvent.setup();
@@ -173,9 +186,11 @@ describe('notebook source workspace', () => {
       new File(['{"entries":{}}'], 'atlas.json', { type: 'application/json' }),
     );
     expect(await screen.findByRole('heading', { name: 'Review import' })).toBeDefined();
+    await waitFor(() => expect(suggestSourceOrganization).toHaveBeenCalledTimes(1));
     const titles = screen.getAllByRole('textbox', { name: 'Source title' });
     await user.clear(titles[0] as HTMLInputElement);
     await user.type(titles[0] as HTMLInputElement, 'Revised Amber Court');
+    await user.type(screen.getByRole('textbox', { name: 'Tags for Source 1' }), ', trade-league');
     await user.click(screen.getByRole('button', { name: 'Save 2 sources' }));
 
     await waitFor(() =>
@@ -185,12 +200,16 @@ describe('notebook source workspace', () => {
           content: 'Amber lore.',
           origin: { type: 'file', fileName: 'atlas.json', mediaType: 'application/json' },
           conversionNotes: ['Activation metadata omitted.'],
+          category: 'factions',
+          tags: ['amber-court', 'trade-league'],
         },
         {
           title: 'Glass Marsh',
           content: 'Marsh lore.',
           origin: { type: 'file', fileName: 'atlas.json', mediaType: 'application/json' },
           conversionNotes: ['Activation metadata omitted.'],
+          category: 'places',
+          tags: ['glass-marsh'],
         },
       ]),
     );
@@ -198,6 +217,55 @@ describe('notebook source workspace', () => {
       expect(screen.getByTestId('location').textContent).toBe(
         `/notebooks/${notebook.id}/sources/${imported[1]?.id}`,
       ),
+    );
+  });
+
+  it('keeps oversized import batches manually organizable and saveable', async () => {
+    const oversizedContent = 'x'.repeat(SOURCE_ORGANIZATION_MAX_CONTENT + 1);
+    const previewFileImport = vi.fn().mockResolvedValue({
+      format: 'markdown',
+      origin: { type: 'file', fileName: 'atlas.md', mediaType: 'text/markdown' },
+      entries: [{ title: 'Oversized atlas', markdown: oversizedContent }],
+      conversionNotes: [],
+    });
+    const suggestSourceOrganization = vi.fn();
+    const createSources = vi.fn().mockResolvedValue([source]);
+    const { container } = renderPath(`/notebooks/${notebook.id}`, {
+      listSources: () => Promise.resolve([]),
+      previewFileImport,
+      suggestSourceOrganization,
+      createSources,
+    });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Import file' }));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (fileInput === null) throw new Error('file input not found');
+    await user.upload(fileInput, new File(['# Atlas'], 'atlas.md', { type: 'text/markdown' }));
+
+    expect(await screen.findByRole('heading', { name: 'Review import' })).toBeDefined();
+    expect(
+      screen.getByText("Couldn't suggest organization. You can choose it manually."),
+    ).toBeDefined();
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Category for Source 1' }),
+      'lore',
+    );
+    await user.type(screen.getByRole('textbox', { name: 'Tags for Source 1' }), 'atlas, archive');
+    await user.click(screen.getByRole('button', { name: 'Save 1 source' }));
+
+    expect(suggestSourceOrganization).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(createSources).toHaveBeenCalledWith(notebook.id, [
+        {
+          title: 'Oversized atlas',
+          content: oversizedContent,
+          origin: { type: 'file', fileName: 'atlas.md', mediaType: 'text/markdown' },
+          conversionNotes: [],
+          category: 'lore',
+          tags: ['atlas', 'archive'],
+        },
+      ]),
     );
   });
 

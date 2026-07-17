@@ -1,4 +1,10 @@
-import type { SourcePreview, SourcePreviewFormat } from '@worldbookllm/shared';
+import {
+  SOURCE_ORGANIZATION_MAX_CONTENT,
+  SOURCE_ORGANIZATION_MAX_DRAFTS,
+  type SourceCategory,
+  type SourcePreview,
+  type SourcePreviewFormat,
+} from '@worldbookllm/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -6,11 +12,21 @@ import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
+import { SourceOrganizationFields } from './SourceOrganizationFields.js';
+import { useSourceOrganization } from './useSourceOrganization.js';
 
 interface SourceImportDialogProps {
   file: File;
   onClose: () => void;
 }
+
+type OrganizedPreviewEntry = SourcePreview['entries'][number] & {
+  category: SourceCategory | null;
+  tags: string;
+  organizationTouched: boolean;
+};
+
+const ORGANIZATION_WARNING = "Couldn't suggest organization. You can choose it manually.";
 
 const FORMAT_LABELS: Record<SourcePreviewFormat, string> = {
   markdown: 'Markdown file',
@@ -26,7 +42,11 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
   const api = useApi();
   const navigate = useNavigate();
   const { notebookId, addSource, setLastSourceId } = useNotebookWorkspace();
+  const organization = useSourceOrganization(notebookId);
+  const { loading: organizationLoading, response: organizationResponse, suggest } = organization;
   const [preview, setPreview] = useState<SourcePreview | null>(null);
+  const [entries, setEntries] = useState<OrganizedPreviewEntry[]>([]);
+  const [organizationWarning, setOrganizationWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [converting, setConverting] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -45,8 +65,48 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
     api
       .previewFileImport(notebookId, file, controller.signal)
       .then((result) => {
+        const organizedEntries = result.entries.map((entry) => ({
+          ...entry,
+          category: null,
+          tags: '',
+          organizationTouched: false,
+        }));
         setPreview(result);
+        setEntries(organizedEntries);
         setModified(false);
+        const canSuggest =
+          result.entries.length <= SOURCE_ORGANIZATION_MAX_DRAFTS &&
+          result.entries.reduce((total, entry) => total + entry.markdown.length, 0) <=
+            SOURCE_ORGANIZATION_MAX_CONTENT;
+        if (!canSuggest) {
+          setOrganizationWarning(ORGANIZATION_WARNING);
+          return;
+        }
+        setOrganizationWarning(null);
+        void suggest(
+          result.entries.map((entry, index) => ({
+            index,
+            title: entry.title,
+            content: entry.markdown,
+          })),
+        ).then((resultOrganization) => {
+          if (resultOrganization === null) return;
+          setEntries((current) =>
+            current.map((entry, index) => {
+              if (entry.organizationTouched) return entry;
+              const suggestion = resultOrganization.suggestions.find(
+                (item) => item.index === index,
+              );
+              return suggestion === undefined
+                ? entry
+                : {
+                    ...entry,
+                    category: suggestion.category,
+                    tags: suggestion.tags.join(', '),
+                  };
+            }),
+          );
+        });
       })
       .catch((value: unknown) => {
         if (value instanceof DOMException && value.name === 'AbortError') return;
@@ -56,27 +116,55 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
       })
       .finally(() => setConverting(false));
     return () => controller.abort();
-  }, [api, file, notebookId]);
+  }, [api, file, notebookId, suggest]);
 
   function updateEntry(index: number, field: 'title' | 'markdown', value: string) {
-    setPreview((current) =>
-      current === null
-        ? null
-        : {
-            ...current,
-            entries: current.entries.map((entry, entryIndex) =>
-              entryIndex === index ? { ...entry, [field]: value } : entry,
-            ),
-          },
+    setEntries((current) =>
+      current.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, [field]: value } : entry,
+      ),
     );
     setModified(true);
   }
 
+  function updateOrganization(
+    index: number,
+    update: { category: SourceCategory | null } | { tags: string },
+  ) {
+    setEntries((current) =>
+      current.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, ...update, organizationTouched: true } : entry,
+      ),
+    );
+    setModified(true);
+  }
+
+  function suggestAgain() {
+    setOrganizationWarning(null);
+    void suggest(
+      entries.map((entry, index) => ({
+        index,
+        title: entry.title,
+        content: entry.markdown,
+      })),
+    ).then((result) => {
+      if (result === null) return;
+      setEntries((current) =>
+        current.map((entry, index) => {
+          const suggestion = result.suggestions.find((item) => item.index === index);
+          return {
+            ...entry,
+            category: suggestion?.category ?? null,
+            tags: suggestion?.tags.join(', ') ?? '',
+          };
+        }),
+      );
+    });
+  }
+
   async function saveImport() {
     if (preview === null) return;
-    if (
-      preview.entries.some((entry) => entry.title.trim() === '' || entry.markdown.trim() === '')
-    ) {
+    if (entries.some((entry) => entry.title.trim() === '' || entry.markdown.trim() === '')) {
       setError('Every imported source needs a title and Markdown content.');
       return;
     }
@@ -85,11 +173,16 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
     try {
       const created = await api.createSources(
         notebookId,
-        preview.entries.map((entry) => ({
+        entries.map((entry) => ({
           title: entry.title.trim(),
           content: entry.markdown,
           origin: preview.origin,
           conversionNotes: preview.conversionNotes,
+          category: entry.category,
+          tags: entry.tags
+            .split(',')
+            .map((tag) => tag.trim())
+            .filter((tag) => tag !== ''),
         })),
       );
       for (const source of created) addSource(source);
@@ -124,8 +217,8 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
         ) : (
           <>
             <p>
-              {FORMAT_LABELS[preview.format]} · {originName} · {preview.entries.length}{' '}
-              {preview.entries.length === 1 ? 'source' : 'sources'}
+              {FORMAT_LABELS[preview.format]} · {originName} · {entries.length}{' '}
+              {entries.length === 1 ? 'source' : 'sources'}
             </p>
             <ul className="conversion-notes" aria-label="Conversion notes">
               {preview.conversionNotes.map((note) => (
@@ -133,7 +226,7 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
               ))}
             </ul>
             <div className="import-entries">
-              {preview.entries.map((entry, index) => (
+              {entries.map((entry, index) => (
                 <fieldset key={index}>
                   <legend>Source {index + 1}</legend>
                   <label htmlFor={`import-source-title-${index}`}>Source title</label>
@@ -152,6 +245,18 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
                     value={entry.markdown}
                     onChange={(event) => updateEntry(index, 'markdown', event.target.value)}
                   />
+                  <SourceOrganizationFields
+                    idPrefix={`import-source-${index}`}
+                    labelSuffix={` for Source ${index + 1}`}
+                    category={entry.category}
+                    tags={entry.tags}
+                    loading={organizationLoading}
+                    warning={organizationWarning ?? organizationResponse?.warning ?? null}
+                    disabled={saving}
+                    onCategoryChange={(category) => updateOrganization(index, { category })}
+                    onTagsChange={(tags) => updateOrganization(index, { tags })}
+                    onSuggestAgain={suggestAgain}
+                  />
                 </fieldset>
               ))}
             </div>
@@ -166,12 +271,12 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
             <button
               type="button"
               className="button-primary"
-              disabled={saving}
+              disabled={organizationLoading || saving}
               onClick={() => void saveImport()}
             >
               {saving
                 ? 'Saving…'
-                : `Save ${preview.entries.length} ${preview.entries.length === 1 ? 'source' : 'sources'}`}
+                : `Save ${entries.length} ${entries.length === 1 ? 'source' : 'sources'}`}
             </button>
           )}
         </div>
