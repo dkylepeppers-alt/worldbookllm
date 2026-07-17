@@ -87,7 +87,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 }
 
 function isOrganizationRequest(body: ChatCompletionRequest): boolean {
-  return JSON.stringify(body.messages ?? []).includes('Allowed categories: characters');
+  // The opening line of the organization system prompt is this feature's
+  // stable marker; category lists and delimiters also appear elsewhere.
+  return JSON.stringify(body.messages ?? []).includes('Classify source drafts');
 }
 
 function wantsSlowStream(body: ChatCompletionRequest): boolean {

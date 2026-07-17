@@ -29,15 +29,19 @@ export function useSourceOrganization(notebookId: string) {
           { drafts },
           controller.signal,
         );
-        if (active.current?.sequence === current) setResponse(result);
+        // A superseded call must not leak its result: callers apply what
+        // `suggest` resolves with, so a stale response becomes null.
+        if (active.current?.sequence !== current) return null;
+        setResponse(result);
         return result;
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return null;
+        if (active.current?.sequence !== current) return null;
         const fallback: SourceOrganizationResponse = {
           suggestions: drafts.map(({ index }) => ({ index, category: null, tags: [] })),
           warning: "Couldn't suggest organization. You can choose it manually.",
         };
-        if (active.current?.sequence === current) setResponse(fallback);
+        setResponse(fallback);
         return fallback;
       } finally {
         if (active.current?.sequence === current) {

@@ -28,6 +28,14 @@ type OrganizedPreviewEntry = SourcePreview['entries'][number] & {
 
 const ORGANIZATION_WARNING = "Couldn't suggest organization. You can choose it manually.";
 
+function withinSuggestionBounds(entries: { markdown: string }[]): boolean {
+  return (
+    entries.length <= SOURCE_ORGANIZATION_MAX_DRAFTS &&
+    entries.reduce((total, entry) => total + entry.markdown.length, 0) <=
+      SOURCE_ORGANIZATION_MAX_CONTENT
+  );
+}
+
 const FORMAT_LABELS: Record<SourcePreviewFormat, string> = {
   markdown: 'Markdown file',
   text: 'Plain text',
@@ -74,11 +82,7 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
         setPreview(result);
         setEntries(organizedEntries);
         setModified(false);
-        const canSuggest =
-          result.entries.length <= SOURCE_ORGANIZATION_MAX_DRAFTS &&
-          result.entries.reduce((total, entry) => total + entry.markdown.length, 0) <=
-            SOURCE_ORGANIZATION_MAX_CONTENT;
-        if (!canSuggest) {
+        if (!withinSuggestionBounds(result.entries)) {
           setOrganizationWarning(ORGANIZATION_WARNING);
           return;
         }
@@ -139,8 +143,19 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
     setModified(true);
   }
 
-  function suggestAgain() {
+  function suggestAgain(retryIndex: number) {
+    if (!withinSuggestionBounds(entries)) {
+      setOrganizationWarning(ORGANIZATION_WARNING);
+      return;
+    }
     setOrganizationWarning(null);
+    // Only the retried entry gives up its manual edits; every other touched
+    // entry keeps them when the new batch of suggestions lands.
+    setEntries((current) =>
+      current.map((entry, index) =>
+        index === retryIndex ? { ...entry, organizationTouched: false } : entry,
+      ),
+    );
     void suggest(
       entries.map((entry, index) => ({
         index,
@@ -151,12 +166,15 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
       if (result === null) return;
       setEntries((current) =>
         current.map((entry, index) => {
+          if (entry.organizationTouched) return entry;
           const suggestion = result.suggestions.find((item) => item.index === index);
-          return {
-            ...entry,
-            category: suggestion?.category ?? null,
-            tags: suggestion?.tags.join(', ') ?? '',
-          };
+          return suggestion === undefined
+            ? entry
+            : {
+                ...entry,
+                category: suggestion.category,
+                tags: suggestion.tags.join(', '),
+              };
         }),
       );
     });
@@ -255,7 +273,7 @@ export function SourceImportDialog({ file, onClose }: SourceImportDialogProps) {
                     disabled={saving}
                     onCategoryChange={(category) => updateOrganization(index, { category })}
                     onTagsChange={(tags) => updateOrganization(index, { tags })}
-                    onSuggestAgain={suggestAgain}
+                    onSuggestAgain={() => suggestAgain(index)}
                   />
                 </fieldset>
               ))}

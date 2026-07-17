@@ -23,10 +23,19 @@ export function registerSourceRoutes(app: FastifyInstance): void {
     return app.services.sources.search(id, q);
   });
 
-  app.post('/api/notebooks/:id/source-organization-suggestions', async (request) => {
+  app.post('/api/notebooks/:id/source-organization-suggestions', async (request, reply) => {
     const { id } = resourceIdParamsSchema.parse(request.params);
     const { drafts } = sourceOrganizationRequestSchema.parse(request.body);
-    return app.services.sourceOrganization.suggest(id, drafts);
+    // A closed connection means nobody is waiting for the suggestion, so
+    // cancel the in-flight provider completion instead of paying for it.
+    const controller = new AbortController();
+    const onClose = () => controller.abort();
+    reply.raw.once('close', onClose);
+    try {
+      return await app.services.sourceOrganization.suggest(id, drafts, controller.signal);
+    } finally {
+      reply.raw.off('close', onClose);
+    }
   });
 
   app.post('/api/notebooks/:id/sources', async (request, reply) => {

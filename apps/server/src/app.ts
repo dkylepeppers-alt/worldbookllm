@@ -76,8 +76,19 @@ export interface BuildAppOptions {
   starterSkillsDir?: string;
 }
 
+// Shared schemas cap JSON payloads by character count, but Fastify's body
+// limit is in bytes and JSON serialization can spend up to 6 bytes per
+// character (multi-byte UTF-8, \uXXXX escapes). 64 MiB keeps the common
+// large payloads — 500k-character organization requests, a single
+// 10 MiB-character source — from being rejected with 413 before validation
+// runs; a maximal multi-source batch can still exceed it.
+const JSON_BODY_LIMIT_BYTES = 64 * 1024 * 1024;
+
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: options.logger ?? process.env.NODE_ENV !== 'test' });
+  const app = Fastify({
+    logger: options.logger ?? process.env.NODE_ENV !== 'test',
+    bodyLimit: JSON_BODY_LIMIT_BYTES,
+  });
   const dataDir = resolveDataDir(options.dataDir);
   const db = openDatabase(dataDir);
   const sourceFiles = new SourceFileStore(dataDir);

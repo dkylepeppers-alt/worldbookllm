@@ -115,8 +115,12 @@ export function parseSourceOrganizationCompletion(
       typeof row.category === 'string' && categorySet.has(row.category)
         ? (row.category as SourceCategory)
         : null;
+    const tags = normalizeTags(row.tags, existingTags);
     if (category === null || !Array.isArray(row.tags)) degraded = true;
-    return { index, category, tags: normalizeTags(row.tags, existingTags) };
+    // A row whose tags were all rejected delivered none of what was asked
+    // for, so it must not present itself as a clean result.
+    else if (row.tags.length > 0 && tags.length === 0) degraded = true;
+    return { index, category, tags };
   });
   return { suggestions, warning: degraded ? SOURCE_ORGANIZATION_WARNING : null };
 }
