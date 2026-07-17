@@ -175,9 +175,7 @@ The drafts are serialized as JSON data inside clear delimiters. The response sha
 
 ```json
 {
-  "suggestions": [
-    { "index": 0, "category": "factions", "tags": ["iron-compact"] }
-  ]
+  "suggestions": [{ "index": 0, "category": "factions", "tags": ["iron-compact"] }]
 }
 ```
 
