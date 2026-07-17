@@ -221,13 +221,17 @@ export class SourceService {
     const file = this.sourceFiles.read(row.file_path);
     this.assertFileIdentity(row, file);
 
+    // Frontmatter wins on reconciliation, but the index keeps the service's
+    // stable-casing guarantee, so hand-edited tags are normalized (the file
+    // itself is never rewritten on read).
+    const fileTags = normalizeTags(file.tags);
     if (
       file.title !== row.title ||
       file.wordCount !== row.word_count ||
       file.contentHash !== row.content_hash ||
       file.updatedAt !== row.updated_at ||
       file.category !== row.category ||
-      JSON.stringify(file.tags) !== row.tags_json
+      JSON.stringify(fileTags) !== row.tags_json
     ) {
       this.db
         .prepare(
@@ -239,7 +243,7 @@ export class SourceService {
           file.contentHash,
           file.updatedAt,
           file.category,
-          JSON.stringify(file.tags),
+          JSON.stringify(fileTags),
           id,
         );
       this.searchIndex.index({

@@ -61,10 +61,15 @@ export function SourceSelector({
   const allSelected = sources.length > 0 && selected.size === sources.length;
 
   const searching = query.trim() !== '';
-  const searchFailed = searching && completed !== null && completed.results === null;
+  // Only a completed search for the query currently in the box counts —
+  // anything else is treated as in flight, so stale results never narrow
+  // the list.
+  const current =
+    searching && completed !== null && completed.query === query.trim() ? completed : null;
+  const searchFailed = current !== null && current.results === null;
   const resultIds =
-    searching && completed !== null && completed.results !== null
-      ? new Set(completed.results.map((result) => result.id))
+    current !== null && current.results !== null
+      ? new Set(current.results.map((result) => result.id))
       : null;
   const visibleSources =
     resultIds === null

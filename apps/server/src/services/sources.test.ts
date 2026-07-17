@@ -264,7 +264,9 @@ describe('SourceService categories and tags', () => {
       tags: ['wetlands'],
     });
 
-    // Simulate a user editing the Markdown file directly: frontmatter wins.
+    // Simulate a user editing the Markdown file directly: frontmatter wins,
+    // but hand-edited tags are still normalized (lowercased, deduped) so the
+    // index keeps its stable-casing guarantee.
     files.write({
       id: created.id,
       notebookId: notebook.id,
@@ -273,7 +275,7 @@ describe('SourceService categories and tags', () => {
       origin: { type: 'paste' },
       conversionNotes: [],
       category: 'lore',
-      tags: ['wetlands', 'salt'],
+      tags: ['Wetlands', 'SALT', 'salt'],
       createdAt: created.createdAt,
       updatedAt: '2026-07-17T09:00:00.000Z',
     });

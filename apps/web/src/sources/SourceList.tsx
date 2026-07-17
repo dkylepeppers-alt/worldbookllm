@@ -107,9 +107,11 @@ export function SourceList() {
 
   const sources = sourcesState.status === 'ready' ? sourcesState.sources : [];
   const searching = query.trim() !== '';
+  // Only a completed search for the query currently in the box counts —
+  // anything else is still loading, so stale results never show.
   const searchState: SearchState = !searching
     ? { status: 'idle' }
-    : completed === null
+    : completed === null || completed.query !== query.trim()
       ? { status: 'loading' }
       : completed.results === null
         ? { status: 'error' }
