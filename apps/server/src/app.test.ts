@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import type { FastifyInstance } from 'fastify';
 import matter from 'gray-matter';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildApp } from './app.js';
 import { fixture } from './services/converters/__fixtures__/load.js';
@@ -125,6 +125,67 @@ describe('server data API', () => {
       error: 'not_found',
       message: 'Notebook f9942d0a-eaca-41a8-a3d8-87987cc173fd was not found',
     });
+  });
+
+  it('suggests source organization through the notebook provider', async () => {
+    await app.close();
+    app = buildApp({
+      dataDir,
+      logger: false,
+      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content:
+                    '{"suggestions":[{"index":0,"category":"places","tags":["glass-marsh"]}]}',
+                },
+              },
+            ],
+          }),
+        ),
+      ),
+    });
+    const notebook = await createNotebook();
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/notebooks/${notebook.id}`,
+      payload: {
+        settings: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+      },
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-organization-suggestions`,
+      payload: { drafts: [{ index: 0, title: 'Glass Marsh', content: 'A tidal wetland.' }] },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      suggestions: [{ index: 0, category: 'places', tags: ['glass-marsh'] }],
+      warning: null,
+    });
+  });
+
+  it('returns safe blanks without a configured provider and validates request bounds', async () => {
+    const notebook = await createNotebook();
+    const fallback = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-organization-suggestions`,
+      payload: { drafts: [{ index: 4, title: 'Unsorted', content: 'Body' }] },
+    });
+    expect(fallback.statusCode).toBe(200);
+    expect(fallback.json()).toEqual({
+      suggestions: [{ index: 4, category: null, tags: [] }],
+      warning: "Couldn't suggest organization. You can choose it manually.",
+    });
+
+    const invalid = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-organization-suggestions`,
+      payload: { drafts: [] },
+    });
+    expect(invalid.statusCode).toBe(400);
   });
 
   it('persists pasted sources as Markdown and keeps content out of SQLite', async () => {

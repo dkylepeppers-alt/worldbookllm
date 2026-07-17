@@ -27,6 +27,7 @@ import { ProviderService } from './services/providers.js';
 import { PresetService } from './services/presets.js';
 import { UPLOAD_LIMIT_BYTES } from './services/converters/limits.js';
 import { SkillService } from './services/skills.js';
+import { SourceOrganizationService } from './services/source-organization.js';
 import { SourceService } from './services/sources.js';
 import { StarterSkillService } from './services/starter-skills.js';
 
@@ -56,6 +57,7 @@ export interface AppServices {
   presets: PresetService;
   chats: ChatService;
   generation: GenerationService;
+  sourceOrganization: SourceOrganizationService;
 }
 
 declare module 'fastify' {
@@ -88,6 +90,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const presets = new PresetService(db);
   const notebooks = new NotebookService(db, sourceFiles);
   const sources = new SourceService(db, sourceFiles);
+  const sourceOrganization = new SourceOrganizationService(notebooks, sources, providers, (error) =>
+    app.log.error(error),
+  );
   // Backfill/self-heal the FTS index from the files on disk (ADR 0012):
   // covers data dirs created before M3 and any divergence left behind.
   sources.ensureSearchIndex((sourceId, error) => {
@@ -117,6 +122,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     presets,
     chats,
     generation,
+    sourceOrganization,
   });
 
   app.addHook('onClose', () => {
