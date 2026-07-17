@@ -159,6 +159,7 @@ describe('data API schemas', () => {
     expect(() => patchSourceSchema.parse({ content: '' })).toThrow();
     expect(() => patchSourceSchema.parse({ category: 'weather' })).toThrow();
     expect(() => patchSourceSchema.parse({ tags: [''] })).toThrow();
+    expect(() => patchSourceSchema.parse({ tags: ['court, royal'] })).toThrow();
     expect(() => patchSourceSchema.parse({ origin: { type: 'paste' } })).toThrow();
   });
 

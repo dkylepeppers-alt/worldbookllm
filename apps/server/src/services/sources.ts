@@ -24,9 +24,14 @@ import { InvalidStoredDataError, NotFoundError } from '../errors.js';
 import { type ReadSourceFile, SourceFileStore } from '../files/source-files.js';
 import { SourceSearchIndex } from './source-search.js';
 
-/** Filter/search need stable casing, so tags are lowercased and deduped on write. */
+/**
+ * Filter/search need stable casing, so tags are lowercased and deduped on
+ * write. Unicode lowercasing can lengthen a string (e.g. İ → i + combining
+ * dot), so the result is re-capped at the schema's 50-character limit to keep
+ * stored data valid.
+ */
 function normalizeTags(tags: string[]): string[] {
-  return [...new Set(tags.map((tag) => tag.toLowerCase()))];
+  return [...new Set(tags.map((tag) => tag.toLowerCase().slice(0, 50)))];
 }
 
 function mapSource(row: SourceRow): SourceMetadata {
@@ -122,24 +127,31 @@ export class SourceService {
   }
 
   /**
-   * Backfills the FTS index for any source row it is missing (a pre-M3 data
-   * dir, or an index that diverged) by reading the Markdown files on disk.
-   * Unreadable files are reported and skipped so one corrupt source cannot
-   * stop startup; ordinary reads reconcile them later.
+   * Reconciles the whole index with the files on disk: every source file is
+   * read, rows whose file drifted while the app was closed are refreshed
+   * (row + FTS entry, same as the on-read reconciliation), and rows missing
+   * from the FTS table (a pre-M3 data dir, or an index that diverged) are
+   * indexed. Unreadable files are reported and skipped so one corrupt source
+   * cannot stop startup; ordinary reads reconcile them later.
    */
   ensureSearchIndex(onError?: (sourceId: string, error: unknown) => void): void {
-    for (const id of this.searchIndex.missingSourceIds()) {
+    const indexed = new Set(this.searchIndex.indexedSourceIds());
+    const rows = this.db.prepare('SELECT * FROM sources').all() as SourceRow[];
+    for (const row of rows) {
       try {
-        const row = this.getRow(id);
         const file = this.sourceFiles.read(row.file_path);
-        this.searchIndex.index({
-          sourceId: id,
-          notebookId: row.notebook_id,
-          title: file.title,
-          content: file.content,
-        });
+        this.assertFileIdentity(row, file);
+        const drifted = this.reconcileFromFile(row, file);
+        if (!drifted && !indexed.has(row.id)) {
+          this.searchIndex.index({
+            sourceId: row.id,
+            notebookId: row.notebook_id,
+            title: file.title,
+            content: file.content,
+          });
+        }
       } catch (error) {
-        onError?.(id, error);
+        onError?.(row.id, error);
       }
     }
   }
@@ -216,43 +228,51 @@ export class SourceService {
     }
   }
 
+  /**
+   * Refreshes the index row and FTS entry from the file when they drifted
+   * (an out-of-band edit): frontmatter wins, but hand-edited tags are still
+   * normalized so the index keeps the service's stable-casing guarantee (the
+   * file itself is never rewritten). Returns whether anything drifted.
+   */
+  private reconcileFromFile(row: SourceRow, file: ReadSourceFile): boolean {
+    const fileTags = normalizeTags(file.tags);
+    if (
+      file.title === row.title &&
+      file.wordCount === row.word_count &&
+      file.contentHash === row.content_hash &&
+      file.updatedAt === row.updated_at &&
+      file.category === row.category &&
+      JSON.stringify(fileTags) === row.tags_json
+    ) {
+      return false;
+    }
+    this.db
+      .prepare(
+        'UPDATE sources SET title = ?, word_count = ?, content_hash = ?, updated_at = ?, category = ?, tags_json = ? WHERE id = ?',
+      )
+      .run(
+        file.title,
+        file.wordCount,
+        file.contentHash,
+        file.updatedAt,
+        file.category,
+        JSON.stringify(fileTags),
+        row.id,
+      );
+    this.searchIndex.index({
+      sourceId: row.id,
+      notebookId: row.notebook_id,
+      title: file.title,
+      content: file.content,
+    });
+    return true;
+  }
+
   get(id: string): SourceDetail {
     const row = this.getRow(id);
     const file = this.sourceFiles.read(row.file_path);
     this.assertFileIdentity(row, file);
-
-    // Frontmatter wins on reconciliation, but the index keeps the service's
-    // stable-casing guarantee, so hand-edited tags are normalized (the file
-    // itself is never rewritten on read).
-    const fileTags = normalizeTags(file.tags);
-    if (
-      file.title !== row.title ||
-      file.wordCount !== row.word_count ||
-      file.contentHash !== row.content_hash ||
-      file.updatedAt !== row.updated_at ||
-      file.category !== row.category ||
-      JSON.stringify(fileTags) !== row.tags_json
-    ) {
-      this.db
-        .prepare(
-          'UPDATE sources SET title = ?, word_count = ?, content_hash = ?, updated_at = ?, category = ?, tags_json = ? WHERE id = ?',
-        )
-        .run(
-          file.title,
-          file.wordCount,
-          file.contentHash,
-          file.updatedAt,
-          file.category,
-          JSON.stringify(fileTags),
-          id,
-        );
-      this.searchIndex.index({
-        sourceId: id,
-        notebookId: row.notebook_id,
-        title: file.title,
-        content: file.content,
-      });
-    }
+    this.reconcileFromFile(row, file);
 
     try {
       return sourceDetailSchema.parse({

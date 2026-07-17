@@ -42,6 +42,11 @@ describe('toFtsMatchQuery', () => {
   it('returns an empty string for blank input', () => {
     expect(toFtsMatchQuery('   ')).toBe('');
   });
+
+  it('splits on NUL characters, which FTS5 rejects even inside quotes', () => {
+    expect(toFtsMatchQuery('a\0b')).toBe('"a"* "b"*');
+    expect(toFtsMatchQuery('\0')).toBe('');
+  });
 });
 
 describe('SourceService.search', () => {
@@ -75,7 +80,7 @@ describe('SourceService.search', () => {
     db.close();
   });
 
-  it.each(['"', 'NEAR(', '-iron', '"unbalanced', '(paren OR', '*'])(
+  it.each(['"', 'NEAR(', '-iron', '"unbalanced', '(paren OR', '*', '\0', 'iron\0compact'])(
     'treats hostile query %j as literal text instead of erroring',
     (query) => {
       const { db, sources, notebook } = setup();
@@ -84,6 +89,18 @@ describe('SourceService.search', () => {
       db.close();
     },
   );
+
+  it('caps excerpts at the response schema limit even for giant unbroken tokens', () => {
+    const { db, sources, notebook } = setup();
+    sources.create(notebook.id, {
+      title: 'Blob',
+      content: `start ${'x'.repeat(5000)} end`,
+    });
+    const results = sources.search(notebook.id, 'xxx');
+    expect(results).toHaveLength(1);
+    expect(results[0]!.excerpt.length).toBeLessThanOrEqual(1000);
+    db.close();
+  });
 
   it('reflects patches, scopes by notebook, and forgets deleted sources', () => {
     const { db, sources, notebooks, notebook } = setup();
@@ -137,6 +154,32 @@ describe('SourceService.search', () => {
 });
 
 describe('SourceService.ensureSearchIndex', () => {
+  it('refreshes entries for files edited while the app was closed', () => {
+    const { db, files, sources, notebook } = setup();
+    const created = sources.create(notebook.id, { title: 'Court', content: 'Amber halls.' });
+    // Edit the file out-of-band with no read in between — as if the app was
+    // closed — then simulate the startup reconciliation.
+    files.write({
+      id: created.id,
+      notebookId: notebook.id,
+      title: created.title,
+      content: 'Basalt halls now.',
+      origin: { type: 'paste' },
+      conversionNotes: [],
+      category: null,
+      tags: [],
+      createdAt: created.createdAt,
+      updatedAt: '2026-07-17T09:00:00.000Z',
+    });
+
+    sources.ensureSearchIndex();
+    expect(sources.search(notebook.id, 'basalt').map((result) => result.id)).toEqual([created.id]);
+    expect(sources.search(notebook.id, 'amber')).toEqual([]);
+    // The metadata row was reconciled too, not just the FTS entry.
+    expect(sources.list(notebook.id)[0]?.updatedAt).toBe('2026-07-17T09:00:00.000Z');
+    db.close();
+  });
+
   it('backfills rows missing from the index and skips unreadable files', () => {
     const { db, files, sources, notebook } = setup();
     const kept = sources.create(notebook.id, { title: 'Kept', content: 'Indexed normally.' });

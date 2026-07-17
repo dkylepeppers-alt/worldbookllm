@@ -10,7 +10,7 @@ M3 promises full-text search across a notebook, and ADR 0003 already reserved SQ
 
 1. `source_search` is a **standalone FTS5 table** storing its own copy of each source's title and content, with `source_id`/`notebook_id` as UNINDEXED columns and the `unicode61 remove_diacritics 2` tokenizer (no porter stemming, no prefix indexes).
 2. **Services keep it in sync explicitly**, inside the same `db.transaction` as the row writes: source create, patch, delete, on-read reconciliation of out-of-band file edits, and notebook delete (FK cascade does not reach FTS shadow tables).
-3. **Startup backfill/self-heal:** migration 006 creates the table empty; `SourceService.ensureSearchIndex()` runs at app construction, indexing any source row missing from the table by reading its file, logging and skipping unreadable files.
+3. **Startup backfill/self-heal:** migration 006 creates the table empty; `SourceService.ensureSearchIndex()` runs at app construction and reads every source's Markdown file — rows whose file drifted while the app was closed are reconciled (metadata row and FTS entry refreshed, same as the on-read path), rows missing from the table are indexed, and unreadable files are logged and skipped.
 4. User input never reaches `MATCH` raw: every whitespace token is emitted as a quoted prefix phrase (`"token"*`, embedded quotes doubled). Ranking is `bm25` with title weighted 5×; excerpts come from `snippet()` as plain text.
 
 ## Rationale
@@ -20,5 +20,5 @@ Duplicating content into the FTS table is the only design that yields ranked, ex
 ## Consequences
 
 - Every future write path that touches source content must also update `source_search`; the startup self-heal catches omissions but only at the next boot.
-- Content is stored twice (file + FTS shadow tables); acceptable at the hundreds-of-sources scale M3 targets.
+- Content is stored twice (file + FTS shadow tables), and startup reads every source file to reconcile; both acceptable at the hundreds-of-sources scale M3 targets.
 - Deletes address FTS rows via a `WHERE source_id = ?` scan of an UNINDEXED column; fine at this scale, revisit (with `prefix=` indexes) only if notebooks grow far beyond the roadmap's 100-source bar.

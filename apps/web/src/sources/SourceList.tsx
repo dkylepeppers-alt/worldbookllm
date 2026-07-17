@@ -104,6 +104,10 @@ export function SourceList() {
         : [],
     [sourcesState],
   );
+  // A selected tag can vanish (its last source retagged or deleted), hiding
+  // the selector; falling back to 'all' keeps the list from being stuck
+  // filtered by a control that no longer exists.
+  const activeTag = tag !== 'all' && availableTags.includes(tag) ? tag : 'all';
 
   const sources = sourcesState.status === 'ready' ? sourcesState.sources : [];
   const searching = query.trim() !== '';
@@ -123,10 +127,10 @@ export function SourceList() {
     const results = searchState.status === 'ready' ? searchState.results : [];
     for (const result of results) excerpts.set(result.id, result.excerpt);
     // Results keep the server's relevance order; filters intersect client-side.
-    visible = results.filter((result) => matchesFilters(result, category, tag));
+    visible = results.filter((result) => matchesFilters(result, category, activeTag));
   } else {
     visible = sortSources(
-      sources.filter((source) => matchesFilters(source, category, tag)),
+      sources.filter((source) => matchesFilters(source, category, activeTag)),
       sort,
     );
   }
@@ -210,7 +214,7 @@ export function SourceList() {
                 <label htmlFor="source-tag-filter">Tag</label>
                 <select
                   id="source-tag-filter"
-                  value={tag}
+                  value={activeTag}
                   onChange={(event) => setTag(event.target.value)}
                 >
                   <option value="all">All</option>

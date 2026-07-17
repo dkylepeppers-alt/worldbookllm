@@ -235,6 +235,21 @@ describe('SourceService categories and tags', () => {
     db.close();
   });
 
+  it('keeps normalized tags within the schema limit when lowercasing lengthens them', () => {
+    const { db, sources, notebook } = setup();
+    // 'İ' lowercases to two UTF-16 units (i + combining dot), so a
+    // 50-character tag would double past the schema cap without re-capping.
+    const created = sources.create(notebook.id, {
+      title: 'Titles',
+      content: 'Body',
+      tags: ['İ'.repeat(50)],
+    });
+    expect(created.tags[0]?.length).toBeLessThanOrEqual(50);
+    // The stored source stays readable end-to-end.
+    expect(sources.get(created.id).tags).toEqual(created.tags);
+    db.close();
+  });
+
   it('sets, keeps, and clears category and tags through patch', () => {
     const { db, sources, notebook } = setup();
     const created = sources.create(notebook.id, { title: 'Lore', content: 'Body' });

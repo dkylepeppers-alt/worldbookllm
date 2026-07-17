@@ -18,7 +18,17 @@ export const SOURCE_CATEGORIES = [
 
 export const sourceCategorySchema = z.enum(SOURCE_CATEGORIES);
 
-export const sourceTagsSchema = z.array(z.string().trim().min(1).max(50)).max(20);
+// Commas are rejected so the UI can use them as a lossless tag separator.
+export const sourceTagsSchema = z
+  .array(
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(50)
+      .refine((tag) => !tag.includes(','), { message: 'Tags cannot contain commas' }),
+  )
+  .max(20);
 
 export const sourceOriginSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('paste') }),

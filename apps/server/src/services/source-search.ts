@@ -8,16 +8,20 @@ import type { SourceRow } from '../db/types.js';
  * with embedded double quotes doubled. Quoting disarms all FTS5 query
  * syntax (`NEAR`, `-`, parentheses, unbalanced quotes), and the trailing
  * `*` gives find-as-you-type behavior. Tokens are joined with implicit AND.
- * Returns '' when the input contains no tokens; callers treat that as no
- * results rather than passing it to MATCH.
+ * NUL characters split tokens like whitespace — FTS5 rejects them even
+ * inside a quoted string. Returns '' when the input contains no tokens;
+ * callers treat that as no results rather than passing it to MATCH.
  */
 export function toFtsMatchQuery(input: string): string {
   return input
-    .split(/\s+/u)
+    .split(/[\s\0]+/u)
     .filter((token) => token.length > 0)
     .map((token) => `"${token.replaceAll('"', '""')}"*`)
     .join(' ');
 }
+
+/** Matches sourceSearchResultSchema's excerpt cap in @worldbookllm/shared. */
+const EXCERPT_MAX = 1000;
 
 export interface SourceSearchEntry {
   sourceId: string;
@@ -54,12 +58,9 @@ export class SourceSearchIndex {
     this.db.prepare('DELETE FROM source_search WHERE notebook_id = ?').run(notebookId);
   }
 
-  /** Source ids present in the sources table but missing from the index. */
-  missingSourceIds(): string[] {
-    return this.db
-      .prepare('SELECT id FROM sources WHERE id NOT IN (SELECT source_id FROM source_search)')
-      .pluck()
-      .all() as string[];
+  /** Source ids currently present in the index. */
+  indexedSourceIds(): string[] {
+    return this.db.prepare('SELECT source_id FROM source_search').pluck().all() as string[];
   }
 
   /**
@@ -79,6 +80,8 @@ export class SourceSearchIndex {
          ORDER BY bm25(source_search, 5.0, 1.0), sources.id`,
       )
       .all(notebookId, match) as Array<SourceRow & { excerpt: string }>;
-    return rows.map(({ excerpt, ...row }) => ({ row, excerpt }));
+    // snippet() limits tokens, not characters — one giant unbroken token
+    // (a long URL, say) could exceed the response schema's excerpt cap.
+    return rows.map(({ excerpt, ...row }) => ({ row, excerpt: excerpt.slice(0, EXCERPT_MAX) }));
   }
 }
