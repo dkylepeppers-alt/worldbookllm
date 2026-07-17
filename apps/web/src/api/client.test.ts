@@ -147,10 +147,15 @@ describe('API client', () => {
 
   it('covers notebook detail and every source operation', async () => {
     const detail: SourceDetail = { ...source, content: '# First light' };
+    const organization = {
+      suggestions: [{ index: 0, category: 'places' as const, tags: ['glass-marsh'] }],
+      warning: null,
+    };
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(notebook))
       .mockResolvedValueOnce(jsonResponse([source]))
+      .mockResolvedValueOnce(jsonResponse(organization))
       .mockResolvedValueOnce(jsonResponse(source, { status: 201 }))
       .mockResolvedValueOnce(jsonResponse(detail))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
@@ -158,6 +163,11 @@ describe('API client', () => {
 
     await expect(client.getNotebook(notebook.id)).resolves.toEqual(notebook);
     await expect(client.listSources(notebook.id)).resolves.toEqual([source]);
+    await expect(
+      client.suggestSourceOrganization(notebook.id, {
+        drafts: [{ index: 0, title: 'Glass Marsh', content: 'Tidal wetland.' }],
+      }),
+    ).resolves.toEqual(organization);
     await expect(
       client.createSource(notebook.id, { title: source.title, content: detail.content }),
     ).resolves.toEqual(source);
@@ -167,10 +177,20 @@ describe('API client', () => {
     expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
       `/api/notebooks/${notebook.id}`,
       `/api/notebooks/${notebook.id}/sources`,
+      `/api/notebooks/${notebook.id}/source-organization-suggestions`,
       `/api/notebooks/${notebook.id}/sources`,
       `/api/sources/${source.id}`,
       `/api/sources/${source.id}`,
     ]);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `/api/notebooks/${notebook.id}/source-organization-suggestions`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          drafts: [{ index: 0, title: 'Glass Marsh', content: 'Tidal wetland.' }],
+        }),
+      }),
+    );
   });
 
   it('edits a source and selects a message variant with PATCH', async () => {
