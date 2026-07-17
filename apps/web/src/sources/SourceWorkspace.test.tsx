@@ -101,9 +101,14 @@ describe('notebook source workspace', () => {
   });
 
   it('pastes a source and navigates to the server-returned reader', async () => {
+    const suggestSourceOrganization = vi.fn().mockResolvedValue({
+      suggestions: [{ index: 0, category: 'places', tags: ['glass-marsh'] }],
+      warning: null,
+    });
     const createSource = vi.fn().mockResolvedValue(source);
     renderPath(`/notebooks/${notebook.id}`, {
       listSources: () => Promise.resolve([]),
+      suggestSourceOrganization,
       createSource,
     });
 
@@ -113,12 +118,27 @@ describe('notebook source workspace', () => {
     expect(screen.getByRole('dialog', { name: 'Paste a Markdown source' })).toBeDefined();
     await user.type(screen.getByRole('textbox', { name: 'Source title' }), source.title);
     await user.type(screen.getByRole('textbox', { name: 'Markdown content' }), '# Marsh lore');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Review pasted source' })).toBeDefined();
+    expect(suggestSourceOrganization).toHaveBeenCalledWith(
+      notebook.id,
+      {
+        drafts: [{ index: 0, title: source.title, content: '# Marsh lore' }],
+      },
+      expect.any(AbortSignal),
+    );
+    const tags = screen.getByRole<HTMLInputElement>('textbox', { name: 'Tags' });
+    await waitFor(() => expect(tags.value).toBe('glass-marsh'));
+    await user.type(tags, ', tides');
     await user.click(screen.getByRole('button', { name: 'Save source' }));
 
     await waitFor(() =>
       expect(createSource).toHaveBeenCalledWith(notebook.id, {
         title: source.title,
         content: '# Marsh lore',
+        category: 'places',
+        tags: ['glass-marsh', 'tides'],
       }),
     );
     await waitFor(() =>
@@ -126,6 +146,154 @@ describe('notebook source workspace', () => {
         `/notebooks/${notebook.id}/sources/${source.id}`,
       ),
     );
+  });
+
+  it('keeps a pasted source manually organizable when suggestions fail', async () => {
+    const suggestSourceOrganization = vi.fn().mockRejectedValue(new Error('provider offline'));
+    const createSource = vi.fn().mockResolvedValue(source);
+    renderPath(`/notebooks/${notebook.id}`, {
+      listSources: () => Promise.resolve([]),
+      suggestSourceOrganization,
+      createSource,
+    });
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Paste source' }));
+    await user.type(screen.getByRole('textbox', { name: 'Source title' }), source.title);
+    await user.type(screen.getByRole('textbox', { name: 'Markdown content' }), '# Marsh lore');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(
+      await screen.findByText("Couldn't suggest organization. You can choose it manually."),
+    ).toBeDefined();
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Category' }).value).toBe('');
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Tags' }).value).toBe('');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Category' }), 'misc');
+    await user.click(screen.getByRole('button', { name: 'Save source' }));
+
+    await waitFor(() =>
+      expect(createSource).toHaveBeenCalledWith(notebook.id, {
+        title: source.title,
+        content: '# Marsh lore',
+        category: 'misc',
+        tags: [],
+      }),
+    );
+  });
+
+  it('suggests organization again from the edited pasted source', async () => {
+    const suggestSourceOrganization = vi
+      .fn()
+      .mockResolvedValueOnce({
+        suggestions: [{ index: 0, category: 'places', tags: ['glass-marsh'] }],
+        warning: null,
+      })
+      .mockResolvedValueOnce({
+        suggestions: [{ index: 0, category: 'lore', tags: ['tide-cycles'] }],
+        warning: null,
+      });
+    renderPath(`/notebooks/${notebook.id}`, {
+      listSources: () => Promise.resolve([]),
+      suggestSourceOrganization,
+    });
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Paste source' }));
+    await user.type(screen.getByRole('textbox', { name: 'Source title' }), source.title);
+    await user.type(screen.getByRole('textbox', { name: 'Markdown content' }), '# Marsh lore');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByRole('button', { name: 'Back' })).toBeDefined();
+    const tags = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Tags' });
+    await waitFor(() => expect(tags.value).toBe('glass-marsh'));
+
+    const title = screen.getByRole('textbox', { name: 'Source title' });
+    const content = screen.getByRole('textbox', { name: 'Markdown content' });
+    await user.clear(title);
+    await user.type(title, 'Revised Marsh');
+    await user.clear(content);
+    await user.type(content, '# Tide cycles');
+    await user.clear(tags);
+    await user.type(tags, 'manual-tag');
+    await user.click(screen.getByRole('button', { name: 'Suggest again' }));
+
+    await waitFor(() => expect(suggestSourceOrganization).toHaveBeenCalledTimes(2));
+    expect(suggestSourceOrganization).toHaveBeenLastCalledWith(
+      notebook.id,
+      {
+        drafts: [{ index: 0, title: 'Revised Marsh', content: '# Tide cycles' }],
+      },
+      expect.any(AbortSignal),
+    );
+    await waitFor(() => expect(tags.value).toBe('tide-cycles'));
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Category' }).value).toBe(
+      'lore',
+    );
+  });
+
+  it('protects pasted-source organization edits from a late suggestion', async () => {
+    let resolveSuggestion!: (value: {
+      suggestions: { index: number; category: 'places'; tags: string[] }[];
+      warning: null;
+    }) => void;
+    const suggestSourceOrganization = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveSuggestion = resolve;
+      }),
+    );
+    renderPath(`/notebooks/${notebook.id}`, {
+      listSources: () => Promise.resolve([]),
+      suggestSourceOrganization,
+    });
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Paste source' }));
+    await user.type(screen.getByRole('textbox', { name: 'Source title' }), source.title);
+    await user.type(screen.getByRole('textbox', { name: 'Markdown content' }), '# Marsh lore');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save source' });
+    expect(save.disabled).toBe(true);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Category' }), 'misc');
+    resolveSuggestion({
+      suggestions: [{ index: 0, category: 'places', tags: ['glass-marsh'] }],
+      warning: null,
+    });
+
+    await waitFor(() => expect(save.disabled).toBe(false));
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Category' }).value).toBe(
+      'misc',
+    );
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Tags' }).value).toBe('');
+  });
+
+  it('preserves pasted-source review edits when saving fails', async () => {
+    const suggestSourceOrganization = vi.fn().mockResolvedValue({
+      suggestions: [{ index: 0, category: 'places', tags: ['glass-marsh'] }],
+      warning: null,
+    });
+    const createSource = vi.fn().mockRejectedValue(new Error('disk full'));
+    renderPath(`/notebooks/${notebook.id}`, {
+      listSources: () => Promise.resolve([]),
+      suggestSourceOrganization,
+      createSource,
+    });
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Paste source' }));
+    await user.type(screen.getByRole('textbox', { name: 'Source title' }), source.title);
+    await user.type(screen.getByRole('textbox', { name: 'Markdown content' }), '# Marsh lore');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    const tags = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Tags' });
+    await waitFor(() => expect(tags.value).toBe('glass-marsh'));
+    await user.type(tags, ', tides');
+    await user.click(screen.getByRole('button', { name: 'Save source' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Could not save the source.');
+    expect(screen.getByRole('dialog', { name: 'Review pasted source' })).toBeDefined();
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Category' }).value).toBe(
+      'places',
+    );
+    expect(tags.value).toBe('glass-marsh, tides');
   });
 
   it('reviews a lorebook import with automatic organization and saves each entry', async () => {
