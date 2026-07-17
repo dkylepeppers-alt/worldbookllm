@@ -156,6 +156,8 @@ describe('server data API', () => {
       filePath: expect.stringMatching(/\.md$/u),
       origin: { type: 'paste' },
       conversionNotes: [],
+      category: null,
+      tags: [],
       wordCount: 5,
       contentHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
       createdAt: expect.any(String),
@@ -351,6 +353,58 @@ describe('server data API', () => {
         })
       ).json(),
     ).toEqual([]);
+  });
+
+  it('searches a notebook full-text with ranked, excerpted results', async () => {
+    const notebook = await createNotebook();
+    const other = await createNotebook('Other');
+    await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/sources/batch`,
+      payload: [
+        { title: 'Iron Compact charter', content: 'The founding charter.' },
+        { title: 'Harbor gossip', content: 'The Iron Compact controls the eastern quays.' },
+        { title: 'Weather', content: 'It rains in the marsh.' },
+      ],
+    });
+
+    const search = await app.inject({
+      method: 'GET',
+      url: `/api/notebooks/${notebook.id}/sources/search?q=iron%20compact`,
+    });
+    expect(search.statusCode).toBe(200);
+    const results = search.json<Array<{ title: string; excerpt: string; category: null }>>();
+    expect(results.map((result) => result.title)).toEqual([
+      'Iron Compact charter',
+      'Harbor gossip',
+    ]);
+    expect(results[1]?.excerpt).toContain('Iron Compact');
+
+    const otherNotebook = await app.inject({
+      method: 'GET',
+      url: `/api/notebooks/${other.id}/sources/search?q=iron`,
+    });
+    expect(otherNotebook.statusCode).toBe(200);
+    expect(otherNotebook.json()).toEqual([]);
+
+    const blank = await app.inject({
+      method: 'GET',
+      url: `/api/notebooks/${notebook.id}/sources/search?q=%20%20`,
+    });
+    expect(blank.statusCode).toBe(400);
+    expect(blank.json()).toMatchObject({ error: 'validation_error' });
+
+    const missingParam = await app.inject({
+      method: 'GET',
+      url: `/api/notebooks/${notebook.id}/sources/search`,
+    });
+    expect(missingParam.statusCode).toBe(400);
+
+    const missingNotebook = await app.inject({
+      method: 'GET',
+      url: '/api/notebooks/f9942d0a-eaca-41a8-a3d8-87987cc173fd/sources/search?q=iron',
+    });
+    expect(missingNotebook.statusCode).toBe(404);
   });
 
   it('reconciles source title, body metadata, and timestamp after external edits', async () => {
@@ -714,7 +768,7 @@ describe('server data API', () => {
     expect(response.json()).toMatchObject({ id: notebook.id, name: 'Persistent' });
 
     const db = new Database(join(dataDir, 'worldbookllm.db'), { readonly: true });
-    expect(db.pragma('user_version', { simple: true })).toBe(5);
+    expect(db.pragma('user_version', { simple: true })).toBe(6);
     db.close();
   });
 });

@@ -30,6 +30,8 @@ const source: SourceMetadata = {
   filePath: `notebooks/${notebook.id}/sources/f9942d0a-eaca-41a8-a3d8-87987cc173fd-first-light.md`,
   origin: { type: 'paste' },
   conversionNotes: [],
+  category: null,
+  tags: [],
   wordCount: 4,
   contentHash: 'a'.repeat(64),
   createdAt: '2026-07-10T12:00:00.000Z',

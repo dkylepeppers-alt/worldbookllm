@@ -88,6 +88,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const presets = new PresetService(db);
   const notebooks = new NotebookService(db, sourceFiles);
   const sources = new SourceService(db, sourceFiles);
+  // Backfill/self-heal the FTS index from the files on disk (ADR 0012):
+  // covers data dirs created before M3 and any divergence left behind.
+  sources.ensureSearchIndex((sourceId, error) => {
+    app.log.warn({ sourceId, err: error }, 'could not index source for search');
+  });
   const skills = new SkillService(db, new SkillFileStore(dataDir));
   const starterSkills = new StarterSkillService(
     resolveStarterSkillsDir(options.starterSkillsDir),

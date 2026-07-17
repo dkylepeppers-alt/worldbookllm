@@ -31,7 +31,7 @@ worldbookllm is a **local-first web app**: a Node/TypeScript server and a browse
 The guiding principle from the product spec: **sources remain visible and manageable by the user**, never hidden inside an opaque context system.
 
 - **Sources are plain `.md` files on disk.** Users can read, grep, edit, back up, and version them with any tool. Editing a file outside the app is legal; the app reconciles on next access.
-- **SQLite holds everything that is _about_ the files**, plus app state: source metadata (origin, conversion notes), chat sessions and messages, notebook settings, presets, the skills index, and provider/model configuration. Source categories, tags, and the FTS5 full-text search index arrive with Milestone 3 (see the [roadmap](ROADMAP.md)).
+- **SQLite holds everything that is _about_ the files**, plus app state: source metadata (origin, conversion notes, category, tags), chat sessions and messages, notebook settings, presets, the skills index, provider/model configuration, and the FTS5 full-text search index over source titles and content (a standalone table kept in sync by the source services and backfilled from disk at startup — ADR 0012).
 
 Data directory layout (created at first run, gitignored):
 
@@ -48,7 +48,7 @@ data/
         └── SKILL.md           # agentskills.io-compatible craft instructions
 ```
 
-Each source file carries YAML frontmatter (id, notebook id, title, origin, conversion notes, timestamps) so the files are self-describing even without the database; the database can be rebuilt from the files if it is lost.
+Each source file carries YAML frontmatter (id, notebook id, title, origin, conversion notes, optional category and tags, timestamps) so the files are self-describing even without the database; the database can be rebuilt from the files if it is lost.
 
 ## Source ingestion pipeline
 
@@ -100,7 +100,7 @@ The web app is an installable PWA: a manifest and generated icon set (Field Atla
 
 ## Context strategy
 
-Milestone 1 injects selected sources into the prompt whole (simple, predictable, sufficient for small notebooks). Retrieval (FTS5-backed selection, then smarter ranking) arrives when notebooks outgrow context windows — see the [roadmap](ROADMAP.md). The design constraint throughout: the user can always see and control what the model was given.
+Milestone 1 injects selected sources into the prompt whole (simple, predictable, sufficient for small notebooks). Milestone 3 adds search-backed selection: the user finds sources by full-text search (in the source browser and directly in the chat's source selector) and pulls exactly those into the context — still explicit, whole-source injection. Automatic retrieval (ranked snippets, embeddings) arrives when notebooks outgrow context windows — see the [roadmap](ROADMAP.md). The design constraint throughout: the user can always see and control what the model was given.
 
 ## Technology choices
 
@@ -117,3 +117,4 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0009 — Native global presets and immutable exchange snapshots](decisions/0009-native-global-presets.md)
 - [0010 — Installable PWA, served single-origin in production](decisions/0010-pwa-single-origin-serving.md)
 - [0011 — Prompt-orchestrated creative skills library](decisions/0011-prompt-orchestrated-skills-library.md)
+- [0012 — FTS5 standalone search index synchronized by services](decisions/0012-fts5-standalone-search-index.md)

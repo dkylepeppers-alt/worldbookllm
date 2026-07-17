@@ -3,6 +3,7 @@ import {
   createSourcesSchema,
   patchSourceSchema,
   resourceIdParamsSchema,
+  sourceSearchQuerySchema,
 } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 
@@ -13,6 +14,12 @@ export function registerSourceRoutes(app: FastifyInstance): void {
   app.get('/api/notebooks/:id/sources', (request) => {
     const { id } = resourceIdParamsSchema.parse(request.params);
     return app.services.sources.list(id);
+  });
+
+  app.get('/api/notebooks/:id/sources/search', (request) => {
+    const { id } = resourceIdParamsSchema.parse(request.params);
+    const { q } = sourceSearchQuerySchema.parse(request.query);
+    return app.services.sources.search(id, q);
   });
 
   app.post('/api/notebooks/:id/sources', async (request, reply) => {

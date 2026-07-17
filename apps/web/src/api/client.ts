@@ -23,6 +23,7 @@ import {
   sourceMetadataListSchema,
   sourceMetadataSchema,
   sourcePreviewSchema,
+  sourceSearchResultListSchema,
   type ApiErrorIssue,
   type AppSettings,
   type Chat,
@@ -53,6 +54,7 @@ import {
   type SourceDetail,
   type SourceMetadata,
   type SourcePreview,
+  type SourceSearchResult,
   type StreamEvent,
 } from '@worldbookllm/shared';
 import { z } from 'zod';
@@ -82,6 +84,7 @@ export interface ApiClient {
   updateNotebook(id: string, input: PatchNotebook, signal?: AbortSignal): Promise<Notebook>;
   deleteNotebook(id: string, signal?: AbortSignal): Promise<void>;
   listSources(notebookId: string, signal?: AbortSignal): Promise<SourceMetadata[]>;
+  searchSources(notebookId: string, q: string, signal?: AbortSignal): Promise<SourceSearchResult[]>;
   createSource(
     notebookId: string,
     input: CreateSourceInput,
@@ -224,6 +227,11 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: sourceMetadataListSchema,
         signal,
       }),
+    searchSources: (notebookId, q, signal) =>
+      request(
+        `/api/notebooks/${encodeURIComponent(notebookId)}/sources/search?${new URLSearchParams({ q }).toString()}`,
+        { schema: sourceSearchResultListSchema, signal },
+      ),
     createSource: (notebookId, input, signal) =>
       request(`/api/notebooks/${encodeURIComponent(notebookId)}/sources`, {
         method: 'POST',

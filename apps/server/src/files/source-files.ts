@@ -16,7 +16,14 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import matter from 'gray-matter';
 import { z } from 'zod';
 
-import { conversionNotesSchema, sourceOriginSchema, type SourceOrigin } from '@worldbookllm/shared';
+import {
+  conversionNotesSchema,
+  sourceCategorySchema,
+  sourceOriginSchema,
+  sourceTagsSchema,
+  type SourceCategory,
+  type SourceOrigin,
+} from '@worldbookllm/shared';
 
 import { InvalidStoredDataError, UnsafePathError } from '../errors.js';
 
@@ -29,6 +36,9 @@ const frontmatterSchema = z.strictObject({
     .union([sourceOriginSchema, z.literal('paste')])
     .transform((origin): SourceOrigin => (origin === 'paste' ? { type: 'paste' } : origin)),
   conversionNotes: conversionNotesSchema.default([]),
+  // Optional so files written before M3 (and hand-authored files) still parse.
+  category: sourceCategorySchema.nullable().default(null),
+  tags: sourceTagsSchema.default([]),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -40,6 +50,8 @@ export interface SourceFileInput {
   content: string;
   origin: SourceOrigin;
   conversionNotes: string[];
+  category: SourceCategory | null;
+  tags: string[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -59,6 +71,8 @@ export interface ReadSourceFile {
   title: string;
   origin: SourceOrigin;
   conversionNotes: string[];
+  category: SourceCategory | null;
+  tags: string[];
   createdAt: string;
   updatedAt: string;
   content: string;
@@ -120,6 +134,9 @@ export class SourceFileStore {
       title: input.title,
       origin: input.origin,
       conversionNotes: input.conversionNotes,
+      // Omitted when unset so uncategorized/untagged files keep the legacy shape.
+      ...(input.category === null ? {} : { category: input.category }),
+      ...(input.tags.length === 0 ? {} : { tags: input.tags }),
       createdAt: input.createdAt,
       updatedAt,
     });

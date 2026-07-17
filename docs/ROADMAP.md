@@ -54,9 +54,11 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Done when:** a user can drop in a PDF setting bible and a pasted wiki page, review the conversions, fix a mangled table, and chat over them.
 
-## M3 — Knowledge-base organization
+## M3 — Knowledge-base organization ✅
 
 **Goal:** scale from "a few documents" to "a real project bible."
+
+**Status (2026-07-17):** complete. Categories and tags persist in frontmatter (files stay the source of truth, reconciled on read), full-text search runs on a standalone FTS5 index kept in sync by the source services (ADR 0012), the source browser filters/searches/sorts with ranked excerpts, and the chat source selector supports search plus "Select results". Stub-provider E2E coverage in `apps/e2e/tests/organization.spec.ts`.
 
 **Scope:**
 

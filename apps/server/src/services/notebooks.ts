@@ -11,6 +11,7 @@ import type Database from 'better-sqlite3';
 import type { NotebookRow } from '../db/types.js';
 import { InvalidStoredDataError, NotFoundError } from '../errors.js';
 import type { SourceFileStore } from '../files/source-files.js';
+import { SourceSearchIndex } from './source-search.js';
 
 function mapNotebook(row: NotebookRow): Notebook {
   try {
@@ -29,11 +30,15 @@ function mapNotebook(row: NotebookRow): Notebook {
 }
 
 export class NotebookService {
+  private readonly searchIndex: SourceSearchIndex;
+
   constructor(
     private readonly db: Database.Database,
     private readonly sourceFiles: SourceFileStore,
     private readonly now: () => string = () => new Date().toISOString(),
-  ) {}
+  ) {
+    this.searchIndex = new SourceSearchIndex(db);
+  }
 
   list(): Notebook[] {
     const rows = this.db
@@ -78,6 +83,8 @@ export class NotebookService {
     this.db.transaction(() => {
       const result = this.db.prepare('DELETE FROM notebooks WHERE id = ?').run(id);
       if (result.changes === 0) throw new NotFoundError(`Notebook ${id} was not found`);
+      // Source rows cascade via FK, but the FTS index has no FK to cascade.
+      this.searchIndex.removeNotebook(id);
       this.sourceFiles.removeNotebook(id);
     })();
   }
