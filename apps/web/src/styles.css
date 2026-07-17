@@ -1115,6 +1115,24 @@ label {
   text-transform: uppercase;
 }
 
+.source-selector-search {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.source-selector-search input {
+  min-height: 44px;
+  padding: 0.5rem 0.65rem;
+}
+
+.source-selector-search button {
+  flex: none;
+  border-color: var(--line);
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+}
+
 .source-selector-list {
   margin: 0.5rem 0 0;
   padding: 0;

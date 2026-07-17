@@ -1,4 +1,4 @@
-import type { Chat, Notebook, SourceMetadata } from '@worldbookllm/shared';
+import type { Chat, Notebook, SourceMetadata, SourceSearchResult } from '@worldbookllm/shared';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -51,12 +51,21 @@ const chat: Chat = {
   updatedAt: '2026-07-10T12:00:00.000Z',
 };
 
-function renderSelector(selectedSourceIds: string[], updateChat = vi.fn()) {
+function renderSelector(
+  selectedSourceIds: string[],
+  updateChat = vi.fn(),
+  searchSources?: (
+    notebookId: string,
+    q: string,
+    signal?: AbortSignal,
+  ) => Promise<SourceSearchResult[]>,
+) {
   const client = createTestClient({
     updateChat: (id, input) => {
       updateChat(id, input);
       return Promise.resolve({ ...chat, sourceIds: input.sourceIds ?? [] });
     },
+    ...(searchSources === undefined ? {} : { searchSources }),
   });
   render(
     <ApiProvider client={client}>
@@ -113,5 +122,67 @@ describe('SourceSelector bulk actions', () => {
     renderSelector(sources.map((entry) => entry.id));
     expect(screen.getByRole('button', { name: 'Select all' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Clear all' })).toHaveProperty('disabled', false);
+  });
+});
+
+describe('SourceSelector search-backed selection', () => {
+  const alphaResult: SourceSearchResult = { ...sources[0]!, excerpt: 'alpha excerpt' };
+
+  it('narrows the visible checkboxes to search results', async () => {
+    const searchSources = vi.fn(() => Promise.resolve([alphaResult]));
+    renderSelector([], vi.fn(), searchSources);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText('Search sources to select'), 'alpha');
+    await waitFor(() =>
+      expect(searchSources).toHaveBeenCalledWith(notebook.id, 'alpha', expect.anything()),
+    );
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Beta' })).toBeNull());
+    expect(screen.getByRole('checkbox', { name: 'Alpha' })).toBeDefined();
+
+    await user.clear(screen.getByLabelText('Search sources to select'));
+    expect(screen.getByRole('checkbox', { name: 'Beta' })).toBeDefined();
+  });
+
+  it('preserves an off-screen selection when toggling a visible source', async () => {
+    const updateChat = vi.fn();
+    const searchSources = vi.fn(() => Promise.resolve([alphaResult]));
+    // Beta is selected but hidden by the search; toggling Alpha must keep it.
+    renderSelector([sources[1]!.id], updateChat, searchSources);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText('Search sources to select'), 'alpha');
+    const alpha = await screen.findByRole('checkbox', { name: 'Alpha' });
+    expect(screen.queryByRole('checkbox', { name: 'Beta' })).toBeNull();
+    await user.click(alpha);
+
+    await waitFor(() => expect(updateChat).toHaveBeenCalledTimes(1));
+    expect(updateChat).toHaveBeenCalledWith(chat.id, {
+      sourceIds: [sources[0]!.id, sources[1]!.id],
+    });
+  });
+
+  it('unions the visible results into the selection with Select results', async () => {
+    const updateChat = vi.fn();
+    const searchSources = vi.fn(() => Promise.resolve([alphaResult]));
+    renderSelector([sources[1]!.id], updateChat, searchSources);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText('Search sources to select'), 'alpha');
+    await user.click(await screen.findByRole('button', { name: 'Select results' }));
+
+    await waitFor(() => expect(updateChat).toHaveBeenCalledTimes(1));
+    expect(updateChat).toHaveBeenCalledWith(chat.id, {
+      sourceIds: [sources[0]!.id, sources[1]!.id],
+    });
+  });
+
+  it('shows an empty message when the search matches nothing', async () => {
+    const searchSources = vi.fn(() => Promise.resolve([]));
+    renderSelector([], vi.fn(), searchSources);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Search sources to select'), 'nothing');
+    await waitFor(() => expect(screen.getByText('No sources match this search.')).toBeDefined());
+    expect(screen.getByText('0 of 2 sources selected')).toBeDefined();
   });
 });
