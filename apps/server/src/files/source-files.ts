@@ -43,6 +43,17 @@ const frontmatterSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
 });
 
+const managedFrontmatterKeys = new Set<string>(frontmatterSchema.keyof().options);
+
+function partitionFrontmatter(data: Record<string, unknown>) {
+  const managed: Record<string, unknown> = {};
+  const user: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    (managedFrontmatterKeys.has(key) ? managed : user)[key] = value;
+  }
+  return { managed, user };
+}
+
 export interface SourceFileInput {
   id: string;
   notebookId: string;
@@ -128,7 +139,7 @@ export class SourceFileStore {
     const absolutePath = this.resolveRelative(filePath);
     const directory = resolve(absolutePath, '..');
     const updatedAt = input.updatedAt ?? input.createdAt;
-    const rendered = matter.stringify(input.content, {
+    const rendered = matter.stringify({ content: input.content, data: {} } as { content: string }, {
       id: input.id,
       notebookId: input.notebookId,
       title: input.title,
@@ -172,11 +183,16 @@ export class SourceFileStore {
     const absolutePath = this.resolveRelative(relativePath);
     try {
       const parsed = matter(readFileSync(absolutePath, 'utf8'));
-      const frontmatter = frontmatterSchema.parse(parsed.data);
+      const { managed, user } = partitionFrontmatter(parsed.data);
+      const frontmatter = frontmatterSchema.parse(managed);
+      const content =
+        Object.keys(user).length === 0
+          ? parsed.content
+          : matter.stringify({ content: parsed.content, data: {} } as { content: string }, user);
       return {
         ...frontmatter,
-        content: parsed.content,
-        ...deriveContentMetadata(parsed.content),
+        content,
+        ...deriveContentMetadata(content),
       };
     } catch (error) {
       if (error instanceof UnsafePathError) throw error;
