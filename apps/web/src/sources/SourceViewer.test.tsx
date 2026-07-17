@@ -90,6 +90,8 @@ describe('SourceViewer editing', () => {
     expect(patch).toHaveBeenCalledWith(source.id, {
       title: 'Renamed',
       content: 'Fresh body text',
+      category: null,
+      tags: [],
     });
     expect(onUpdated).toHaveBeenCalledWith(updated);
     // The workspace source list is refreshed with metadata only (no content).
@@ -97,6 +99,61 @@ describe('SourceViewer editing', () => {
       expect.objectContaining({ id: source.id, title: 'Renamed' }),
     );
     expect(updateSource.mock.calls[0]?.[0]).not.toHaveProperty('content');
+  });
+
+  it('saves a category and comma-separated tags via updateSource', async () => {
+    const updated: SourceDetail = {
+      ...source,
+      category: 'factions',
+      tags: ['iron-compact', 'smugglers'],
+    };
+    const patch = vi.fn(() => Promise.resolve(updated));
+    renderViewer({ updateSource: patch });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Edit Lore' }));
+    await user.selectOptions(screen.getByLabelText('Category'), 'factions');
+    await user.type(screen.getByLabelText('Tags'), ' iron-compact, smugglers , ');
+    await user.click(screen.getByRole('button', { name: 'Save source' }));
+
+    await waitFor(() =>
+      expect(patch).toHaveBeenCalledWith(source.id, {
+        title: 'Lore',
+        content: 'Old body',
+        category: 'factions',
+        tags: ['iron-compact', 'smugglers'],
+      }),
+    );
+  });
+
+  it('shows category and tags as metadata labels when set', () => {
+    const client = createTestClient();
+    render(
+      <ApiProvider client={client}>
+        <MemoryRouter initialEntries={[`/notebooks/${notebook.id}`]}>
+          <NotebookWorkspaceContext.Provider
+            value={{
+              notebook,
+              notebookId: notebook.id,
+              sourcesState: { status: 'ready', sources: [] },
+              retrySources: vi.fn(),
+              addSource: vi.fn(),
+              updateSource: vi.fn(),
+              removeSource: vi.fn(),
+              replaceNotebook: vi.fn(),
+              lastSourceId: null,
+              setLastSourceId: vi.fn(),
+            }}
+          >
+            <SourceViewer
+              source={{ ...source, category: 'places', tags: ['marsh'] }}
+              onUpdated={vi.fn()}
+            />
+          </NotebookWorkspaceContext.Provider>
+        </MemoryRouter>
+      </ApiProvider>,
+    );
+    expect(screen.getByText(/places/).textContent).toContain('#marsh');
   });
 
   it('rejects an empty edit without calling the API', async () => {

@@ -449,6 +449,30 @@ label {
   margin: 0;
 }
 
+.source-browser-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.8rem 0;
+}
+
+.source-browser-controls .source-search-field {
+  grid-column: 1 / -1;
+}
+
+.source-browser-controls label {
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.095em;
+}
+
+.source-browser-controls input,
+.source-browser-controls select {
+  min-height: 44px;
+  padding: 0.5rem 0.65rem;
+}
+
 .source-list li {
   border-bottom: 1px solid var(--line);
 }
@@ -492,6 +516,27 @@ label {
   white-space: nowrap;
 }
 
+.source-meta {
+  grid-column: 2 / -1;
+  overflow: hidden;
+  color: var(--lichen);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-excerpt {
+  grid-column: 2 / -1;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  color: var(--muted);
+  font-family: 'Source Serif 4 Variable', Georgia, serif;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .source-words {
   grid-column: 2;
   letter-spacing: 0.025em;
@@ -531,6 +576,13 @@ label {
   overflow-wrap: anywhere;
   letter-spacing: 0;
   text-transform: none;
+}
+
+.source-organization-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.6rem 0.8rem;
+  margin-top: 0.8rem;
 }
 
 .viewer-toolbar {

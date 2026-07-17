@@ -1,4 +1,4 @@
-import type { SourceDetail } from '@worldbookllm/shared';
+import { SOURCE_CATEGORIES, type SourceCategory, type SourceDetail } from '@worldbookllm/shared';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
@@ -24,12 +24,16 @@ export function SourceViewer({ source, onUpdated }: SourceViewerProps) {
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(source.title);
   const [draftContent, setDraftContent] = useState(source.content);
+  const [draftCategory, setDraftCategory] = useState<SourceCategory | null>(source.category);
+  const [draftTags, setDraftTags] = useState(source.tags.join(', '));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function startEditing() {
     setDraftTitle(source.title);
     setDraftContent(source.content);
+    setDraftCategory(source.category);
+    setDraftTags(source.tags.join(', '));
     setError(null);
     setEditing(true);
   }
@@ -44,10 +48,19 @@ export function SourceViewer({ source, onUpdated }: SourceViewerProps) {
       setError('A source cannot be empty.');
       return;
     }
+    const tags = draftTags
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag !== '');
     setSaving(true);
     setError(null);
     try {
-      const updated = await api.updateSource(source.id, { title, content: draftContent });
+      const updated = await api.updateSource(source.id, {
+        title,
+        content: draftContent,
+        category: draftCategory,
+        tags,
+      });
       updateSource({
         id: updated.id,
         notebookId: updated.notebookId,
@@ -100,6 +113,38 @@ export function SourceViewer({ source, onUpdated }: SourceViewerProps) {
             value={draftTitle}
             onChange={(event) => setDraftTitle(event.target.value)}
           />
+          <div className="source-organization-fields">
+            <div>
+              <label htmlFor="source-category">Category</label>
+              <select
+                id="source-category"
+                disabled={saving}
+                value={draftCategory ?? ''}
+                onChange={(event) =>
+                  setDraftCategory(
+                    event.target.value === '' ? null : (event.target.value as SourceCategory),
+                  )
+                }
+              >
+                <option value="">None</option>
+                {SOURCE_CATEGORIES.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="source-tags">Tags</label>
+              <input
+                id="source-tags"
+                disabled={saving}
+                placeholder="Comma-separated, e.g. iron-compact, smugglers"
+                value={draftTags}
+                onChange={(event) => setDraftTags(event.target.value)}
+              />
+            </div>
+          </div>
           {error === null ? null : <p role="alert">{error}</p>}
         </header>
         <label htmlFor="source-content">Markdown</label>
@@ -136,7 +181,11 @@ export function SourceViewer({ source, onUpdated }: SourceViewerProps) {
   return (
     <article className="source-viewer">
       <header className="source-viewer-header">
-        <p className="coordinate-label">Markdown · {source.wordCount} words</p>
+        <p className="coordinate-label">
+          Markdown · {source.wordCount} words
+          {source.category === null ? '' : ` · ${source.category}`}
+          {source.tags.length === 0 ? '' : ` · ${source.tags.map((tag) => `#${tag}`).join(' ')}`}
+        </p>
         <h1>{source.title}</h1>
         <code className="source-path">{source.filePath}</code>
         <div className="viewer-toolbar" aria-label="Source display">
