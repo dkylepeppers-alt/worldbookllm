@@ -22,11 +22,13 @@
 ### Task 1: Pin the storage and browser regressions
 
 **Files:**
+
 - Modify: `apps/server/src/files/source-files.test.ts`
 - Modify: `apps/server/src/app.test.ts`
 - Modify: `apps/e2e/tests/organization.spec.ts`
 
 **Interfaces:**
+
 - Consumes: existing `SourceFileStore`, source create/detail routes, and organization browser journey.
 - Produces: failing coverage for exact-content writes, legacy recovery, immediate API retrieval, and browser navigation after import.
 
@@ -139,9 +141,11 @@ git commit -m "test: reproduce source frontmatter collision"
 ### Task 2: Separate managed and user frontmatter
 
 **Files:**
+
 - Modify: `apps/server/src/files/source-files.ts`
 
 **Interfaces:**
+
 - Consumes: `frontmatterSchema`, `SourceFileInput`, and `ReadSourceFile`.
 - Produces: corrected write/read behavior without public signature changes.
 
@@ -221,9 +225,11 @@ git commit -m "fix: preserve source content frontmatter"
 ### Task 3: Verify repository and live compatibility
 
 **Files:**
+
 - Verify only; no planned changes.
 
 **Interfaces:**
+
 - Consumes: Tasks 1–2 and the local source corpus.
 - Produces: repository checks, four recovered live sources, and healthy restarted services.
 
