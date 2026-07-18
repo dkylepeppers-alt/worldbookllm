@@ -133,6 +133,27 @@ test('M3 knowledge-base organization', async ({ page }) => {
     await expect(sourcesPanel.getByRole('link', { name: 'Iron Compact charter' })).toBeVisible();
   });
 
+  await test.step('bulk organize the remaining unorganized sources', async () => {
+    await sourcesPanel.getByRole('button', { name: 'Organize' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Organize sources' });
+    await expect(dialog).toContainText('2 of 5 selected');
+    await expect(dialog.getByRole('checkbox', { name: /Glass Marsh survey/u })).toBeChecked();
+    await expect(dialog.getByRole('checkbox', { name: /Iron Compact charter/u })).not.toBeChecked();
+
+    await dialog.getByRole('button', { name: 'Suggest organization' }).click();
+    await expect(
+      dialog.getByRole('combobox', { name: 'Category for Glass Marsh survey' }),
+    ).toHaveValue('factions');
+    const weatherTags = dialog.getByRole('textbox', { name: 'Tags for Harbor weather' });
+    await expect(weatherTags).toHaveValue('glass-marsh, tides');
+    await weatherTags.fill('glass-marsh, tides, storms');
+    await dialog.getByRole('button', { name: 'Apply to 2 sources' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(sourcesPanel.getByRole('link', { name: 'Harbor weather' })).toContainText(
+      '#storms',
+    );
+  });
+
   await test.step('pull the right source into a chat via search-backed selection', async () => {
     await page.getByRole('button', { name: 'New chat' }).click();
     const chatDetail = page.getByRole('region', { name: 'Selected chat' });
@@ -173,6 +194,12 @@ test('M3 knowledge-base organization', async ({ page }) => {
     expect(body).toContain('category: factions');
     expect(body).toContain('- iron-compact');
     expect(body).toContain('- smugglers');
+
+    const weatherFile = files.find((file) => file.includes('harbor-weather'));
+    expect(weatherFile).toBeTruthy();
+    const weatherBody = await readFile(join(sourcesDir, weatherFile ?? ''), 'utf8');
+    expect(weatherBody).toContain('category: places');
+    expect(weatherBody).toContain('- storms');
 
     const compactFile = files.find((file) => file.endsWith('-compact.md'));
     expect(compactFile).toBeTruthy();

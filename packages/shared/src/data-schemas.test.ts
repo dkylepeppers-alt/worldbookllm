@@ -19,6 +19,8 @@ import {
 } from './index.js';
 import {
   SOURCE_ORGANIZATION_MAX_CONTENT,
+  existingSourceOrganizationRequestSchema,
+  existingSourceOrganizationResponseSchema,
   sourceOrganizationRequestSchema,
   sourceOrganizationResponseSchema,
 } from './sources.js';
@@ -333,6 +335,46 @@ describe('source organization schemas', () => {
     expect(() =>
       sourceOrganizationResponseSchema.parse({
         suggestions: [{ index: 0, category: null, tags: ['a', 'b', 'c', 'd', 'e', 'f'] }],
+        warning: null,
+      }),
+    ).toThrow();
+  });
+
+  it('accepts existing-source requests and id-keyed suggestions', () => {
+    const first = '0b3452a4-9a2e-4f3b-8f68-4a35f8e5d001';
+    const second = '0b3452a4-9a2e-4f3b-8f68-4a35f8e5d002';
+    expect(existingSourceOrganizationRequestSchema.parse({ sourceIds: [first, second] })).toEqual({
+      sourceIds: [first, second],
+    });
+    expect(
+      existingSourceOrganizationResponseSchema.parse({
+        suggestions: [{ sourceId: first, category: 'factions', tags: ['iron-compact'] }],
+        warning: null,
+      }),
+    ).toEqual({
+      suggestions: [{ sourceId: first, category: 'factions', tags: ['iron-compact'] }],
+      warning: null,
+    });
+  });
+
+  it('rejects existing-source requests with duplicates, non-uuids, or too many ids', () => {
+    const id = '0b3452a4-9a2e-4f3b-8f68-4a35f8e5d001';
+    expect(() => existingSourceOrganizationRequestSchema.parse({ sourceIds: [] })).toThrow();
+    expect(() => existingSourceOrganizationRequestSchema.parse({ sourceIds: [id, id] })).toThrow();
+    expect(() =>
+      existingSourceOrganizationRequestSchema.parse({ sourceIds: ['not-a-uuid'] }),
+    ).toThrow();
+    expect(() =>
+      existingSourceOrganizationRequestSchema.parse({
+        sourceIds: Array.from(
+          { length: 101 },
+          (_, index) => `0b3452a4-9a2e-4f3b-8f68-4a35f8e5${String(index).padStart(4, '0')}`,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      existingSourceOrganizationResponseSchema.parse({
+        suggestions: [{ sourceId: id, category: 'ships', tags: [] }],
         warning: null,
       }),
     ).toThrow();

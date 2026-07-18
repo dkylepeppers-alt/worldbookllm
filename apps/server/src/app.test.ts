@@ -192,6 +192,68 @@ describe('server data API', () => {
     expect(invalid.statusCode).toBe(400);
   });
 
+  it('suggests organization for existing sources from their stored content', async () => {
+    await app.close();
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"suggestions":[{"index":0,"category":"places","tags":["glass-marsh","tides","salt-flats"]}]}',
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    app = buildApp({ dataDir, logger: false, fetchImpl });
+    const notebook = await createNotebook();
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/notebooks/${notebook.id}`,
+      payload: {
+        settings: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+      },
+    });
+    const create = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/sources`,
+      payload: { title: 'Glass Marsh', content: 'A tidal wetland of glass reeds.' },
+    });
+    const source = create.json<{ id: string }>();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-organization-suggestions/existing`,
+      payload: { sourceIds: [source.id] },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      suggestions: [
+        { sourceId: source.id, category: 'places', tags: ['glass-marsh', 'tides', 'salt-flats'] },
+      ],
+      warning: null,
+    });
+    // The stored source content reaches the classification prompt.
+    const body = String(fetchImpl.mock.calls[0]?.[1]?.body);
+    expect(body).toContain('glass reeds');
+
+    const unknown = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-organization-suggestions/existing`,
+      payload: { sourceIds: ['5b8f8f6a-1f0f-4a5a-9d55-6a1f2b3c4d5e'] },
+    });
+    expect(unknown.statusCode).toBe(404);
+
+    const invalid = await app.inject({
+      method: 'POST',
+      url: `/api/notebooks/${notebook.id}/source-organization-suggestions/existing`,
+      payload: { sourceIds: [] },
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
+
   it('persists pasted sources as Markdown and keeps content out of SQLite', async () => {
     const notebook = await createNotebook();
     const create = await app.inject({

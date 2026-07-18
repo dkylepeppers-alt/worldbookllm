@@ -1,6 +1,7 @@
 import {
   createSourceSchema,
   createSourcesSchema,
+  existingSourceOrganizationRequestSchema,
   patchSourceSchema,
   resourceIdParamsSchema,
   sourceOrganizationRequestSchema,
@@ -37,6 +38,28 @@ export function registerSourceRoutes(app: FastifyInstance): void {
       reply.raw.off('close', onClose);
     }
   });
+
+  app.post(
+    '/api/notebooks/:id/source-organization-suggestions/existing',
+    async (request, reply) => {
+      const { id } = resourceIdParamsSchema.parse(request.params);
+      const { sourceIds } = existingSourceOrganizationRequestSchema.parse(request.body);
+      // A closed connection means nobody is waiting for the suggestion, so
+      // cancel the in-flight provider completion instead of paying for it.
+      const controller = new AbortController();
+      const onClose = () => controller.abort();
+      reply.raw.once('close', onClose);
+      try {
+        return await app.services.sourceOrganization.suggestForSources(
+          id,
+          sourceIds,
+          controller.signal,
+        );
+      } finally {
+        reply.raw.off('close', onClose);
+      }
+    },
+  );
 
   app.post('/api/notebooks/:id/sources', async (request, reply) => {
     const { id } = resourceIdParamsSchema.parse(request.params);

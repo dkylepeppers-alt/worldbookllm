@@ -40,6 +40,11 @@ jobs:
 
       - name: Test
         run: pnpm test
+        env:
+          # Only push to main is trusted with the live key: pull_request runs
+          # same-repo branch code (not just forks) with repo secrets attached,
+          # so exposing it there would let any PR branch exfiltrate or spend it.
+          SMOKE_NANOGPT_KEY: ${{ github.event_name == 'push' && secrets.NANO || '' }}
 
       - name: Build
         run: pnpm build
@@ -76,6 +81,11 @@ jobs:
 
       - name: Run e2e tests
         run: pnpm --filter @worldbookllm/e2e test:e2e
+        env:
+          # Only push to main is trusted with the live key: pull_request runs
+          # same-repo branch code (not just forks) with repo secrets attached,
+          # so exposing it there would let any PR branch exfiltrate or spend it.
+          SMOKE_NANOGPT_KEY: ${{ github.event_name == 'push' && secrets.NANO || '' }}
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v6
