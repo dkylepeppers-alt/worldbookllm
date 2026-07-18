@@ -210,6 +210,39 @@ describe('SourceOrganizeDialog', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('treats a tag edit that only differs in casing as unchanged', async () => {
+    const suggestExistingSourceOrganization = vi.fn<ApiClient['suggestExistingSourceOrganization']>(
+      () =>
+        Promise.resolve({
+          suggestions: [{ sourceId: charter.id, category: null, tags: [] }],
+          warning: null,
+        }),
+    );
+    const updateSource = vi.fn<ApiClient['updateSource']>();
+    const { onClose } = renderDialog([charter, gossip], {
+      suggestExistingSourceOrganization,
+      updateSource,
+    });
+
+    const user = userEvent.setup();
+    // Gossip is unorganized and preselected by default; deselect it so only
+    // Charter's unchanged-check is under test.
+    await user.click(screen.getByRole('checkbox', { name: /Gossip/u }));
+    await user.click(screen.getByRole('checkbox', { name: /Charter/u }));
+    await user.click(screen.getByRole('button', { name: 'Suggest organization' }));
+
+    const tags = await screen.findByLabelText('Tags for Charter');
+    await waitFor(() => expect(tags).toHaveProperty('value', 'iron-compact'));
+    // Same tag, different casing only: normalized, this matches the saved
+    // value and must not be treated as a change.
+    await user.clear(tags);
+    await user.type(tags, 'Iron-Compact');
+
+    await user.click(screen.getByRole('button', { name: 'Apply to 1 source' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(updateSource).not.toHaveBeenCalled();
+  });
+
   it('caps a single pass at the batch limit', async () => {
     const many = Array.from({ length: 101 }, (_, index) =>
       source(`33333333-3333-4333-8333-3333333${String(index).padStart(5, '0')}`, `Entry ${index}`),

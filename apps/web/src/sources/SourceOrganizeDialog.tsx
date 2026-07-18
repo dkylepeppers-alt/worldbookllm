@@ -34,6 +34,15 @@ function parseTags(tags: string): string[] {
     .filter((tag) => tag !== '');
 }
 
+// Mirrors SourceService's write-time normalization (lowercase, capped
+// length, case-insensitive dedupe) so the client's unchanged-row check
+// agrees with what the server will actually persist — otherwise a saved
+// row whose only local difference is casing looks changed forever and
+// keeps getting re-sent on every retry.
+function normalizeTags(tags: string[]): string[] {
+  return [...new Set(tags.map((tag) => tag.toLowerCase().slice(0, 50)))];
+}
+
 /**
  * Merges suggested tags into the source's saved tags: the user's existing
  * organization is never silently dropped by a bulk pass, suggestions only
@@ -163,7 +172,7 @@ export function SourceOrganizeDialog({ onClose }: SourceOrganizeDialogProps) {
     for (const row of rows) {
       const source = bySourceId.get(row.sourceId);
       if (source === undefined) continue;
-      const tags = parseTags(row.tags);
+      const tags = normalizeTags(parseTags(row.tags));
       const unchanged =
         row.category === source.category && JSON.stringify(tags) === JSON.stringify(source.tags);
       if (unchanged) continue;
