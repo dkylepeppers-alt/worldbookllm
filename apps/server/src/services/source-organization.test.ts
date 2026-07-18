@@ -150,7 +150,7 @@ describe('SourceOrganizationService', () => {
           throw new Error('not found');
         }),
       },
-      { list: vi.fn().mockReturnValue(existing) },
+      { list: vi.fn().mockReturnValue(existing), get: vi.fn() },
       { completeChat },
       { getSettings: vi.fn().mockReturnValue({ defaultPresetId: 'x', providerConfig }) },
     );
