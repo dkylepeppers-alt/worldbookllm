@@ -46,8 +46,8 @@ const frontmatterSchema = z.strictObject({
 const managedFrontmatterKeys = new Set<string>(frontmatterSchema.keyof().options);
 
 function partitionFrontmatter(data: Record<string, unknown>) {
-  const managed: Record<string, unknown> = {};
-  const user: Record<string, unknown> = {};
+  const managed: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  const user: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const [key, value] of Object.entries(data)) {
     (managedFrontmatterKeys.has(key) ? managed : user)[key] = value;
   }
@@ -139,18 +139,21 @@ export class SourceFileStore {
     const absolutePath = this.resolveRelative(filePath);
     const directory = resolve(absolutePath, '..');
     const updatedAt = input.updatedAt ?? input.createdAt;
-    const rendered = matter.stringify({ content: input.content, data: {} } as { content: string }, {
-      id: input.id,
-      notebookId: input.notebookId,
-      title: input.title,
-      origin: input.origin,
-      conversionNotes: input.conversionNotes,
-      // Omitted when unset so uncategorized/untagged files keep the legacy shape.
-      ...(input.category === null ? {} : { category: input.category }),
-      ...(input.tags.length === 0 ? {} : { tags: input.tags }),
-      createdAt: input.createdAt,
-      updatedAt,
-    });
+    const rendered = matter.stringify(
+      { content: input.content },
+      {
+        id: input.id,
+        notebookId: input.notebookId,
+        title: input.title,
+        origin: input.origin,
+        conversionNotes: input.conversionNotes,
+        // Omitted when unset so uncategorized/untagged files keep the legacy shape.
+        ...(input.category === null ? {} : { category: input.category }),
+        ...(input.tags.length === 0 ? {} : { tags: input.tags }),
+        createdAt: input.createdAt,
+        updatedAt,
+      },
+    );
     const serialized = input.content.endsWith('\n') ? rendered : rendered.replace(/\n$/u, '');
 
     mkdirSync(directory, { recursive: true });
@@ -188,7 +191,7 @@ export class SourceFileStore {
       const content =
         Object.keys(user).length === 0
           ? parsed.content
-          : matter.stringify({ content: parsed.content, data: {} } as { content: string }, user);
+          : matter.stringify({ content: parsed.content }, user);
       return {
         ...frontmatter,
         content,
