@@ -78,6 +78,60 @@ describe('SourceFileStore', () => {
     ]);
   });
 
+  it('keeps reviewed frontmatter in the Markdown body instead of merging it', () => {
+    const { dataDir, store } = makeStore();
+    const content = '---\nname: imported-skill\ndescription: User metadata\n---\n# Body\n';
+    const stored = store.write({
+      id: SOURCE_ID,
+      notebookId: NOTEBOOK_ID,
+      title: 'Imported body',
+      content,
+      origin: { type: 'paste' },
+      conversionNotes: [],
+      category: null,
+      tags: [],
+      createdAt: CREATED_AT,
+    });
+    const outer = matter(readFileSync(join(dataDir, stored.filePath), 'utf8'));
+    expect(outer.data).not.toHaveProperty('name');
+    expect(outer.data).not.toHaveProperty('description');
+    expect(outer.content).toBe(content);
+    expect(store.read(stored.filePath).content).toBe(content);
+  });
+
+  it('recovers user frontmatter merged into legacy managed frontmatter', () => {
+    const { dataDir, store } = makeStore();
+    const stored = store.write({
+      id: SOURCE_ID,
+      notebookId: NOTEBOOK_ID,
+      title: 'Imported body',
+      content: '# Body\n',
+      origin: { type: 'paste' },
+      conversionNotes: [],
+      category: 'lore',
+      tags: ['managed-tag'],
+      createdAt: CREATED_AT,
+    });
+    const absolutePath = join(dataDir, stored.filePath);
+    const parsed = matter(readFileSync(absolutePath, 'utf8'));
+    writeFileSync(
+      absolutePath,
+      matter.stringify(parsed.content, {
+        ...parsed.data,
+        name: 'imported-skill',
+        description: 'User metadata',
+      }),
+      { mode: 0o600 },
+    );
+
+    const recovered = store.read(stored.filePath);
+    expect(recovered).toMatchObject({ category: 'lore', tags: ['managed-tag'] });
+    expect(matter(recovered.content)).toMatchObject({
+      data: { name: 'imported-skill', description: 'User metadata' },
+      content: '# Body\n',
+    });
+  });
+
   it('round-trips category and tags through frontmatter and reads legacy files without them', () => {
     const { dataDir, store } = makeStore();
     const stored = store.write({

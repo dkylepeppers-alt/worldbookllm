@@ -43,6 +43,17 @@ const frontmatterSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
 });
 
+const managedFrontmatterKeys = new Set<string>(frontmatterSchema.keyof().options);
+
+function partitionFrontmatter(data: Record<string, unknown>) {
+  const managed: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  const user: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  for (const [key, value] of Object.entries(data)) {
+    (managedFrontmatterKeys.has(key) ? managed : user)[key] = value;
+  }
+  return { managed, user };
+}
+
 export interface SourceFileInput {
   id: string;
   notebookId: string;
@@ -128,18 +139,21 @@ export class SourceFileStore {
     const absolutePath = this.resolveRelative(filePath);
     const directory = resolve(absolutePath, '..');
     const updatedAt = input.updatedAt ?? input.createdAt;
-    const rendered = matter.stringify(input.content, {
-      id: input.id,
-      notebookId: input.notebookId,
-      title: input.title,
-      origin: input.origin,
-      conversionNotes: input.conversionNotes,
-      // Omitted when unset so uncategorized/untagged files keep the legacy shape.
-      ...(input.category === null ? {} : { category: input.category }),
-      ...(input.tags.length === 0 ? {} : { tags: input.tags }),
-      createdAt: input.createdAt,
-      updatedAt,
-    });
+    const rendered = matter.stringify(
+      { content: input.content },
+      {
+        id: input.id,
+        notebookId: input.notebookId,
+        title: input.title,
+        origin: input.origin,
+        conversionNotes: input.conversionNotes,
+        // Omitted when unset so uncategorized/untagged files keep the legacy shape.
+        ...(input.category === null ? {} : { category: input.category }),
+        ...(input.tags.length === 0 ? {} : { tags: input.tags }),
+        createdAt: input.createdAt,
+        updatedAt,
+      },
+    );
     const serialized = input.content.endsWith('\n') ? rendered : rendered.replace(/\n$/u, '');
 
     mkdirSync(directory, { recursive: true });
@@ -172,11 +186,16 @@ export class SourceFileStore {
     const absolutePath = this.resolveRelative(relativePath);
     try {
       const parsed = matter(readFileSync(absolutePath, 'utf8'));
-      const frontmatter = frontmatterSchema.parse(parsed.data);
+      const { managed, user } = partitionFrontmatter(parsed.data);
+      const frontmatter = frontmatterSchema.parse(managed);
+      const content =
+        Object.keys(user).length === 0
+          ? parsed.content
+          : matter.stringify({ content: parsed.content }, user);
       return {
         ...frontmatter,
-        content: parsed.content,
-        ...deriveContentMetadata(parsed.content),
+        content,
+        ...deriveContentMetadata(content),
       };
     } catch (error) {
       if (error instanceof UnsafePathError) throw error;

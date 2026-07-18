@@ -147,6 +147,21 @@ test('M3 knowledge-base organization', async ({ page }) => {
     ).not.toBeChecked();
   });
 
+  await test.step('save and open Markdown carrying user frontmatter', async () => {
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'frontmattered-source.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from(
+        '---\nname: imported-skill\ndescription: User metadata\n---\n# Imported body\n\nVisible content.\n',
+      ),
+    });
+    await expect(page.getByRole('heading', { name: 'Review import' })).toBeVisible();
+    await page.getByRole('button', { name: 'Save 1 source' }).click();
+    const reader = page.getByRole('region', { name: 'Reader' });
+    await expect(reader).toContainText('Visible content.');
+    await expect(page.getByText('Could not open source')).toHaveCount(0);
+  });
+
   await test.step('category and tags live in the frontmatter on disk', async () => {
     const notebookId = /\/notebooks\/([0-9a-f-]+)$/.exec(notebookUrl)?.[1];
     expect(notebookId).toBeTruthy();
