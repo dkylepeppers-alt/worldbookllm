@@ -40,6 +40,8 @@ jobs:
 
       - name: Test
         run: pnpm test
+        env:
+          SMOKE_NANOGPT_KEY: ${{ secrets.SMOKE_NANOGPT_KEY }}
 
       - name: Build
         run: pnpm build
