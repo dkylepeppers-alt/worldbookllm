@@ -62,6 +62,8 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Later enhancement (2026-07-17):** new-source review flows now use the notebook's configured model to suggest an editable canonical category and tags. Suggestions are transient and failure-tolerant; accepted metadata still persists through Markdown frontmatter.
 
+**Later enhancement (2026-07-18):** the source browser's Organize dialog runs the same classification over sources already in the notebook (unorganized ones preselected, up to 100 per pass). Suggestions never replace saved organization silently — a blank category keeps the saved one and suggested tags extend the saved list — and every value stays editable before it is applied through the ordinary source PATCH boundary.
+
 **Scope:**
 
 - Source categories (characters, places, factions, timelines, lore, rules, style, plot, research, misc) and free-form tags
