@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   appSettingsSchema,
+  patchAppSettingsSchema,
   createPresetSchema,
   generationControlsSchema,
   patchPresetSchema,
@@ -237,9 +238,28 @@ describe('preset schemas', () => {
       patchPresetSchema.parse({ generation: { temperature: 0.4, extra: true } }),
     ).toThrow();
     expect(() => patchPresetSchema.parse({ name: 'Valid', extra: true })).toThrow();
-    expect(appSettingsSchema.parse({ defaultPresetId: PRESET_ID })).toEqual({
+    expect(appSettingsSchema.parse({ defaultPresetId: PRESET_ID, providerConfig: null })).toEqual({
+      defaultPresetId: PRESET_ID,
+      providerConfig: null,
+    });
+    expect(() =>
+      appSettingsSchema.parse({ defaultPresetId: PRESET_ID, providerConfig: null, extra: true }),
+    ).toThrow();
+    expect(() => appSettingsSchema.parse({ defaultPresetId: PRESET_ID })).toThrow();
+  });
+
+  it('validates partial app-settings patches', () => {
+    expect(patchAppSettingsSchema.parse({ defaultPresetId: PRESET_ID })).toEqual({
       defaultPresetId: PRESET_ID,
     });
-    expect(() => appSettingsSchema.parse({ defaultPresetId: PRESET_ID, extra: true })).toThrow();
+    expect(
+      patchAppSettingsSchema.parse({
+        providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' },
+      }),
+    ).toEqual({ providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' } });
+    expect(patchAppSettingsSchema.parse({ providerConfig: null })).toEqual({
+      providerConfig: null,
+    });
+    expect(() => patchAppSettingsSchema.parse({})).toThrow();
   });
 });

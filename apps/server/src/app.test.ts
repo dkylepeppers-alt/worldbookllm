@@ -46,7 +46,6 @@ describe('server data API', () => {
     return response.json<{
       id: string;
       name: string;
-      settings: unknown;
       createdAt: string;
       updatedAt: string;
     }>();
@@ -64,7 +63,6 @@ describe('server data API', () => {
     expect(notebook).toEqual({
       id: expect.any(String),
       name: 'Atlas',
-      settings: null,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -76,16 +74,12 @@ describe('server data API', () => {
     const patch = await app.inject({
       method: 'PATCH',
       url: `/api/notebooks/${notebook.id}`,
-      payload: {
-        name: 'Revised Atlas',
-        settings: { source: 'nanogpt', model: 'meta/llama' },
-      },
+      payload: { name: 'Revised Atlas' },
     });
     expect(patch.statusCode).toBe(200);
     expect(patch.json()).toEqual({
       ...notebook,
       name: 'Revised Atlas',
-      settings: { source: 'nanogpt', model: 'meta/llama' },
       updatedAt: expect.any(String),
     });
 
@@ -127,7 +121,7 @@ describe('server data API', () => {
     });
   });
 
-  it('suggests source organization through the notebook provider', async () => {
+  it('suggests source organization through the global provider', async () => {
     await app.close();
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
@@ -146,9 +140,9 @@ describe('server data API', () => {
     const notebook = await createNotebook();
     await app.inject({
       method: 'PATCH',
-      url: `/api/notebooks/${notebook.id}`,
+      url: '/api/app-settings',
       payload: {
-        settings: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+        providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
       },
     });
     const suggest = vi.spyOn(app.services.sourceOrganization, 'suggest');
@@ -767,19 +761,15 @@ describe('server data API', () => {
       notebookId: notebook.id,
       title: 'New chat',
       sourceIds: [],
-      providerOverride: null,
     });
     const list = await app.inject({ method: 'GET', url: `/api/notebooks/${notebook.id}/chats` });
     expect(list.json()).toEqual([create.json()]);
     const patch = await app.inject({
       method: 'PATCH',
       url: `/api/chats/${chat.id}`,
-      payload: { title: 'Revised', providerOverride: { source: 'nanogpt', model: 'model' } },
+      payload: { title: 'Revised' },
     });
-    expect(patch.json()).toMatchObject({
-      title: 'Revised',
-      providerOverride: { source: 'nanogpt', model: 'model' },
-    });
+    expect(patch.json()).toMatchObject({ title: 'Revised' });
     const detail = await app.inject({ method: 'GET', url: `/api/chats/${chat.id}` });
     expect(detail.json()).toMatchObject({ id: chat.id, messages: [] });
     expect((await app.inject({ method: 'DELETE', url: `/api/chats/${chat.id}` })).statusCode).toBe(
@@ -797,13 +787,17 @@ describe('server data API', () => {
           new Response('data: {"choices":[{"delta":{"content":"Amber"}}]}\n\ndata: [DONE]\n\n'),
         ),
     });
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/app-settings',
+      payload: {
+        providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+      },
+    });
     const notebookResponse = await app.inject({
       method: 'POST',
       url: '/api/notebooks',
-      payload: {
-        name: 'Atlas',
-        settings: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
-      },
+      payload: { name: 'Atlas' },
     });
     const notebook = notebookResponse.json<{ id: string }>();
     const chatResponse = await app.inject({
@@ -863,14 +857,18 @@ describe('server data API', () => {
           ),
         ),
     });
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/app-settings',
+      payload: {
+        providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+      },
+    });
     const notebook = (
       await app.inject({
         method: 'POST',
         url: '/api/notebooks',
-        payload: {
-          name: 'Abort',
-          settings: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
-        },
+        payload: { name: 'Abort' },
       })
     ).json<{ id: string }>();
     const chat = (
@@ -912,7 +910,7 @@ describe('server data API', () => {
     expect(response.json()).toMatchObject({ id: notebook.id, name: 'Persistent' });
 
     const db = new Database(join(dataDir, 'worldbookllm.db'), { readonly: true });
-    expect(db.pragma('user_version', { simple: true })).toBe(6);
+    expect(db.pragma('user_version', { simple: true })).toBe(7);
     db.close();
   });
 });

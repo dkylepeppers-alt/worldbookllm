@@ -95,14 +95,11 @@ describe('data API schemas', () => {
     ).toThrow();
   });
 
-  it('trims notebook input and rejects empty patches', () => {
-    expect(createNotebookSchema.parse({ name: ' Atlas ' })).toEqual({
-      name: 'Atlas',
-      settings: null,
-    });
+  it('trims notebook input and requires a name to rename', () => {
+    expect(createNotebookSchema.parse({ name: ' Atlas ' })).toEqual({ name: 'Atlas' });
     expect(() => createNotebookSchema.parse({ name: '' })).toThrow();
     expect(() => patchNotebookSchema.parse({})).toThrow();
-    expect(patchNotebookSchema.parse({ settings: null })).toEqual({ settings: null });
+    expect(patchNotebookSchema.parse({ name: ' Revised ' })).toEqual({ name: 'Revised' });
   });
 
   it('validates pasted sources and source detail responses', () => {
@@ -209,7 +206,6 @@ describe('data API schemas', () => {
     const notebook = {
       id: 'a0c7607c-b365-438b-a7e6-31b2308464b6',
       name: 'Atlas',
-      settings: null,
       createdAt: '2026-07-10T12:00:00.000Z',
       updatedAt: '2026-07-10T12:00:00.000Z',
     };

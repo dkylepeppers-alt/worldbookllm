@@ -17,7 +17,6 @@ import { ApiClientError, createApiClient } from './client.js';
 const notebook: Notebook = {
   id: 'a0c7607c-b365-438b-a7e6-31b2308464b6',
   name: 'Atlas',
-  settings: null,
   createdAt: '2026-07-10T12:00:00.000Z',
   updatedAt: '2026-07-10T12:00:00.000Z',
 };
@@ -60,7 +59,6 @@ const chat: Chat = {
   title: 'New chat',
   sourceIds: [],
   skillIds: [],
-  providerOverride: null,
   presetId: null,
   createdAt: '2026-07-10T12:00:00.000Z',
   updatedAt: '2026-07-10T12:00:00.000Z',
@@ -90,7 +88,7 @@ const preset: Preset = {
   updatedAt: '2026-07-10T12:00:00.000Z',
 };
 
-const appSettings: AppSettings = { defaultPresetId: preset.id };
+const appSettings: AppSettings = { defaultPresetId: preset.id, providerConfig: null };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {

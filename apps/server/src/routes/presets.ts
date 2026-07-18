@@ -1,6 +1,6 @@
 import {
-  appSettingsSchema,
   createPresetSchema,
+  patchAppSettingsSchema,
   patchPresetSchema,
   resourceIdParamsSchema,
 } from '@worldbookllm/shared';
@@ -32,7 +32,6 @@ export function registerPresetRoutes(app: FastifyInstance): void {
   app.get('/api/app-settings', () => app.services.presets.getSettings());
 
   app.patch('/api/app-settings', (request) => {
-    const { defaultPresetId } = appSettingsSchema.parse(request.body);
-    return app.services.presets.setDefault(defaultPresetId);
+    return app.services.presets.updateSettings(patchAppSettingsSchema.parse(request.body));
   });
 }

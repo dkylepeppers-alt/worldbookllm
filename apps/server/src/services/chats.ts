@@ -35,7 +35,6 @@ function mapChat(row: ChatRow): Chat {
       title: row.title,
       sourceIds: JSON.parse(row.source_ids_json),
       skillIds: JSON.parse(row.skill_ids_json),
-      providerOverride: JSON.parse(row.provider_override_json),
       presetId: row.preset_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -172,7 +171,7 @@ export class ChatService {
     const timestamp = this.now();
     this.db
       .prepare(
-        'INSERT INTO chats (id, notebook_id, title, source_ids_json, skill_ids_json, provider_override_json, preset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO chats (id, notebook_id, title, source_ids_json, skill_ids_json, preset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         id,
@@ -180,7 +179,6 @@ export class ChatService {
         input.title,
         JSON.stringify(input.sourceIds),
         JSON.stringify(input.skillIds),
-        JSON.stringify(input.providerOverride),
         input.presetId,
         timestamp,
         timestamp,
@@ -196,21 +194,18 @@ export class ChatService {
     this.validateSources(current.notebookId, sourceIds);
     // Only an explicit replacement is validated: a deleted skill leaves stale
     // ids behind (like deleted sources), and unrelated edits — retitling,
-    // provider changes, or the `skillIds: []` repair itself — must not 404 on
+    // preset changes, or the `skillIds: []` repair itself — must not 404 on
     // a selection this request does not touch.
     if (input.skillIds !== undefined) this.validateSkills(input.skillIds);
     this.validatePreset(presetId);
     this.db
       .prepare(
-        'UPDATE chats SET title = ?, source_ids_json = ?, skill_ids_json = ?, provider_override_json = ?, preset_id = ?, updated_at = ? WHERE id = ?',
+        'UPDATE chats SET title = ?, source_ids_json = ?, skill_ids_json = ?, preset_id = ?, updated_at = ? WHERE id = ?',
       )
       .run(
         input.title ?? current.title,
         JSON.stringify(sourceIds),
         JSON.stringify(skillIds),
-        JSON.stringify(
-          input.providerOverride === undefined ? current.providerOverride : input.providerOverride,
-        ),
         presetId,
         this.now(),
         id,

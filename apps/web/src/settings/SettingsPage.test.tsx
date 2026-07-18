@@ -108,6 +108,47 @@ describe('Provider settings', () => {
     expect(getSecrets).toHaveBeenCalledTimes(2);
   });
 
+  it('configures, updates, and clears the global provider', async () => {
+    const updateAppSettings = vi.fn().mockResolvedValue({
+      defaultPresetId: '10000000-0000-4000-8000-000000000001',
+      providerConfig: { source: 'nanogpt', model: 'nano-story' },
+    });
+    const getAppSettings = vi
+      .fn()
+      .mockResolvedValueOnce({
+        defaultPresetId: '10000000-0000-4000-8000-000000000001',
+        providerConfig: null,
+      })
+      .mockResolvedValue({
+        defaultPresetId: '10000000-0000-4000-8000-000000000001',
+        providerConfig: { source: 'nanogpt', model: 'nano-story' },
+      });
+    renderSettings({ getAppSettings, updateAppSettings });
+    const user = userEvent.setup();
+
+    expect(await screen.findByText('Not configured')).toBeDefined();
+    await user.click(screen.getByRole('button', { name: 'Configure provider' }));
+    await user.selectOptions(await screen.findByLabelText('Provider'), 'nanogpt');
+    await user.type(screen.getByLabelText('Model'), 'nano-story');
+    await user.click(screen.getByRole('button', { name: 'Save provider' }));
+
+    await waitFor(() =>
+      expect(updateAppSettings).toHaveBeenCalledWith({
+        providerConfig: { source: 'nanogpt', model: 'nano-story' },
+      }),
+    );
+    expect(await screen.findByText('NanoGPT · nano-story')).toBeDefined();
+
+    getAppSettings.mockResolvedValue({
+      defaultPresetId: '10000000-0000-4000-8000-000000000001',
+      providerConfig: null,
+    });
+    await user.click(screen.getByRole('button', { name: 'Configure provider' }));
+    await user.click(await screen.findByRole('button', { name: 'Clear provider' }));
+    await waitFor(() => expect(updateAppSettings).toHaveBeenCalledWith({ providerConfig: null }));
+    expect(await screen.findByText('Not configured')).toBeDefined();
+  });
+
   it('retries a catalog or secret load failure', async () => {
     const getProviderCatalog = vi
       .fn()

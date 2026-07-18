@@ -20,9 +20,12 @@ function setup() {
     ['a0c7607c-b365-438b-a7e6-31b2308464b6', 'Atlas'],
     ['d8dc74cd-3f42-44b9-90df-7fde6e885f46', 'Other'],
   ]) {
-    db.prepare(
-      'INSERT INTO notebooks (id, name, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    ).run(id, name, 'null', now, now);
+    db.prepare('INSERT INTO notebooks (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(
+      id,
+      name,
+      now,
+      now,
+    );
   }
   const sources = [
     ['f9942d0a-eaca-41a8-a3d8-87987cc173fd', 'a0c7607c-b365-438b-a7e6-31b2308464b6'],
@@ -59,7 +62,6 @@ describe('ChatService', () => {
       title: 'Continuity',
       sourceIds: ['f9942d0a-eaca-41a8-a3d8-87987cc173fd'],
       skillIds: [],
-      providerOverride: null,
       presetId: null,
     };
     const created = chats.create('a0c7607c-b365-438b-a7e6-31b2308464b6', input);
@@ -73,15 +75,8 @@ describe('ChatService', () => {
     expect(chats.list(created.notebookId)).toEqual([created]);
     expect(chats.getDetail(created.id)).toEqual({ ...created, messages: [] });
 
-    const patched = chats.patch(created.id, {
-      title: 'Revised',
-      providerOverride: { source: 'nanogpt', model: 'gpt-4o-mini' },
-    });
-    expect(patched).toMatchObject({
-      title: 'Revised',
-      sourceIds: input.sourceIds,
-      providerOverride: { source: 'nanogpt', model: 'gpt-4o-mini' },
-    });
+    const patched = chats.patch(created.id, { title: 'Revised' });
+    expect(patched).toMatchObject({ title: 'Revised', sourceIds: input.sourceIds });
     db.close();
   });
 
@@ -92,7 +87,6 @@ describe('ChatService', () => {
         skillIds: [],
         title: 'Missing',
         sourceIds: [],
-        providerOverride: null,
         presetId: null,
       }),
     ).toThrow(NotFoundError);
@@ -100,7 +94,6 @@ describe('ChatService', () => {
       skillIds: [],
       title: 'Chat',
       sourceIds: [],
-      providerOverride: null,
       presetId: null,
     });
     expect(() =>
@@ -131,7 +124,6 @@ describe('ChatService', () => {
         title: 'Chat',
         sourceIds: [],
         skillIds: ['9c62ee9c-0f5f-4d33-9d61-1a2b3c4d5e6f'],
-        providerOverride: null,
         presetId: null,
       }),
     ).toThrow(NotFoundError);
@@ -140,7 +132,6 @@ describe('ChatService', () => {
       title: 'Chat',
       sourceIds: [],
       skillIds: ['2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01'],
-      providerOverride: null,
       presetId: null,
     });
     expect(created.skillIds).toEqual(['2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01']);
@@ -173,7 +164,6 @@ describe('ChatService', () => {
       title: 'Chat',
       sourceIds: [],
       skillIds: ['2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01'],
-      providerOverride: null,
       presetId: null,
     });
     db.prepare('DELETE FROM skills WHERE id = ?').run('2f1f6c15-9a71-4f5e-8f43-25c9d16f2a01');
@@ -190,7 +180,6 @@ describe('ChatService', () => {
       skillIds: [],
       title: 'Chat',
       sourceIds: [],
-      providerOverride: null,
       presetId: null,
     });
     db.prepare('UPDATE chats SET source_ids_json = ? WHERE id = ?').run('{broken', created.id);
@@ -204,7 +193,6 @@ describe('ChatService', () => {
       skillIds: [],
       title: 'Chat',
       sourceIds: ['f9942d0a-eaca-41a8-a3d8-87987cc173fd'],
-      providerOverride: null,
       presetId: null,
     });
     const context: GenerationContext = {
@@ -247,7 +235,6 @@ describe('ChatService', () => {
       skillIds: [],
       title: 'Chat',
       sourceIds: [],
-      providerOverride: null,
       presetId: null,
     });
     const context: GenerationContext = {
@@ -281,7 +268,6 @@ describe('ChatService', () => {
       skillIds: [],
       title: 'Chat',
       sourceIds: [],
-      providerOverride: null,
       presetId: null,
     });
     const context: GenerationContext = {
@@ -331,7 +317,6 @@ describe('ChatService', () => {
       skillIds: [],
       title: 'Chat',
       sourceIds: [],
-      providerOverride: null,
       presetId: null,
     });
     const context: GenerationContext = {
@@ -355,7 +340,6 @@ describe('ChatService', () => {
       skillIds: [],
       title: 'Chat',
       sourceIds: [],
-      providerOverride: null,
       presetId: null,
     });
     const { assistant } = chats.beginExchange(chat.id, 'Ask', {
@@ -383,7 +367,6 @@ describe('ChatService', () => {
       skillIds: [],
       title: 'Chat',
       sourceIds: [],
-      providerOverride: null,
       presetId: null,
     });
     chats.beginExchange(chat.id, 'Question', {
@@ -408,7 +391,6 @@ describe('ChatService', () => {
       skillIds: [],
       title: 'Explicit',
       sourceIds: [],
-      providerOverride: null,
       presetId: defaultPresetId,
     });
     expect(explicit.presetId).toBe(defaultPresetId);
@@ -420,7 +402,6 @@ describe('ChatService', () => {
         skillIds: [],
         title: 'Missing preset',
         sourceIds: [],
-        providerOverride: null,
         presetId: missing,
       }),
     ).toThrow(NotFoundError);

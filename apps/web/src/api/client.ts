@@ -39,6 +39,7 @@ import {
   type Message,
   type ModelListResponse,
   type Notebook,
+  type PatchAppSettings,
   type PatchChat,
   type PatchNotebook,
   type PatchPreset,
@@ -142,7 +143,7 @@ export interface ApiClient {
   updatePreset(id: string, input: PatchPreset, signal?: AbortSignal): Promise<Preset>;
   deletePreset(id: string, signal?: AbortSignal): Promise<void>;
   getAppSettings(signal?: AbortSignal): Promise<AppSettings>;
-  updateAppSettings(input: AppSettings, signal?: AbortSignal): Promise<AppSettings>;
+  updateAppSettings(input: PatchAppSettings, signal?: AbortSignal): Promise<AppSettings>;
   streamMessage(chatId: string, content: string, options: StreamMessageOptions): Promise<void>;
 }
 

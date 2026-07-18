@@ -48,7 +48,7 @@ function preset(id: string, name: string): Preset {
 function renderStudio(overrides = {}, presets = [preset(DEFAULT_ID, 'Grounded development')]) {
   const client = createTestClient({
     listPresets: () => Promise.resolve(presets),
-    getAppSettings: () => Promise.resolve({ defaultPresetId: DEFAULT_ID }),
+    getAppSettings: () => Promise.resolve({ defaultPresetId: DEFAULT_ID, providerConfig: null }),
     ...overrides,
   });
   render(

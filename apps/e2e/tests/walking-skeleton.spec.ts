@@ -56,8 +56,7 @@ test('M1 walking skeleton', async ({ page }) => {
     await expect(card.getByText('stub key')).toBeVisible();
   });
 
-  await test.step('configure the notebook provider against the stub', async () => {
-    await page.goto(notebookUrl);
+  await test.step('configure the global provider against the stub', async () => {
     await page.getByRole('button', { name: 'Configure provider' }).click();
     await page.locator('#provider-source').selectOption({ label: CUSTOM_PROVIDER_LABEL });
     await page.getByLabel('Base URL').fill(stubUrl ?? '');
@@ -69,7 +68,8 @@ test('M1 walking skeleton', async ({ page }) => {
     await page.getByRole('button', { name: 'Test connection' }).click();
     await expect(page.getByRole('status')).toContainText(/reachable/i);
     await page.getByRole('button', { name: 'Save provider' }).click();
-    await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText(STUB_MODEL_ID);
+    await expect(page.getByText(`${CUSTOM_PROVIDER_LABEL} · ${STUB_MODEL_ID}`)).toBeVisible();
+    await page.goto(notebookUrl);
   });
 
   await test.step('create a chat', async () => {
@@ -93,7 +93,6 @@ test('M1 walking skeleton', async ({ page }) => {
   await test.step('everything survives a reload', async () => {
     await page.reload();
     await expect(page.getByRole('link', { name: SOURCE_TITLE })).toBeVisible();
-    await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText(STUB_MODEL_ID);
     await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText('New chat');
 
     // The streamed exchange was persisted server-side: reselecting the chat
@@ -122,11 +121,14 @@ test('M1 walking skeleton', async ({ page }) => {
   });
 
   await test.step('switch models without losing data', async () => {
+    await page.goto('/settings');
     await page.getByRole('button', { name: 'Configure provider' }).click();
     await page.getByLabel('Base URL').fill(stubUrl ?? '');
     await page.locator('#provider-model').fill('stub-model-2');
     await page.getByRole('button', { name: 'Save provider' }).click();
-    await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText('stub-model-2');
+    await expect(page.getByText(`${CUSTOM_PROVIDER_LABEL} · stub-model-2`)).toBeVisible();
+
+    await page.goto(notebookUrl);
     await expect(page.getByRole('link', { name: SOURCE_TITLE })).toBeVisible();
     await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText('New chat');
   });

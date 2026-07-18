@@ -146,9 +146,20 @@ describe('PresetService', () => {
 
     expect(presets.resolve(null)).toEqual(seed);
     expect(presets.resolve(created.id)).toEqual(created);
-    expect(presets.setDefault(created.id)).toEqual({ defaultPresetId: created.id });
-    expect(presets.getSettings()).toEqual({ defaultPresetId: created.id });
+    expect(presets.updateSettings({ defaultPresetId: created.id })).toEqual({
+      defaultPresetId: created.id,
+      providerConfig: null,
+    });
+    expect(presets.getSettings()).toEqual({ defaultPresetId: created.id, providerConfig: null });
     expect(presets.resolve(null)).toEqual(created);
+
+    const configured = presets.updateSettings({
+      providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' },
+    });
+    expect(configured).toEqual({
+      defaultPresetId: created.id,
+      providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' },
+    });
     db.close();
   });
 
@@ -158,12 +169,15 @@ describe('PresetService', () => {
     expect(() => presets.delete(defaultId)).toThrow(ConflictError);
 
     const created = presets.create(portablePreset);
+    db.prepare('INSERT INTO notebooks (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(
+      NOTEBOOK_ID,
+      'Atlas',
+      NOW,
+      NOW,
+    );
     db.prepare(
-      'INSERT INTO notebooks (id, name, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    ).run(NOTEBOOK_ID, 'Atlas', 'null', NOW, NOW);
-    db.prepare(
-      'INSERT INTO chats (id, notebook_id, title, source_ids_json, provider_override_json, preset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run('chat', NOTEBOOK_ID, 'Draft', '[]', 'null', created.id, NOW, NOW);
+      'INSERT INTO chats (id, notebook_id, title, source_ids_json, preset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run('chat', NOTEBOOK_ID, 'Draft', '[]', created.id, NOW, NOW);
 
     presets.delete(created.id);
     expect(db.prepare('SELECT preset_id FROM chats WHERE id = ?').get('chat')).toEqual({
@@ -179,7 +193,7 @@ describe('PresetService', () => {
     expect(() => presets.get(missing)).toThrow(NotFoundError);
     expect(() => presets.patch(missing, { name: 'Missing' })).toThrow(NotFoundError);
     expect(() => presets.delete(missing)).toThrow(NotFoundError);
-    expect(() => presets.setDefault(missing)).toThrow(NotFoundError);
+    expect(() => presets.updateSettings({ defaultPresetId: missing })).toThrow(NotFoundError);
     expect(() => presets.resolve(missing)).toThrow(NotFoundError);
     expect(presets.list()).toHaveLength(1);
     db.close();

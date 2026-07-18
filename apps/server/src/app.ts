@@ -101,8 +101,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const presets = new PresetService(db);
   const notebooks = new NotebookService(db, sourceFiles);
   const sources = new SourceService(db, sourceFiles);
-  const sourceOrganization = new SourceOrganizationService(notebooks, sources, providers, (error) =>
-    app.log.error(error),
+  const sourceOrganization = new SourceOrganizationService(
+    notebooks,
+    sources,
+    providers,
+    presets,
+    (error) => app.log.error(error),
   );
   // Backfill/self-heal the FTS index from the files on disk (ADR 0012):
   // covers data dirs created before M3 and any divergence left behind.
@@ -116,7 +120,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   );
   const generation = new GenerationService(
     chats,
-    notebooks,
     presets,
     new PromptAssembler(sources, skills),
     providers,

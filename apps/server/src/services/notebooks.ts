@@ -18,7 +18,6 @@ function mapNotebook(row: NotebookRow): Notebook {
     return notebookSchema.parse({
       id: row.id,
       name: row.name,
-      settings: JSON.parse(row.settings_json),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
@@ -58,24 +57,16 @@ export class NotebookService {
     const id = randomUUID();
     const timestamp = this.now();
     this.db
-      .prepare(
-        'INSERT INTO notebooks (id, name, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      )
-      .run(id, input.name, JSON.stringify(input.settings), timestamp, timestamp);
+      .prepare('INSERT INTO notebooks (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .run(id, input.name, timestamp, timestamp);
     return this.get(id);
   }
 
   patch(id: string, input: PatchNotebook): Notebook {
-    const current = this.get(id);
-    const timestamp = this.now();
+    this.get(id);
     this.db
-      .prepare('UPDATE notebooks SET name = ?, settings_json = ?, updated_at = ? WHERE id = ?')
-      .run(
-        input.name ?? current.name,
-        JSON.stringify(input.settings === undefined ? current.settings : input.settings),
-        timestamp,
-        id,
-      );
+      .prepare('UPDATE notebooks SET name = ?, updated_at = ? WHERE id = ?')
+      .run(input.name, this.now(), id);
     return this.get(id);
   }
 

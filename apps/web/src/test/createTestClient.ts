@@ -48,7 +48,10 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     updatePreset: unused,
     deletePreset: unused,
     getAppSettings: () =>
-      Promise.resolve({ defaultPresetId: '00000000-0000-4000-8000-000000000000' }),
+      Promise.resolve({
+        defaultPresetId: '00000000-0000-4000-8000-000000000000',
+        providerConfig: null,
+      }),
     updateAppSettings: unused,
     streamMessage: unused,
     ...overrides,
