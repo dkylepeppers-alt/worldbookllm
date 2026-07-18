@@ -76,6 +76,8 @@ jobs:
 
       - name: Run e2e tests
         run: pnpm --filter @worldbookllm/e2e test:e2e
+        env:
+          SMOKE_NANOGPT_KEY: ${{ secrets.SMOKE_NANOGPT_KEY }}
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v6

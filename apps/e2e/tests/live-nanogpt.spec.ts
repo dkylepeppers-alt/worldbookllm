@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 
-// Live walking skeleton against real NanoGPT. Never runs in CI — it needs the
-// operator's key. Phase 9 sign-off requires this spec to actually run (a skip
-// is not verification, per the M1 contracts spec's Verification Contract):
+// Live walking skeleton against real NanoGPT. Runs in CI when the
+// SMOKE_NANOGPT_KEY repository secret is set; skipped otherwise. Phase 9
+// sign-off requires this spec to actually run (a skip is not verification,
+// per the M1 contracts spec's Verification Contract):
 //
 //   SMOKE_NANOGPT_KEY=… pnpm --filter @worldbookllm/e2e test:e2e
 const apiKey = process.env.SMOKE_NANOGPT_KEY;
