@@ -12,17 +12,21 @@ test('stopping a slow generation persists an interrupted message', async ({ page
   const stubUrl = process.env.E2E_STUB_URL;
   expect(stubUrl, 'global-setup must publish the stub provider URL').toBeTruthy();
 
-  await test.step('create a notebook wired to the stub provider', async () => {
-    await page.goto('/');
-    await page.getByLabel('Notebook name').fill('Interrupted Harbor');
-    await page.getByRole('button', { name: 'Create notebook' }).click();
-    await expect(page).toHaveURL(/\/notebooks\/[0-9a-f-]+$/);
+  await test.step('configure the global provider against the stub', async () => {
+    await page.goto('/settings');
     await page.getByRole('button', { name: 'Configure provider' }).click();
     await page.locator('#provider-source').selectOption({ label: CUSTOM_PROVIDER_LABEL });
     await page.getByLabel('Base URL').fill(stubUrl ?? '');
     await page.locator('#provider-model').fill('stub-model');
     await page.getByRole('button', { name: 'Save provider' }).click();
-    await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText('stub-model');
+    await expect(page.getByText(`${CUSTOM_PROVIDER_LABEL} · stub-model`)).toBeVisible();
+  });
+
+  await test.step('create a notebook wired to the stub provider', async () => {
+    await page.goto('/');
+    await page.getByLabel('Notebook name').fill('Interrupted Harbor');
+    await page.getByRole('button', { name: 'Create notebook' }).click();
+    await expect(page).toHaveURL(/\/notebooks\/[0-9a-f-]+$/);
   });
 
   const chatDetail = page.getByRole('region', { name: 'Selected chat' });

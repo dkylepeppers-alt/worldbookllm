@@ -88,6 +88,17 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
     ]);
   });
 
+  await test.step('configure the global provider against the stub', async () => {
+    await page.goto('/settings');
+    await page.getByRole('button', { name: 'Configure provider' }).click();
+    await page.locator('#provider-source').selectOption({ label: CUSTOM_PROVIDER_LABEL });
+    await page.getByLabel('Base URL').fill(stubUrl ?? '');
+    await page.getByRole('button', { name: 'Load models' }).click();
+    await expect(page.locator('#provider-model')).toHaveValue(STUB_MODEL_ID);
+    await page.getByRole('button', { name: 'Save provider' }).click();
+    await expect(page.getByText(`${CUSTOM_PROVIDER_LABEL} · ${STUB_MODEL_ID}`)).toBeVisible();
+  });
+
   await test.step('create a notebook and a Markdown source', async () => {
     await page.goto('/');
     await page.getByLabel('Notebook name').fill(NOTEBOOK_NAME);
@@ -105,14 +116,7 @@ test('M4 preset studio, immutable inspector, and response capture journey', asyn
     await expect(page.getByRole('region', { name: 'Reader' })).toContainText(SOURCE_CONTENT);
   });
 
-  await test.step('configure the notebook and create an inheriting chat', async () => {
-    await page.getByRole('button', { name: 'Configure provider' }).click();
-    await page.locator('#provider-source').selectOption({ label: CUSTOM_PROVIDER_LABEL });
-    await page.getByLabel('Base URL').fill(stubUrl ?? '');
-    await page.getByRole('button', { name: 'Load models' }).click();
-    await expect(page.locator('#provider-model')).toHaveValue(STUB_MODEL_ID);
-    await page.getByRole('button', { name: 'Save provider' }).click();
-
+  await test.step('create an inheriting chat', async () => {
     const [createChatResponse] = await Promise.all([
       page.waitForResponse(
         (response) =>

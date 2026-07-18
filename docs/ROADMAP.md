@@ -21,6 +21,8 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 
 **Status (2026-07-14):** complete and operator-verified, including the mandatory live NanoGPT E2E and server smoke paths. All nine phases are implemented: the server, notebook/source workspace, provider settings, streaming chat UI, stop/interrupted behavior, and complete walking-skeleton E2E. See `docs/superpowers/specs/2026-07-10-m1-phases-6-9-contracts-design.md` for the phase contracts.
 
+**Later change (2026-07-18):** the per-notebook default / per-chat override provider layering below was never used as a layering — every workspace pointed every notebook at the same provider. Replaced with a single global provider/model setting configured on the Settings page (ADR 0013); `Notebook.settings` and `Chat.providerOverride` are gone.
+
 **Scope:**
 
 - Relicense to AGPL-3.0 (prerequisite for the SillyTavern port)
