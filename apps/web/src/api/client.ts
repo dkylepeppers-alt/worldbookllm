@@ -22,6 +22,7 @@ import {
   sourceDetailSchema,
   sourceMetadataListSchema,
   sourceMetadataSchema,
+  existingSourceOrganizationResponseSchema,
   sourceOrganizationResponseSchema,
   sourcePreviewSchema,
   sourceSearchResultListSchema,
@@ -54,6 +55,8 @@ import {
   type StarterSkill,
   type SourceDetail,
   type SourceMetadata,
+  type ExistingSourceOrganizationRequest,
+  type ExistingSourceOrganizationResponse,
   type SourceOrganizationRequest,
   type SourceOrganizationResponse,
   type SourcePreview,
@@ -103,6 +106,11 @@ export interface ApiClient {
     input: SourceOrganizationRequest,
     signal?: AbortSignal,
   ): Promise<SourceOrganizationResponse>;
+  suggestExistingSourceOrganization(
+    notebookId: string,
+    input: ExistingSourceOrganizationRequest,
+    signal?: AbortSignal,
+  ): Promise<ExistingSourceOrganizationResponse>;
   previewFileImport(notebookId: string, file: File, signal?: AbortSignal): Promise<SourcePreview>;
   getSource(id: string, signal?: AbortSignal): Promise<SourceDetail>;
   updateSource(id: string, input: PatchSource, signal?: AbortSignal): Promise<SourceDetail>;
@@ -261,6 +269,16 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: sourceOrganizationResponseSchema,
         signal,
       }),
+    suggestExistingSourceOrganization: (notebookId, input, signal) =>
+      request(
+        `/api/notebooks/${encodeURIComponent(notebookId)}/source-organization-suggestions/existing`,
+        {
+          method: 'POST',
+          body: input,
+          schema: existingSourceOrganizationResponseSchema,
+          signal,
+        },
+      ),
     previewFileImport: (notebookId, file, signal) => {
       const formData = new FormData();
       formData.append('file', file);

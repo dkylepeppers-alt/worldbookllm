@@ -151,11 +151,16 @@ describe('API client', () => {
       suggestions: [{ index: 0, category: 'places' as const, tags: ['glass-marsh'] }],
       warning: null,
     };
+    const existingOrganization = {
+      suggestions: [{ sourceId: source.id, category: 'places' as const, tags: ['glass-marsh'] }],
+      warning: null,
+    };
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(notebook))
       .mockResolvedValueOnce(jsonResponse([source]))
       .mockResolvedValueOnce(jsonResponse(organization))
+      .mockResolvedValueOnce(jsonResponse(existingOrganization))
       .mockResolvedValueOnce(jsonResponse(source, { status: 201 }))
       .mockResolvedValueOnce(jsonResponse(detail))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
@@ -169,6 +174,9 @@ describe('API client', () => {
       }),
     ).resolves.toEqual(organization);
     await expect(
+      client.suggestExistingSourceOrganization(notebook.id, { sourceIds: [source.id] }),
+    ).resolves.toEqual(existingOrganization);
+    await expect(
       client.createSource(notebook.id, { title: source.title, content: detail.content }),
     ).resolves.toEqual(source);
     await expect(client.getSource(source.id)).resolves.toEqual(detail);
@@ -178,6 +186,7 @@ describe('API client', () => {
       `/api/notebooks/${notebook.id}`,
       `/api/notebooks/${notebook.id}/sources`,
       `/api/notebooks/${notebook.id}/source-organization-suggestions`,
+      `/api/notebooks/${notebook.id}/source-organization-suggestions/existing`,
       `/api/notebooks/${notebook.id}/sources`,
       `/api/sources/${source.id}`,
       `/api/sources/${source.id}`,
@@ -189,6 +198,13 @@ describe('API client', () => {
         body: JSON.stringify({
           drafts: [{ index: 0, title: 'Glass Marsh', content: 'Tidal wetland.' }],
         }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `/api/notebooks/${notebook.id}/source-organization-suggestions/existing`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ sourceIds: [source.id] }),
       }),
     );
   });

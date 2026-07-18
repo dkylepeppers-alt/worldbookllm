@@ -13,6 +13,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
 import { SourcePasteDialog } from './SourcePasteDialog.js';
 import { SourceImportDialog } from './SourceImportDialog.js';
+import { SourceOrganizeDialog } from './SourceOrganizeDialog.js';
 
 const IMPORT_ACCEPT =
   '.md,.markdown,.txt,.json,.pdf,.html,.htm,text/markdown,text/plain,application/json,application/pdf,text/html';
@@ -73,6 +74,7 @@ export function SourceList() {
   const api = useApi();
   const { notebookId, sourcesState, retrySources } = useNotebookWorkspace();
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [organizeOpen, setOrganizeOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -167,6 +169,15 @@ export function SourceList() {
               event.target.value = '';
             }}
           />
+          {sourcesState.status === 'ready' && sourcesState.sources.length > 0 ? (
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setOrganizeOpen(true)}
+            >
+              Organize
+            </button>
+          ) : null}
           <button
             type="button"
             className="button-secondary"
@@ -298,6 +309,7 @@ export function SourceList() {
       )}
 
       {pasteOpen ? <SourcePasteDialog onClose={() => setPasteOpen(false)} /> : null}
+      {organizeOpen ? <SourceOrganizeDialog onClose={() => setOrganizeOpen(false)} /> : null}
       {importFile !== null ? (
         <SourceImportDialog file={importFile} onClose={() => setImportFile(null)} />
       ) : null}

@@ -16,6 +16,7 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     createSource: unused,
     createSources: unused,
     suggestSourceOrganization: unused,
+    suggestExistingSourceOrganization: unused,
     previewFileImport: unused,
     getSource: unused,
     updateSource: unused,
