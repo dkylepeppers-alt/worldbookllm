@@ -43,6 +43,49 @@ describe('source organization prompt and parsing', () => {
     });
   });
 
+  it('accepts singular and differently cased categories without degrading', () => {
+    const result = parseSourceOrganizationCompletion(
+      '{"suggestions":[{"index":0,"category":"Character","tags":["captain"]},{"index":3,"category":" PLACES ","tags":["marsh"]}]}',
+      drafts,
+      [],
+    );
+    expect(result).toEqual({
+      suggestions: [
+        { index: 0, category: 'characters', tags: ['captain'] },
+        { index: 3, category: 'places', tags: ['marsh'] },
+      ],
+      warning: null,
+    });
+  });
+
+  it('parses JSON wrapped in prose, with or without a code fence', () => {
+    const fencedWithProse = parseSourceOrganizationCompletion(
+      'Sure, here you go:\n```json\n{"suggestions":[{"index":0,"category":"factions","tags":["compact"]},{"index":3,"category":"places","tags":["marsh"]}]}\n```\nLet me know if you need more!',
+      drafts,
+      [],
+    );
+    expect(fencedWithProse).toEqual({
+      suggestions: [
+        { index: 0, category: 'factions', tags: ['compact'] },
+        { index: 3, category: 'places', tags: ['marsh'] },
+      ],
+      warning: null,
+    });
+
+    const bareEmbedded = parseSourceOrganizationCompletion(
+      'Here is the classification: {"suggestions":[{"index":0,"category":"factions","tags":["compact"]},{"index":3,"category":"places","tags":["marsh"]}]} Hope that helps.',
+      drafts,
+      [],
+    );
+    expect(bareEmbedded).toEqual({
+      suggestions: [
+        { index: 0, category: 'factions', tags: ['compact'] },
+        { index: 3, category: 'places', tags: ['marsh'] },
+      ],
+      warning: null,
+    });
+  });
+
   it('warns when a row loses every generated tag to normalization', () => {
     const result = parseSourceOrganizationCompletion(
       '{"suggestions":[{"index":0,"category":"factions","tags":["bad,tag",7]},{"index":3,"category":"places","tags":["tides"]}]}',
@@ -117,6 +160,27 @@ describe('SourceOrganizationService', () => {
       undefined,
     );
     expect(logError).toHaveBeenCalledOnce();
+  });
+
+  it('budgets output tokens for a full batch so the JSON reply is never truncated', async () => {
+    const completeChat = vi.fn().mockResolvedValue('{"suggestions":[]}');
+    const service = new SourceOrganizationService(
+      { get: vi.fn().mockReturnValue(notebook) },
+      { list: vi.fn().mockReturnValue(existing), get: vi.fn() },
+      { completeChat },
+    );
+    const batch = Array.from({ length: 100 }, (_, index) => ({
+      index,
+      title: `Source ${index}`,
+      content: 'Body',
+    }));
+    await service.suggest(notebook.id, batch);
+    expect(completeChat).toHaveBeenCalledWith(
+      notebook.settings,
+      expect.any(Array),
+      { temperature: 0, maxTokens: 9856 },
+      undefined,
+    );
   });
 
   describe('suggestForSources', () => {
