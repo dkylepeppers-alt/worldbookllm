@@ -41,7 +41,7 @@ jobs:
       - name: Test
         run: pnpm test
         env:
-          SMOKE_NANOGPT_KEY: ${{ secrets.SMOKE_NANOGPT_KEY }}
+          SMOKE_NANOGPT_KEY: ${{ secrets.NANO }}
 
       - name: Build
         run: pnpm build
@@ -79,7 +79,7 @@ jobs:
       - name: Run e2e tests
         run: pnpm --filter @worldbookllm/e2e test:e2e
         env:
-          SMOKE_NANOGPT_KEY: ${{ secrets.SMOKE_NANOGPT_KEY }}
+          SMOKE_NANOGPT_KEY: ${{ secrets.NANO }}
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v6
