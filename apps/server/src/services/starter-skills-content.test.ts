@@ -80,7 +80,9 @@ const KIND_CONTRACTS: Record<SkillKind, KindContract> = {
   },
 };
 
-const MODE_TO_KIND: Record<string, SkillKind> = {
+// Intentionally partial: only recognized modes map to a kind; an unknown mode
+// yields `undefined` and fails the test loudly.
+const MODE_TO_KIND: Partial<Record<string, SkillKind>> = {
   'generative+explicit-critique': 'generative',
   interactive: 'interactive',
   authoring: 'authoring',

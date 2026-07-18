@@ -5,8 +5,10 @@ Most skills in this directory are adapted from
 (`skills/creative/fiction/`), commit
 `e02ec7e226a6e4f8419fd3b88a1d8e472d421b32`, fetched 2026-07-16. Two later
 additions come from that repository's `skills/creative/fiction/application/`
-tree on `main`, fetched 2026-07-18 (see the table). `skill-creator` is
-worldbookllm-original and derived from no upstream skill.
+tree at the same commit `e02ec7e226a6e4f8419fd3b88a1d8e472d421b32` (still
+`main` HEAD, unchanged upstream since 2026-02-24), fetched 2026-07-18 (see the
+table). `skill-creator` is worldbookllm-original and derived from no upstream
+skill.
 
 Each adapted skill's `SKILL.md` declares `license: MIT` and credits `jwynia`
 alongside the worldbookllm adaptation. The upstream MIT license text is

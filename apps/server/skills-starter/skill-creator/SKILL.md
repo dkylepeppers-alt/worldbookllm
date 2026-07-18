@@ -22,11 +22,11 @@ Default to producing the finished `SKILL.md`. Infer the skill's **kind** from th
 body accordingly:
 
 - **generative** — creates source-ready creative material from canon (the common case). Use
-  `metadata.mode: generative+explicit-critique`.
+  `metadata.type: generator` with `metadata.mode: generative+explicit-critique`.
 - **interactive** — runs a live, turn-by-turn experience such as a game or interview. Use
-  `metadata.mode: interactive`.
+  `metadata.type: facilitator` with `metadata.mode: interactive`.
 - **authoring** — produces a document or artifact for the user to keep, rather than story canon. Use
-  `metadata.mode: authoring`.
+  `metadata.type: authoring` with `metadata.mode: authoring`.
 
 Silently choose a lowercase-hyphenated `name` that matches the intended directory, write a description
 that states what the skill produces and when to use it, and select the kind before drafting the body.
