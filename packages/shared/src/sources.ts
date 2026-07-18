@@ -67,6 +67,25 @@ export const sourceOrganizationRequestSchema = z
     }
   });
 
+// Existing sources are classified server-side from their stored content, so
+// the request carries only ids. Each source's content is excerpted to this
+// many characters, keeping a full batch within SOURCE_ORGANIZATION_MAX_CONTENT.
+export const SOURCE_ORGANIZATION_EXCERPT_LENGTH = 5_000;
+
+export const existingSourceOrganizationRequestSchema = z
+  .strictObject({
+    sourceIds: z.array(z.uuid()).min(1).max(SOURCE_ORGANIZATION_MAX_DRAFTS),
+  })
+  .superRefine(({ sourceIds }, context) => {
+    if (new Set(sourceIds).size !== sourceIds.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['sourceIds'],
+        message: 'Source ids must be unique',
+      });
+    }
+  });
+
 export const sourceOrganizationSuggestionSchema = z.strictObject({
   index: z.number().int().nonnegative(),
   category: sourceCategorySchema.nullable(),
@@ -75,6 +94,17 @@ export const sourceOrganizationSuggestionSchema = z.strictObject({
 
 export const sourceOrganizationResponseSchema = z.strictObject({
   suggestions: z.array(sourceOrganizationSuggestionSchema),
+  warning: z.string().min(1).nullable(),
+});
+
+export const existingSourceOrganizationSuggestionSchema = z.strictObject({
+  sourceId: z.uuid(),
+  category: sourceCategorySchema.nullable(),
+  tags: sourceTagsSchema.max(5),
+});
+
+export const existingSourceOrganizationResponseSchema = z.strictObject({
+  suggestions: z.array(existingSourceOrganizationSuggestionSchema),
   warning: z.string().min(1).nullable(),
 });
 
@@ -188,6 +218,15 @@ export type SourceOrganizationDraft = z.infer<typeof sourceOrganizationDraftSche
 export type SourceOrganizationRequest = z.infer<typeof sourceOrganizationRequestSchema>;
 export type SourceOrganizationSuggestion = z.infer<typeof sourceOrganizationSuggestionSchema>;
 export type SourceOrganizationResponse = z.infer<typeof sourceOrganizationResponseSchema>;
+export type ExistingSourceOrganizationRequest = z.infer<
+  typeof existingSourceOrganizationRequestSchema
+>;
+export type ExistingSourceOrganizationSuggestion = z.infer<
+  typeof existingSourceOrganizationSuggestionSchema
+>;
+export type ExistingSourceOrganizationResponse = z.infer<
+  typeof existingSourceOrganizationResponseSchema
+>;
 export type SourceSearchQuery = z.infer<typeof sourceSearchQuerySchema>;
 export type SourceSearchResult = z.infer<typeof sourceSearchResultSchema>;
 export type SourceMetadata = z.infer<typeof sourceMetadataSchema>;
