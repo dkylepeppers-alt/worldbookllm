@@ -111,6 +111,8 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Status (2026-07-17):** complete. Skills CRUD (server and UI), per-chat attachment with `## Skills` injection, exchange-snapshot capture shown in the Prompt Inspector, the one-click starter-set install, and stub-provider E2E coverage are all implemented. The starter set was subsequently rewritten to be generative-first (produce source-ready Markdown, not just critique) with provenance recorded in `apps/server/skills-starter/ATTRIBUTION.md`.
 
+**Update (2026-07-18):** the starter catalog grew from a single generative kind into three — **generative** source-document producers, **interactive** facilitators (`game-facilitator`, a canon-aware session runner), and **authoring** tools (`skill-creator`) — plus the generative `adaptation-synthesis` skill for function-first adaptation across sources. The content-contract test is now kind-aware. See `docs/superpowers/specs/2026-07-18-skill-kinds-expansion.md`.
+
 **Scope:**
 
 - Skills as agentskills.io-compatible `SKILL.md` folders under `data/skills/`, indexed in SQLite, globally scoped like presets
