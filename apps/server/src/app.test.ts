@@ -203,14 +203,14 @@ describe('server data API', () => {
       ),
     );
     app = buildApp({ dataDir, logger: false, fetchImpl });
-    const notebook = await createNotebook();
     await app.inject({
       method: 'PATCH',
-      url: `/api/notebooks/${notebook.id}`,
+      url: '/api/app-settings',
       payload: {
-        settings: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+        providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
       },
     });
+    const notebook = await createNotebook();
     const create = await app.inject({
       method: 'POST',
       url: `/api/notebooks/${notebook.id}/sources`,
