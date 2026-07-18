@@ -18,7 +18,6 @@ import {
   NotFoundError,
 } from '../errors.js';
 import type { ChatService } from './chats.js';
-import type { NotebookService } from './notebooks.js';
 import type { PromptAssembler } from './prompt-assembler.js';
 import type { ProviderService } from './providers.js';
 import type { PresetService } from './presets.js';
@@ -36,7 +35,6 @@ export class GenerationService {
 
   constructor(
     private readonly chats: ChatService,
-    private readonly notebooks: NotebookService,
     private readonly presets: PresetService,
     private readonly prompts: PromptAssembler,
     private readonly providers: ProviderService,
@@ -61,8 +59,7 @@ export class GenerationService {
 
     try {
       const chat = this.chats.getDetail(chatId);
-      const notebook = this.notebooks.get(chat.notebookId);
-      const config = chat.providerOverride ?? notebook.settings;
+      const config = this.presets.getSettings().providerConfig;
       if (!config) throw new ConfigurationError('Configure a provider before sending a message.');
       let preset;
       try {
@@ -137,8 +134,7 @@ export class GenerationService {
           `Chat ${chatId} has no assistant response to regenerate`,
         );
       }
-      const notebook = this.notebooks.get(chat.notebookId);
-      const config = chat.providerOverride ?? notebook.settings;
+      const config = this.presets.getSettings().providerConfig;
       if (!config) throw new ConfigurationError('Configure a provider before sending a message.');
       let preset;
       try {

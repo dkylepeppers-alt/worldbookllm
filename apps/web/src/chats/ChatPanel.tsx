@@ -1,10 +1,4 @@
-import type {
-  Chat,
-  ChatDetail,
-  Message,
-  ProviderCatalogEntry,
-  ProviderConfig,
-} from '@worldbookllm/shared';
+import type { Chat, ChatDetail, Message } from '@worldbookllm/shared';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiClientError } from '../api/client.js';
@@ -13,7 +7,6 @@ import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 import { useNotebookWorkspace } from '../notebooks/notebook-workspace-context.js';
-import { ProviderConfigDialog } from '../providers/ProviderConfigDialog.js';
 import { ChatMessages, type PendingExchange, type RegenStream } from './ChatMessages.js';
 import { MessageComposer } from './MessageComposer.js';
 import { PromptInspectorDialog } from './PromptInspectorDialog.js';
@@ -31,18 +24,14 @@ type DetailState =
 
 export function ChatPanel() {
   const api = useApi();
-  const { notebook, notebookId, replaceNotebook } = useNotebookWorkspace();
+  const { notebookId } = useNotebookWorkspace();
   const [state, setState] = useState<ChatsState>({ status: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
-  const [catalog, setCatalog] = useState<ProviderCatalogEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [configuringNotebook, setConfiguringNotebook] = useState(false);
   const [renaming, setRenaming] = useState<Chat | null>(null);
-  const [configuringChat, setConfiguringChat] = useState<Chat | null>(null);
   const [deleting, setDeleting] = useState<Chat | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
-  const [clearingOverride, setClearingOverride] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailState>({ status: 'idle' });
   const [detailReloadKey, setDetailReloadKey] = useState(0);
@@ -96,15 +85,6 @@ export function ChatPanel() {
       });
     return () => controller.abort();
   }, [applyChats, loadChats, reloadKey]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void api
-      .getProviderCatalog(controller.signal)
-      .then(setCatalog)
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [api]);
 
   const selected =
     state.status === 'ready' ? (state.chats.find((chat) => chat.id === selectedId) ?? null) : null;
@@ -341,37 +321,8 @@ export function ChatPanel() {
     }
   }
 
-  async function clearOverride(chat: Chat) {
-    if (clearingOverride) return;
-    setClearingOverride(true);
-    setMutationError(null);
-    try {
-      replaceChat(await api.updateChat(chat.id, { providerOverride: null }));
-    } catch (error) {
-      setMutationError(messageFor(error, 'Could not clear the provider override.'));
-    } finally {
-      setClearingOverride(false);
-    }
-  }
-
-  const effectiveConfig = selected?.providerOverride ?? notebook.settings;
-
   return (
     <div className="chat-panel">
-      <header className="chat-provider-header">
-        <div>
-          <p className="coordinate-label">Notebook provider</p>
-          <strong>{summary(notebook.settings, catalog)}</strong>
-        </div>
-        <button
-          type="button"
-          className="button-secondary"
-          onClick={() => setConfiguringNotebook(true)}
-        >
-          Configure provider
-        </button>
-      </header>
-
       <div className="region-header">
         <div>
           <p className="coordinate-label">Chat index</p>
@@ -413,7 +364,6 @@ export function ChatPanel() {
                 onClick={() => setSelectedId(chat.id)}
               >
                 <span>{chat.title}</span>
-                <small>{chat.providerOverride === null ? 'Inherits' : 'Override'}</small>
               </button>
             </li>
           ))}
@@ -424,23 +374,10 @@ export function ChatPanel() {
         <section className="chat-detail" aria-label="Selected chat">
           <p className="coordinate-label">Selected chat</p>
           <h3>{selected.title}</h3>
-          <p>{summary(effectiveConfig, catalog)}</p>
           <div className="inline-actions">
             <button type="button" onClick={() => setRenaming(selected)}>
               Rename
             </button>
-            <button type="button" onClick={() => setConfiguringChat(selected)}>
-              Edit provider override
-            </button>
-            {selected.providerOverride === null ? null : (
-              <button
-                type="button"
-                disabled={clearingOverride}
-                onClick={() => void clearOverride(selected)}
-              >
-                {clearingOverride ? 'Clearing…' : 'Use notebook default'}
-              </button>
-            )}
             <button type="button" className="text-danger" onClick={() => setDeleting(selected)}>
               Delete
             </button>
@@ -503,20 +440,6 @@ export function ChatPanel() {
         </section>
       )}
 
-      {configuringNotebook ? (
-        <ProviderConfigDialog
-          title="Configure notebook provider"
-          initial={notebook.settings}
-          clearLabel="Clear notebook default"
-          onClose={() => setConfiguringNotebook(false)}
-          onSave={async (settings) => {
-            replaceNotebook(await api.updateNotebook(notebookId, { settings }));
-          }}
-          onClear={async () => {
-            replaceNotebook(await api.updateNotebook(notebookId, { settings: null }));
-          }}
-        />
-      ) : null}
       {renaming === null ? null : (
         <RenameChatDialog
           chat={renaming}
@@ -524,20 +447,6 @@ export function ChatPanel() {
           onSave={async (title) => {
             replaceChat(await api.updateChat(renaming.id, { title }));
             setRenaming(null);
-          }}
-        />
-      )}
-      {configuringChat === null ? null : (
-        <ProviderConfigDialog
-          title="Edit chat provider override"
-          initial={configuringChat.providerOverride ?? notebook.settings}
-          clearLabel="Use notebook default"
-          onClose={() => setConfiguringChat(null)}
-          onSave={async (providerOverride) => {
-            replaceChat(await api.updateChat(configuringChat.id, { providerOverride }));
-          }}
-          onClear={async () => {
-            replaceChat(await api.updateChat(configuringChat.id, { providerOverride: null }));
           }}
         />
       )}
@@ -630,12 +539,6 @@ function RenameChatDialog({ chat, onClose, onSave }: RenameChatDialogProps) {
       </section>
     </div>
   );
-}
-
-function summary(config: ProviderConfig | null, catalog: ProviderCatalogEntry[]): string {
-  if (config === null) return 'Not configured';
-  const label = catalog.find((entry) => entry.source === config.source)?.label ?? config.source;
-  return `${label} · ${config.model}`;
 }
 
 function messageFor(error: unknown, fallback: string): string {

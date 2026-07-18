@@ -33,8 +33,9 @@ test('M1 walking skeleton against live NanoGPT', async ({ page }) => {
     await expect(page.getByRole('link', { name: 'Smoke notes' })).toBeVisible();
   });
 
+  let notebookUrl = '';
   await test.step('store the NanoGPT key', async () => {
-    const notebookUrl = page.url();
+    notebookUrl = page.url();
     await page.goto('/settings');
     const card = page
       .locator('section.provider-settings-card')
@@ -43,17 +44,17 @@ test('M1 walking skeleton against live NanoGPT', async ({ page }) => {
     await page.getByLabel('Key value').fill(apiKey ?? '');
     await page.getByRole('button', { name: 'Save key' }).click();
     await expect(card.getByText('Active')).toBeVisible();
-    await page.goto(notebookUrl);
   });
 
-  await test.step('configure NanoGPT and verify the connection', async () => {
+  await test.step('configure NanoGPT globally and verify the connection', async () => {
     await page.getByRole('button', { name: 'Configure provider' }).click();
     await page.locator('#provider-source').selectOption({ label: 'NanoGPT' });
     await page.locator('#provider-model').fill(model);
     await page.getByRole('button', { name: 'Test connection' }).click();
     await expect(page.getByRole('status')).toContainText(/reachable/i, { timeout: 30_000 });
     await page.getByRole('button', { name: 'Save provider' }).click();
-    await expect(page.getByRole('complementary', { name: 'Chat' })).toContainText(model);
+    await expect(page.getByText(`NanoGPT · ${model}`)).toBeVisible();
+    await page.goto(notebookUrl);
   });
 
   await test.step('stream a grounded reply and persist it', async () => {

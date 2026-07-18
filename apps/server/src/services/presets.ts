@@ -7,6 +7,7 @@ import {
   portablePresetSchema,
   type AppSettings,
   type CreatePreset,
+  type PatchAppSettings,
   type PatchPreset,
   type PortablePreset,
   type Preset,
@@ -141,7 +142,10 @@ export class PresetService {
     const row = this.db.prepare('SELECT * FROM app_settings WHERE id = 1').get() as
       AppSettingsRow | undefined;
     try {
-      return appSettingsSchema.parse({ defaultPresetId: row?.default_preset_id });
+      return appSettingsSchema.parse({
+        defaultPresetId: row?.default_preset_id,
+        providerConfig: row === undefined ? null : JSON.parse(row.provider_config_json),
+      });
     } catch (error) {
       throw new InvalidStoredDataError('Application settings have invalid stored data', {
         cause: error,
@@ -149,10 +153,20 @@ export class PresetService {
     }
   }
 
-  setDefault(presetId: string): AppSettings {
+  updateSettings(input: PatchAppSettings): AppSettings {
     return this.db.transaction(() => {
-      this.get(presetId);
-      this.db.prepare('UPDATE app_settings SET default_preset_id = ? WHERE id = 1').run(presetId);
+      if (input.defaultPresetId !== undefined) this.get(input.defaultPresetId);
+      const current = this.getSettings();
+      this.db
+        .prepare(
+          'UPDATE app_settings SET default_preset_id = ?, provider_config_json = ? WHERE id = 1',
+        )
+        .run(
+          input.defaultPresetId ?? current.defaultPresetId,
+          JSON.stringify(
+            input.providerConfig === undefined ? current.providerConfig : input.providerConfig,
+          ),
+        );
       return this.getSettings();
     })();
   }

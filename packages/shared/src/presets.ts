@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { providerConfigSchema } from './provider-config.js';
+
 const presetNameSchema = z.string().trim().min(1).max(200);
 const moduleNameSchema = z.string().trim().min(1).max(200);
 
@@ -119,7 +121,17 @@ export const presetListSchema = z.array(presetSchema);
 
 export const appSettingsSchema = z.strictObject({
   defaultPresetId: z.uuid(),
+  providerConfig: providerConfigSchema.nullable(),
 });
+
+export const patchAppSettingsSchema = z
+  .strictObject({
+    defaultPresetId: z.uuid().optional(),
+    providerConfig: providerConfigSchema.nullable().optional(),
+  })
+  .refine((value) => value.defaultPresetId !== undefined || value.providerConfig !== undefined, {
+    message: 'At least one setting is required',
+  });
 
 export const createPresetSchema = portablePresetSchema;
 
@@ -143,5 +155,6 @@ export type PresetModule = z.infer<typeof presetModuleSchema>;
 export type PortablePreset = z.infer<typeof portablePresetSchema>;
 export type Preset = z.infer<typeof presetSchema>;
 export type AppSettings = z.infer<typeof appSettingsSchema>;
+export type PatchAppSettings = z.infer<typeof patchAppSettingsSchema>;
 export type CreatePreset = z.infer<typeof createPresetSchema>;
 export type PatchPreset = z.infer<typeof patchPresetSchema>;

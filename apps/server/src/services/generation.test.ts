@@ -34,24 +34,22 @@ function setup(fetchImpl: typeof fetch, withConfig = true) {
   const secrets = new SecretStore(dataDir);
   const providers = new ProviderService(secrets, new ProviderHttpClient(fetchImpl));
   const presets = new PresetService(db);
-  const notebook = notebooks.create({
-    name: 'Atlas',
-    settings: withConfig
-      ? { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' }
-      : null,
-  });
+  if (withConfig) {
+    presets.updateSettings({
+      providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+    });
+  }
+  const notebook = notebooks.create({ name: 'Atlas' });
   const source = sources.create(notebook.id, { title: 'Lore', content: 'Amber is canon.' });
   const chat = chats.create(notebook.id, {
     skillIds: [],
     title: 'Chat',
     sourceIds: [source.id],
-    providerOverride: null,
     presetId: null,
   });
   const skills = new SkillService(db, new SkillFileStore(dataDir));
   const generation = new GenerationService(
     chats,
-    notebooks,
     presets,
     new PromptAssembler(sources, skills),
     providers,
@@ -243,9 +241,10 @@ describe('GenerationService', () => {
     missingPreset.db.close();
 
     const requestFailure = setup(async () => Promise.reject(new Error('not called')));
-    requestFailure.notebook.settings = null;
-    requestFailure.chats.patch(requestFailure.chat.id, {
-      providerOverride: { source: 'claude', model: 'claude-3-5-sonnet-20241022' },
+    // A configured source that requires a secret this test never stores: the
+    // config resolves, but building the provider request itself fails.
+    requestFailure.presets.updateSettings({
+      providerConfig: { source: 'claude', model: 'claude-3-5-sonnet-20241022' },
     });
     expect(() => requestFailure.generation.prepare(requestFailure.chat.id, 'Question')).toThrow(
       ConfigurationError,

@@ -125,10 +125,10 @@ describe('preset API', () => {
     expect(second.json()).toMatchObject({ name: 'STORY ARCHITECT (2)' });
   });
 
-  it('reads and updates the default preset with a strict body', async () => {
+  it('reads and updates app settings with a strict, partial body', async () => {
     const initial = await app.inject({ method: 'GET', url: '/api/app-settings' });
     expect(initial.statusCode).toBe(200);
-    expect(initial.json()).toEqual({ defaultPresetId: expect.any(String) });
+    expect(initial.json()).toEqual({ defaultPresetId: expect.any(String), providerConfig: null });
 
     const created = await app.inject({ method: 'POST', url: '/api/presets', payload: newPreset });
     const preset = created.json<Preset>();
@@ -138,7 +138,21 @@ describe('preset API', () => {
       payload: { defaultPresetId: preset.id },
     });
     expect(update.statusCode).toBe(200);
-    expect(update.json()).toEqual({ defaultPresetId: preset.id });
+    expect(update.json()).toEqual({ defaultPresetId: preset.id, providerConfig: null });
+
+    const providerUpdate = await app.inject({
+      method: 'PATCH',
+      url: '/api/app-settings',
+      payload: { providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' } },
+    });
+    expect(providerUpdate.statusCode).toBe(200);
+    expect(providerUpdate.json()).toEqual({
+      defaultPresetId: preset.id,
+      providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' },
+    });
+
+    const empty = await app.inject({ method: 'PATCH', url: '/api/app-settings', payload: {} });
+    expect(empty.statusCode).toBe(400);
 
     const invalid = await app.inject({
       method: 'PATCH',
@@ -152,6 +166,7 @@ describe('preset API', () => {
     });
     expect((await app.inject({ method: 'GET', url: '/api/app-settings' })).json()).toEqual({
       defaultPresetId: preset.id,
+      providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' },
     });
   });
 

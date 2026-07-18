@@ -51,14 +51,16 @@ test('M3 knowledge-base organization', async ({ page }) => {
     }
   });
 
-  await test.step('configure the notebook against the keyless custom stub', async () => {
+  await test.step('configure the global provider against the keyless custom stub', async () => {
     const stubUrl = process.env.E2E_STUB_URL;
     expect(stubUrl, 'global-setup must publish the stub provider URL').toBeTruthy();
+    await page.goto('/settings');
     await page.getByRole('button', { name: 'Configure provider' }).click();
     await page.locator('#provider-source').selectOption({ label: 'Custom (OpenAI-compatible)' });
     await page.getByLabel('Base URL').fill(stubUrl ?? '');
     await page.getByRole('button', { name: 'Load models' }).click();
     await page.getByRole('button', { name: 'Save provider' }).click();
+    await page.goto(notebookUrl);
   });
 
   await test.step('import organization suggestions, edit them, and save accepted values', async () => {

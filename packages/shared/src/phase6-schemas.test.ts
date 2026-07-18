@@ -43,12 +43,10 @@ describe('Phase 6 shared schemas', () => {
       title: 'New chat',
       sourceIds: [],
       skillIds: [],
-      providerOverride: null,
       presetId: null,
     });
     expect(() => createChatSchema.parse({ sourceIds: [SOURCE_ID, SOURCE_ID] })).toThrow();
     expect(() => patchChatSchema.parse({})).toThrow();
-    expect(patchChatSchema.parse({ providerOverride: null })).toEqual({ providerOverride: null });
     expect(createChatSchema.parse({ presetId: PRESET_ID })).toMatchObject({ presetId: PRESET_ID });
     expect(patchChatSchema.parse({ presetId: null })).toEqual({ presetId: null });
   });
@@ -151,7 +149,6 @@ describe('Phase 6 shared schemas', () => {
         title: 'Continuity',
         sourceIds: [SOURCE_ID],
         skillIds: [],
-        providerOverride: null,
         presetId: null,
         createdAt: NOW,
         updatedAt: NOW,

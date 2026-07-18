@@ -1,4 +1,9 @@
-import type { MaskedSecret, ProviderCatalogEntry, SecretState } from '@worldbookllm/shared';
+import type {
+  MaskedSecret,
+  ProviderCatalogEntry,
+  ProviderConfig,
+  SecretState,
+} from '@worldbookllm/shared';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiClientError } from '../api/client.js';
@@ -6,11 +11,17 @@ import { useApi } from '../api/useApi.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
+import { ProviderConfigDialog } from '../providers/ProviderConfigDialog.js';
 
 type SettingsState =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; catalog: ProviderCatalogEntry[]; secrets: SecretState };
+  | {
+      status: 'ready';
+      catalog: ProviderCatalogEntry[];
+      secrets: SecretState;
+      providerConfig: ProviderConfig | null;
+    };
 
 interface SecretTarget {
   provider: ProviderCatalogEntry;
@@ -24,17 +35,25 @@ export function SettingsPage() {
   const [adding, setAdding] = useState<ProviderCatalogEntry | null>(null);
   const [deleting, setDeleting] = useState<SecretTarget | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [configuringProvider, setConfiguringProvider] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
 
   const load = useCallback(
-    (signal?: AbortSignal) => Promise.all([api.getProviderCatalog(signal), api.getSecrets(signal)]),
+    (signal?: AbortSignal) =>
+      Promise.all([
+        api.getProviderCatalog(signal),
+        api.getSecrets(signal),
+        api.getAppSettings(signal),
+      ]),
     [api],
   );
 
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal)
-      .then(([catalog, secrets]) => setState({ status: 'ready', catalog, secrets }))
+      .then(([catalog, secrets, appSettings]) =>
+        setState({ status: 'ready', catalog, secrets, providerConfig: appSettings.providerConfig }),
+      )
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
           setState({ status: 'error' });
@@ -45,8 +64,8 @@ export function SettingsPage() {
 
   async function refresh() {
     try {
-      const [catalog, secrets] = await load();
-      setState({ status: 'ready', catalog, secrets });
+      const [catalog, secrets, appSettings] = await load();
+      setState({ status: 'ready', catalog, secrets, providerConfig: appSettings.providerConfig });
     } catch {
       setState({ status: 'error' });
     }
@@ -104,6 +123,20 @@ export function SettingsPage() {
         <h1 id="settings-title">Provider settings</h1>
         <p>Manage masked API keys. Key values remain on this machine and are never shown again.</p>
       </header>
+
+      <section className="chat-provider-header">
+        <div>
+          <p className="coordinate-label">Model</p>
+          <strong>{summary(state.providerConfig, state.catalog)}</strong>
+        </div>
+        <button
+          type="button"
+          className="button-secondary"
+          onClick={() => setConfiguringProvider(true)}
+        >
+          Configure provider
+        </button>
+      </section>
 
       {mutationError === null ? null : <p role="alert">{mutationError}</p>}
       <div className="provider-settings-list">
@@ -175,6 +208,22 @@ export function SettingsPage() {
         })}
       </div>
 
+      {configuringProvider ? (
+        <ProviderConfigDialog
+          title="Configure provider"
+          initial={state.providerConfig}
+          clearLabel="Clear provider"
+          onClose={() => setConfiguringProvider(false)}
+          onSave={async (providerConfig) => {
+            await api.updateAppSettings({ providerConfig });
+            await refresh();
+          }}
+          onClear={async () => {
+            await api.updateAppSettings({ providerConfig: null });
+            await refresh();
+          }}
+        />
+      ) : null}
       {adding === null ? null : (
         <AddSecretDialog
           provider={adding}
@@ -291,6 +340,12 @@ function AddSecretDialog({ provider, onClose, onCreated }: AddSecretDialogProps)
       </section>
     </div>
   );
+}
+
+function summary(config: ProviderConfig | null, catalog: ProviderCatalogEntry[]): string {
+  if (config === null) return 'Not configured';
+  const label = catalog.find((entry) => entry.source === config.source)?.label ?? config.source;
+  return `${label} · ${config.model}`;
 }
 
 function messageFor(error: unknown, fallback: string): string {

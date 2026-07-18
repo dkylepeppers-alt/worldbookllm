@@ -8,6 +8,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from './database.js';
 import { migrateToVersion1 } from './migrations/001-init.js';
 import { migrateToVersion2 } from './migrations/002-source-provenance.js';
+import { migrateToVersion3 } from './migrations/003-presets.js';
+import { migrateToVersion4 } from './migrations/004-message-variants.js';
+import { migrateToVersion5 } from './migrations/005-skills.js';
+import { migrateToVersion6 } from './migrations/006-source-organization.js';
 import { resolveDataDir } from '../env.js';
 
 const tempDirs: string[] = [];
@@ -34,7 +38,7 @@ describe('database startup', () => {
 
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
-    expect(db.pragma('user_version', { simple: true })).toBe(6);
+    expect(db.pragma('user_version', { simple: true })).toBe(7);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -131,7 +135,7 @@ describe('database startup', () => {
     openDatabase(dataDir).close();
 
     const reopened = openDatabase(dataDir);
-    expect(reopened.pragma('user_version', { simple: true })).toBe(6);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(7);
     expect(reopened.prepare('SELECT count(*) FROM notebooks').pluck().get()).toBe(0);
     reopened.close();
   });
@@ -167,7 +171,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(6);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(7);
     expect(
       migrated
         .prepare('SELECT origin_json, conversion_notes_json FROM sources WHERE id = ?')
@@ -223,7 +227,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(6);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(7);
     expect(migrated.prepare('SELECT id, name FROM notebooks').get()).toEqual({
       id: 'notebook',
       name: 'Atlas',
@@ -245,12 +249,69 @@ describe('database startup', () => {
     migrated.close();
   });
 
+  it('collapses per-notebook provider settings into one global setting from schema v6', () => {
+    const dataDir = makeTempDir();
+    const file = join(dataDir, 'worldbookllm.db');
+    const legacy = new Database(file);
+    migrateToVersion1(legacy);
+    migrateToVersion2(legacy);
+    migrateToVersion3(legacy);
+    migrateToVersion4(legacy);
+    migrateToVersion5(legacy);
+    migrateToVersion6(legacy);
+    legacy.pragma('user_version = 6');
+    legacy.pragma('foreign_keys = ON');
+    const older = '2026-07-15T12:00:00.000Z';
+    const newer = '2026-07-16T12:00:00.000Z';
+    legacy
+      .prepare(
+        'INSERT INTO notebooks (id, name, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run('first', 'Older', JSON.stringify({ source: 'openai', model: 'gpt-4o' }), older, older);
+    legacy
+      .prepare(
+        'INSERT INTO notebooks (id, name, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(
+        'second',
+        'Newer',
+        JSON.stringify({ source: 'nanogpt', model: 'gpt-4o-mini' }),
+        newer,
+        newer,
+      );
+    legacy
+      .prepare(
+        'INSERT INTO chats (id, notebook_id, title, source_ids_json, skill_ids_json, provider_override_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run('chat', 'second', 'Continuity', '[]', '[]', 'null', newer, newer);
+    legacy.close();
+
+    const migrated = openDatabase(dataDir);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(7);
+    // Seeded from the most-recently-updated notebook's configured provider.
+    expect(
+      migrated.prepare('SELECT provider_config_json FROM app_settings WHERE id = 1').pluck().get(),
+    ).toBe(JSON.stringify({ source: 'nanogpt', model: 'gpt-4o-mini' }));
+    const notebookColumns = (
+      migrated.prepare('PRAGMA table_info(notebooks)').all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    expect(notebookColumns).not.toContain('settings_json');
+    const chatColumns = (
+      migrated.prepare('PRAGMA table_info(chats)').all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    expect(chatColumns).not.toContain('provider_override_json');
+    migrated.close();
+  });
+
   it('enforces cascade, role, status, and message sequence constraints', () => {
     const db = openDatabase(makeTempDir());
     const now = new Date().toISOString();
-    db.prepare(
-      'INSERT INTO notebooks (id, name, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    ).run('notebook', 'Atlas', 'null', now, now);
+    db.prepare('INSERT INTO notebooks (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(
+      'notebook',
+      'Atlas',
+      now,
+      now,
+    );
     db.prepare(
       'INSERT INTO sources (id, notebook_id, title, slug, file_path, origin_json, conversion_notes_json, word_count, content_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ).run(
@@ -267,8 +328,8 @@ describe('database startup', () => {
       now,
     );
     db.prepare(
-      'INSERT INTO chats (id, notebook_id, title, source_ids_json, provider_override_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    ).run('chat', 'notebook', 'Chat', '[]', 'null', now, now);
+      'INSERT INTO chats (id, notebook_id, title, source_ids_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run('chat', 'notebook', 'Chat', '[]', now, now);
     db.prepare(
       'INSERT INTO messages (id, chat_id, seq, role, content, reasoning, status, context_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ).run('message', 'chat', 0, 'user', 'Hello', null, 'complete', 'null', now);
@@ -299,13 +360,13 @@ describe('database startup', () => {
     const dataDir = makeTempDir();
     const file = join(dataDir, 'worldbookllm.db');
     const future = new Database(file);
-    future.pragma('user_version = 7');
+    future.pragma('user_version = 8');
     future.close();
 
-    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 7/u);
+    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 8/u);
 
     const unchanged = new Database(file);
-    expect(unchanged.pragma('user_version', { simple: true })).toBe(7);
+    expect(unchanged.pragma('user_version', { simple: true })).toBe(8);
     unchanged.close();
   });
 });

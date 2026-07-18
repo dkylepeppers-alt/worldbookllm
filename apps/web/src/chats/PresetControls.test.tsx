@@ -33,7 +33,6 @@ const chat: Chat = {
   title: 'Chat',
   sourceIds: [],
   skillIds: [],
-  providerOverride: null,
   presetId: null,
   createdAt: '2026-07-10T12:00:00.000Z',
   updatedAt: '2026-07-10T12:00:00.000Z',
@@ -49,7 +48,7 @@ describe('PresetControls thinking toggle', () => {
     );
     const client = createTestClient({
       listPresets: () => Promise.resolve([preset]),
-      getAppSettings: () => Promise.resolve({ defaultPresetId: preset.id }),
+      getAppSettings: () => Promise.resolve({ defaultPresetId: preset.id, providerConfig: null }),
       updatePreset,
     });
     render(

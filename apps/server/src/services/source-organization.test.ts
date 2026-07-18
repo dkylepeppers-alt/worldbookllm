@@ -121,18 +121,19 @@ describe('SourceOrganizationService', () => {
   const notebook: Notebook = {
     id: 'a0c7607c-b365-438b-a7e6-31b2308464b6',
     name: 'Atlas',
-    settings: { source: 'nanogpt', model: 'model-a' },
     createdAt: '2026-07-17T00:00:00.000Z',
     updatedAt: '2026-07-17T00:00:00.000Z',
   };
+  const providerConfig = { source: 'nanogpt' as const, model: 'model-a' };
   const existing = [{ tags: ['trade-league', 'harbor'] }] as SourceMetadata[];
 
   it('returns blanks without network work when no provider is configured', async () => {
     const completeChat = vi.fn();
     const service = new SourceOrganizationService(
-      { get: vi.fn().mockReturnValue({ ...notebook, settings: null }) },
+      { get: vi.fn().mockReturnValue(notebook) },
       { list: vi.fn().mockReturnValue(existing), get: vi.fn() },
       { completeChat },
+      { getSettings: vi.fn().mockReturnValue({ defaultPresetId: 'x', providerConfig: null }) },
     );
     await expect(service.suggest(notebook.id, drafts)).resolves.toEqual({
       suggestions: drafts.map(({ index }) => ({ index, category: null, tags: [] })),
@@ -141,20 +142,37 @@ describe('SourceOrganizationService', () => {
     expect(completeChat).not.toHaveBeenCalled();
   });
 
-  it('uses notebook configuration and turns provider failure into safe blanks', async () => {
+  it('rejects a nonexistent notebook without network work', async () => {
+    const completeChat = vi.fn();
+    const service = new SourceOrganizationService(
+      {
+        get: vi.fn(() => {
+          throw new Error('not found');
+        }),
+      },
+      { list: vi.fn().mockReturnValue(existing), get: vi.fn() },
+      { completeChat },
+      { getSettings: vi.fn().mockReturnValue({ defaultPresetId: 'x', providerConfig }) },
+    );
+    await expect(service.suggest(notebook.id, drafts)).rejects.toThrow('not found');
+    expect(completeChat).not.toHaveBeenCalled();
+  });
+
+  it('uses the global provider configuration and turns provider failure into safe blanks', async () => {
     const completeChat = vi.fn().mockRejectedValue(new Error('secret provider detail'));
     const logError = vi.fn();
     const service = new SourceOrganizationService(
       { get: vi.fn().mockReturnValue(notebook) },
       { list: vi.fn().mockReturnValue(existing), get: vi.fn() },
       { completeChat },
+      { getSettings: vi.fn().mockReturnValue({ defaultPresetId: 'x', providerConfig }) },
       logError,
     );
     await expect(service.suggest(notebook.id, drafts)).resolves.toMatchObject({
       warning: SOURCE_ORGANIZATION_WARNING,
     });
     expect(completeChat).toHaveBeenCalledWith(
-      notebook.settings,
+      providerConfig,
       expect.any(Array),
       { temperature: 0, maxTokens: 448 },
       undefined,
@@ -168,6 +186,7 @@ describe('SourceOrganizationService', () => {
       { get: vi.fn().mockReturnValue(notebook) },
       { list: vi.fn().mockReturnValue(existing), get: vi.fn() },
       { completeChat },
+      { getSettings: vi.fn().mockReturnValue({ defaultPresetId: 'x', providerConfig }) },
     );
     const batch = Array.from({ length: 100 }, (_, index) => ({
       index,
@@ -176,7 +195,7 @@ describe('SourceOrganizationService', () => {
     }));
     await service.suggest(notebook.id, batch);
     expect(completeChat).toHaveBeenCalledWith(
-      notebook.settings,
+      providerConfig,
       expect.any(Array),
       { temperature: 0, maxTokens: 9856 },
       undefined,
@@ -214,6 +233,7 @@ describe('SourceOrganizationService', () => {
         { get: vi.fn().mockReturnValue(notebook) },
         { list: vi.fn().mockReturnValue(metadata), get },
         { completeChat },
+        { getSettings: vi.fn().mockReturnValue({ defaultPresetId: 'x', providerConfig }) },
       );
       await expect(service.suggestForSources(notebook.id, [...ids])).resolves.toEqual({
         suggestions: [
@@ -238,6 +258,7 @@ describe('SourceOrganizationService', () => {
         { get: vi.fn().mockReturnValue(notebook) },
         { list: vi.fn().mockReturnValue([metadata[0]]), get: vi.fn() },
         { completeChat },
+        { getSettings: vi.fn().mockReturnValue({ defaultPresetId: 'x', providerConfig }) },
       );
       await expect(service.suggestForSources(notebook.id, [...ids])).rejects.toMatchObject({
         name: 'NotFoundError',
@@ -261,6 +282,7 @@ describe('SourceOrganizationService', () => {
         { get: vi.fn().mockReturnValue(notebook) },
         { list: vi.fn().mockReturnValue(metadata), get },
         { completeChat },
+        { getSettings: vi.fn().mockReturnValue({ defaultPresetId: 'x', providerConfig }) },
         logError,
       );
       await expect(service.suggestForSources(notebook.id, [...ids])).resolves.toEqual({
@@ -284,6 +306,7 @@ describe('SourceOrganizationService', () => {
           }),
         },
         { completeChat },
+        { getSettings: vi.fn().mockReturnValue({ defaultPresetId: 'x', providerConfig }) },
       );
       await expect(service.suggestForSources(notebook.id, [...ids])).resolves.toEqual({
         suggestions: ids.map((sourceId) => ({ sourceId, category: null, tags: [] })),

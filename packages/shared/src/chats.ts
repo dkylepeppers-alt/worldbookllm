@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { providerConfigSchema, providerSourceSchema } from './provider-config.js';
+import { providerSourceSchema } from './provider-config.js';
 import { generationControlsSchema, presetSchema } from './presets.js';
 import { generationSkillSnapshotSchema } from './skills.js';
 
@@ -100,7 +100,6 @@ export const chatSchema = z.strictObject({
   title: chatTitleSchema,
   sourceIds: sourceIdsSchema,
   skillIds: skillIdsSchema,
-  providerOverride: providerConfigSchema.nullable(),
   presetId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -112,7 +111,6 @@ export const createChatSchema = z.strictObject({
   title: chatTitleSchema.default('New chat'),
   sourceIds: sourceIdsSchema.default([]),
   skillIds: skillIdsSchema.default([]),
-  providerOverride: providerConfigSchema.nullable().default(null),
   presetId: z.uuid().nullable().default(null),
 });
 
@@ -121,7 +119,6 @@ export const patchChatSchema = z
     title: chatTitleSchema.optional(),
     sourceIds: sourceIdsSchema.optional(),
     skillIds: skillIdsSchema.optional(),
-    providerOverride: providerConfigSchema.nullable().optional(),
     presetId: z.uuid().nullable().optional(),
   })
   .refine(
@@ -129,7 +126,6 @@ export const patchChatSchema = z
       value.title !== undefined ||
       value.sourceIds !== undefined ||
       value.skillIds !== undefined ||
-      value.providerOverride !== undefined ||
       value.presetId !== undefined,
     { message: 'At least one chat field is required' },
   );

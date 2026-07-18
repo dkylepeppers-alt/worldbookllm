@@ -10,6 +10,7 @@ import {
 
 import { NotFoundError } from '../errors.js';
 import type { NotebookService } from './notebooks.js';
+import type { PresetService } from './presets.js';
 import type { ProviderService } from './providers.js';
 import type { SourceService } from './sources.js';
 
@@ -161,6 +162,7 @@ export class SourceOrganizationService {
     private readonly notebooks: Pick<NotebookService, 'get'>,
     private readonly sources: Pick<SourceService, 'list' | 'get'>,
     private readonly providers: Pick<ProviderService, 'completeChat'>,
+    private readonly appSettings: Pick<PresetService, 'getSettings'>,
     private readonly logError: (error: unknown) => void = () => undefined,
   ) {}
 
@@ -169,8 +171,11 @@ export class SourceOrganizationService {
     drafts: SourceOrganizationDraft[],
     signal?: AbortSignal,
   ): Promise<SourceOrganizationResponse> {
-    const notebook = this.notebooks.get(notebookId);
-    if (notebook.settings === null) {
+    // Validates the notebook exists (404 at the route boundary) even though
+    // its provider config is no longer read from it.
+    this.notebooks.get(notebookId);
+    const { providerConfig } = this.appSettings.getSettings();
+    if (providerConfig === null) {
       return { suggestions: blank(drafts), warning: SOURCE_ORGANIZATION_WARNING };
     }
     const existingTags = [
@@ -178,7 +183,7 @@ export class SourceOrganizationService {
     ];
     try {
       const text = await this.providers.completeChat(
-        notebook.settings,
+        providerConfig,
         buildSourceOrganizationMessages(drafts, existingTags),
         // ~96 output tokens per suggestion; the ceiling covers a full
         // 100-draft batch, since a truncated JSON reply blanks the whole

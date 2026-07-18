@@ -13,7 +13,6 @@ import { ResponseCaptureDialog } from './ResponseCaptureDialog.js';
 const notebook: Notebook = {
   id: 'a0c7607c-b365-438b-a7e6-31b2308464b6',
   name: 'Atlas',
-  settings: null,
   createdAt: '2026-07-10T12:00:00.000Z',
   updatedAt: '2026-07-10T12:00:00.000Z',
 };

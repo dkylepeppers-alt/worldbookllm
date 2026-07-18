@@ -20,7 +20,6 @@ import { createScriptedStream, createTestClient } from '../test/createTestClient
 const notebook: Notebook = {
   id: 'a0c7607c-b365-438b-a7e6-31b2308464b6',
   name: 'Atlas of Ember',
-  settings: { source: 'nanogpt', model: 'nano-story' },
   createdAt: '2026-07-10T12:00:00.000Z',
   updatedAt: '2026-07-10T12:00:00.000Z',
 };
@@ -40,7 +39,6 @@ const chat: Chat = {
   title: 'First chat',
   sourceIds: [],
   skillIds: [],
-  providerOverride: null,
   presetId: null,
   createdAt: '2026-07-10T12:00:00.000Z',
   updatedAt: '2026-07-10T12:00:00.000Z',
@@ -124,7 +122,8 @@ async function renderWorkspace(overrides = {}, value: Notebook = notebook) {
     listChats: () => Promise.resolve([chat]),
     getChat: () => Promise.resolve(detailWith([])),
     listPresets: () => Promise.resolve([defaultPreset, prosePreset]),
-    getAppSettings: () => Promise.resolve({ defaultPresetId: defaultPreset.id }),
+    getAppSettings: () =>
+      Promise.resolve({ defaultPresetId: defaultPreset.id, providerConfig: null }),
     ...overrides,
   });
   render(
@@ -340,7 +339,7 @@ describe('ChatPanel', () => {
     const getAppSettings = vi
       .fn()
       .mockRejectedValueOnce(new ApiClientError(500, 'internal_error', 'Failed'))
-      .mockResolvedValueOnce({ defaultPresetId: defaultPreset.id });
+      .mockResolvedValueOnce({ defaultPresetId: defaultPreset.id, providerConfig: null });
     await renderWorkspace({
       listChats: () => Promise.resolve([explicit]),
       listPresets,
@@ -366,7 +365,9 @@ describe('ChatPanel', () => {
       .fn()
       .mockRejectedValueOnce(new ApiClientError(500, 'internal_error', 'Failed'))
       .mockResolvedValueOnce([defaultPreset, prosePreset]);
-    const getAppSettings = vi.fn().mockResolvedValue({ defaultPresetId: defaultPreset.id });
+    const getAppSettings = vi
+      .fn()
+      .mockResolvedValue({ defaultPresetId: defaultPreset.id, providerConfig: null });
     await renderWorkspace({ listPresets, getAppSettings });
     const user = userEvent.setup();
 
@@ -516,56 +517,6 @@ describe('ChatPanel', () => {
     await waitFor(() => expect(deleteChat).toHaveBeenCalledWith(chat.id));
     expect(await screen.findByText('No chats yet.')).toBeDefined();
     expect(listChats).toHaveBeenCalledTimes(2);
-  });
-
-  it('persists notebook defaults and updates their visible summary', async () => {
-    const unconfigured = { ...notebook, settings: null };
-    const updateNotebook = vi.fn().mockResolvedValue(notebook);
-    await renderWorkspace({ listChats: () => Promise.resolve([]), updateNotebook }, unconfigured);
-    const user = userEvent.setup();
-
-    expect(await screen.findByText('Not configured')).toBeDefined();
-    await user.click(screen.getByRole('button', { name: 'Configure provider' }));
-    await user.selectOptions(await screen.findByLabelText('Provider'), 'nanogpt');
-    await user.type(screen.getByLabelText('Model'), 'nano-story');
-    await user.click(screen.getByRole('button', { name: 'Save provider' }));
-
-    await waitFor(() =>
-      expect(updateNotebook).toHaveBeenCalledWith(notebook.id, {
-        settings: { source: 'nanogpt', model: 'nano-story' },
-      }),
-    );
-    expect(await screen.findByText('NanoGPT · nano-story')).toBeDefined();
-  });
-
-  it('sets and clears a complete chat provider override', async () => {
-    const overridden = {
-      ...chat,
-      providerOverride: { source: 'nanogpt' as const, model: 'override-model' },
-    };
-    const updateChat = vi
-      .fn()
-      .mockResolvedValueOnce(overridden)
-      .mockResolvedValueOnce({ ...chat, providerOverride: null });
-    await renderWorkspace({ updateChat });
-    const user = userEvent.setup();
-
-    await user.click(await screen.findByRole('button', { name: new RegExp(chat.title) }));
-    await user.click(screen.getByRole('button', { name: 'Edit provider override' }));
-    const model = await screen.findByLabelText('Model');
-    await user.clear(model);
-    await user.type(model, 'override-model');
-    await user.click(screen.getByRole('button', { name: 'Save provider' }));
-    await waitFor(() =>
-      expect(updateChat).toHaveBeenNthCalledWith(1, chat.id, {
-        providerOverride: { source: 'nanogpt', model: 'override-model' },
-      }),
-    );
-
-    await user.click(await screen.findByRole('button', { name: 'Use notebook default' }));
-    await waitFor(() =>
-      expect(updateChat).toHaveBeenNthCalledWith(2, chat.id, { providerOverride: null }),
-    );
   });
 
   it('renders persisted history in seq order with status badges', async () => {

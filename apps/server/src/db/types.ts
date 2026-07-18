@@ -1,7 +1,6 @@
 export interface NotebookRow {
   id: string;
   name: string;
-  settings_json: string;
   created_at: string;
   updated_at: string;
 }
@@ -28,7 +27,6 @@ export interface ChatRow {
   title: string;
   source_ids_json: string;
   skill_ids_json: string;
-  provider_override_json: string;
   preset_id: string | null;
   created_at: string;
   updated_at: string;
@@ -58,6 +56,7 @@ export interface PresetRow {
 export interface AppSettingsRow {
   id: 1;
   default_preset_id: string;
+  provider_config_json: string;
 }
 
 export interface MessageRow {
