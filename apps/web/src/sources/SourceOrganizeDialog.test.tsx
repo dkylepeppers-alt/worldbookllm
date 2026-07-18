@@ -61,7 +61,16 @@ function renderDialog(
   workspaceUpdateSource = vi.fn(),
   onClose = vi.fn(),
 ) {
-  const client = createTestClient(overrides);
+  const client = createTestClient({
+    // Review starts from a fresh per-source fetch, not the list snapshot;
+    // default it to agree with the snapshot unless a test says otherwise.
+    getSource: (id) => {
+      const found = sources.find((candidate) => candidate.id === id);
+      if (found === undefined) return Promise.reject(new Error(`No fixture source ${id}`));
+      return Promise.resolve({ ...found, content: 'Body' });
+    },
+    ...overrides,
+  });
   render(
     <ApiProvider client={client}>
       <NotebookWorkspaceContext.Provider
@@ -86,6 +95,55 @@ function renderDialog(
 }
 
 describe('SourceOrganizeDialog', () => {
+  it('reviews from a fresh per-source fetch instead of the stale notebook-list snapshot', async () => {
+    // The list snapshot says unorganized, but the file was edited out-of-band
+    // (direct frontmatter edit, another tab) since the workspace list loaded;
+    // only a single-source GET reconciles from disk.
+    const drifted = source('33333333-3333-4333-8333-333333333333', 'Drifted');
+    const suggestExistingSourceOrganization = vi.fn<ApiClient['suggestExistingSourceOrganization']>(
+      () =>
+        Promise.resolve({
+          suggestions: [{ sourceId: drifted.id, category: null, tags: ['smugglers'] }],
+          warning: null,
+        }),
+    );
+    const updateSource = vi.fn<ApiClient['updateSource']>((_id, patch) =>
+      Promise.resolve(detailFor(drifted, patch as { category: unknown; tags: string[] })),
+    );
+    const { onClose } = renderDialog([drifted], {
+      suggestExistingSourceOrganization,
+      updateSource,
+      getSource: () =>
+        Promise.resolve({
+          ...drifted,
+          category: 'factions',
+          tags: ['iron-compact'],
+          content: 'Body',
+        }),
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Suggest organization' }));
+
+    // Review starts from the fresh saved values, not the stale empty ones.
+    const category = await screen.findByLabelText('Category for Drifted');
+    await waitFor(() => expect(category).toHaveProperty('value', 'factions'));
+    // The suggestion's tag extends the fresh saved tag; it does not replace it.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Tags for Drifted')).toHaveProperty(
+        'value',
+        'iron-compact, smugglers',
+      ),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Apply to 1 source' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(updateSource).toHaveBeenCalledWith(drifted.id, {
+      category: 'factions',
+      tags: ['iron-compact', 'smugglers'],
+    });
+  });
+
   it('preselects unorganized sources, suggests for the selection, and applies edits', async () => {
     const suggestExistingSourceOrganization = vi.fn<ApiClient['suggestExistingSourceOrganization']>(
       () =>

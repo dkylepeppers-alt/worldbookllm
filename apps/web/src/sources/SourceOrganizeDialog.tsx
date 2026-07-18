@@ -21,6 +21,14 @@ interface ReviewRow {
   category: SourceCategory | null;
   tags: string;
   organizationTouched: boolean;
+  // The source's saved category/tags as of the fresh per-source fetch made
+  // when review began — not the notebook-list snapshot, which never
+  // reconciles from disk (only GET /api/sources/:id does) and can be stale
+  // if the file changed out-of-band. Suggestion merges and the unchanged
+  // check are based on this, not on the list cache, so a bulk pass can
+  // neither drop nor stale-compare against organization saved elsewhere.
+  savedCategory: SourceCategory | null;
+  savedTags: string[];
 }
 
 function isUnorganized(source: SourceMetadata): boolean {
@@ -73,13 +81,14 @@ export function SourceOrganizeDialog({ onClose }: SourceOrganizeDialogProps) {
     () => new Set(sources.filter(isUnorganized).map((source) => source.id)),
   );
   const [rows, setRows] = useState<ReviewRow[] | null>(null);
+  const [startingReview, setStartingReview] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modified, setModified] = useState(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   function requestClose() {
-    if (applying) return;
+    if (applying || startingReview) return;
     if (modified && !window.confirm('Discard the reviewed organization?')) return;
     onClose();
   }
@@ -107,26 +116,44 @@ export function SourceOrganizeDialog({ onClose }: SourceOrganizeDialogProps) {
         : current.map((row) => {
             if (row.organizationTouched) return row;
             const suggestion = suggestions.get(row.sourceId);
-            const source = bySourceId.get(row.sourceId);
-            if (suggestion === undefined || source === undefined) return row;
+            if (suggestion === undefined) return row;
             return {
               ...row,
-              category: suggestion.category ?? source.category,
-              tags: mergeTags(source.tags, suggestion.tags).join(', '),
+              category: suggestion.category ?? row.savedCategory,
+              tags: mergeTags(row.savedTags, suggestion.tags).join(', '),
             };
           }),
     );
   }
 
-  function beginReview() {
+  async function beginReview() {
+    if (startingReview) return;
+    setStartingReview(true);
     const chosen = sources.filter((source) => selected.has(source.id));
+    // The notebook-list snapshot never reconciles from disk; fetch each
+    // chosen source fresh (falling back to the snapshot on failure, which is
+    // no worse than before) so review starts from what is actually saved.
+    const fresh = await Promise.all(
+      chosen.map((source) =>
+        api
+          .getSource(source.id)
+          .then((detail) => ({ category: detail.category, tags: detail.tags }))
+          .catch(() => ({ category: source.category, tags: source.tags })),
+      ),
+    );
+    setStartingReview(false);
     setRows(
-      chosen.map((source) => ({
-        sourceId: source.id,
-        category: source.category,
-        tags: source.tags.join(', '),
-        organizationTouched: false,
-      })),
+      chosen.map((source, index) => {
+        const saved = fresh[index] ?? { category: source.category, tags: source.tags };
+        return {
+          sourceId: source.id,
+          category: saved.category,
+          tags: saved.tags.join(', '),
+          organizationTouched: false,
+          savedCategory: saved.category,
+          savedTags: saved.tags,
+        };
+      }),
     );
     setError(null);
     void organization.suggest(chosen.map((source) => source.id)).then((result) => {
@@ -174,7 +201,8 @@ export function SourceOrganizeDialog({ onClose }: SourceOrganizeDialogProps) {
       if (source === undefined) continue;
       const tags = normalizeTags(parseTags(row.tags));
       const unchanged =
-        row.category === source.category && JSON.stringify(tags) === JSON.stringify(source.tags);
+        row.category === row.savedCategory &&
+        JSON.stringify(tags) === JSON.stringify(row.savedTags);
       if (unchanged) continue;
       try {
         const updated = await api.updateSource(row.sourceId, { category: row.category, tags });
@@ -313,10 +341,10 @@ export function SourceOrganizeDialog({ onClose }: SourceOrganizeDialogProps) {
             <button
               type="button"
               className="button-primary"
-              disabled={selected.size === 0 || overLimit}
-              onClick={beginReview}
+              disabled={selected.size === 0 || overLimit || startingReview}
+              onClick={() => void beginReview()}
             >
-              Suggest organization
+              {startingReview ? 'Preparing…' : 'Suggest organization'}
             </button>
           ) : (
             <button
