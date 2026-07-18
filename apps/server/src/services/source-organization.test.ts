@@ -1,4 +1,4 @@
-import type { Notebook, SourceMetadata } from '@worldbookllm/shared';
+import type { Notebook, SourceDetail, SourceMetadata } from '@worldbookllm/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -88,7 +88,7 @@ describe('SourceOrganizationService', () => {
     const completeChat = vi.fn();
     const service = new SourceOrganizationService(
       { get: vi.fn().mockReturnValue({ ...notebook, settings: null }) },
-      { list: vi.fn().mockReturnValue(existing) },
+      { list: vi.fn().mockReturnValue(existing), get: vi.fn() },
       { completeChat },
     );
     await expect(service.suggest(notebook.id, drafts)).resolves.toEqual({
@@ -103,7 +103,7 @@ describe('SourceOrganizationService', () => {
     const logError = vi.fn();
     const service = new SourceOrganizationService(
       { get: vi.fn().mockReturnValue(notebook) },
-      { list: vi.fn().mockReturnValue(existing) },
+      { list: vi.fn().mockReturnValue(existing), get: vi.fn() },
       { completeChat },
       logError,
     );
@@ -117,5 +117,115 @@ describe('SourceOrganizationService', () => {
       undefined,
     );
     expect(logError).toHaveBeenCalledOnce();
+  });
+
+  describe('suggestForSources', () => {
+    const ids = [
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    ] as const;
+    const metadata = ids.map((id) => ({ id, tags: [] })) as SourceMetadata[];
+    const details = new Map<string, SourceDetail>(
+      ids.map((id, position) => [
+        id,
+        { id, title: `Source ${position}`, content: `Body ${position}` } as SourceDetail,
+      ]),
+    );
+
+    it('classifies stored content, excerpted, and keys suggestions by source id', async () => {
+      const completeChat = vi.fn().mockResolvedValue(
+        JSON.stringify({
+          suggestions: [
+            { index: 0, category: 'factions', tags: ['iron-compact', 'trade-league', 'harbor'] },
+            { index: 1, category: 'places', tags: ['marsh', 'tides', 'salt'] },
+          ],
+        }),
+      );
+      const get = vi.fn((id: string): SourceDetail => {
+        const detail = details.get(id);
+        if (detail === undefined) throw new Error('missing');
+        return id === ids[0] ? { ...detail, content: 'x'.repeat(9_000) } : detail;
+      });
+      const service = new SourceOrganizationService(
+        { get: vi.fn().mockReturnValue(notebook) },
+        { list: vi.fn().mockReturnValue(metadata), get },
+        { completeChat },
+      );
+      await expect(service.suggestForSources(notebook.id, [...ids])).resolves.toEqual({
+        suggestions: [
+          {
+            sourceId: ids[0],
+            category: 'factions',
+            tags: ['iron-compact', 'trade-league', 'harbor'],
+          },
+          { sourceId: ids[1], category: 'places', tags: ['marsh', 'tides', 'salt'] },
+        ],
+        warning: null,
+      });
+      const prompt = JSON.stringify(completeChat.mock.calls[0]?.[1]);
+      expect(prompt).toContain('Body 1');
+      expect(prompt).not.toContain('x'.repeat(5_001));
+      expect(prompt).toContain('x'.repeat(5_000));
+    });
+
+    it('rejects a source id that is not in the notebook without provider work', async () => {
+      const completeChat = vi.fn();
+      const service = new SourceOrganizationService(
+        { get: vi.fn().mockReturnValue(notebook) },
+        { list: vi.fn().mockReturnValue([metadata[0]]), get: vi.fn() },
+        { completeChat },
+      );
+      await expect(service.suggestForSources(notebook.id, [...ids])).rejects.toMatchObject({
+        name: 'NotFoundError',
+      });
+      expect(completeChat).not.toHaveBeenCalled();
+    });
+
+    it('blanks unreadable sources, warns, and preserves readable siblings by position', async () => {
+      const completeChat = vi.fn().mockResolvedValue(
+        JSON.stringify({
+          suggestions: [{ index: 1, category: 'places', tags: ['marsh'] }],
+        }),
+      );
+      const get = vi.fn((id: string): SourceDetail => {
+        const detail = details.get(id);
+        if (id === ids[0] || detail === undefined) throw new Error('unreadable frontmatter');
+        return detail;
+      });
+      const logError = vi.fn();
+      const service = new SourceOrganizationService(
+        { get: vi.fn().mockReturnValue(notebook) },
+        { list: vi.fn().mockReturnValue(metadata), get },
+        { completeChat },
+        logError,
+      );
+      await expect(service.suggestForSources(notebook.id, [...ids])).resolves.toEqual({
+        suggestions: [
+          { sourceId: ids[0], category: null, tags: [] },
+          { sourceId: ids[1], category: 'places', tags: ['marsh'] },
+        ],
+        warning: SOURCE_ORGANIZATION_WARNING,
+      });
+      expect(logError).toHaveBeenCalledOnce();
+    });
+
+    it('returns all blanks without provider work when no source is readable', async () => {
+      const completeChat = vi.fn();
+      const service = new SourceOrganizationService(
+        { get: vi.fn().mockReturnValue(notebook) },
+        {
+          list: vi.fn().mockReturnValue(metadata),
+          get: vi.fn(() => {
+            throw new Error('unreadable');
+          }),
+        },
+        { completeChat },
+      );
+      await expect(service.suggestForSources(notebook.id, [...ids])).resolves.toEqual({
+        suggestions: ids.map((sourceId) => ({ sourceId, category: null, tags: [] })),
+        warning: SOURCE_ORGANIZATION_WARNING,
+      });
+      expect(completeChat).not.toHaveBeenCalled();
+    });
   });
 });

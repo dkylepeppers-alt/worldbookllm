@@ -1,11 +1,14 @@
 import type { ChatMessage } from '@worldbookllm/providers';
 import {
   SOURCE_CATEGORIES,
+  SOURCE_ORGANIZATION_EXCERPT_LENGTH,
+  type ExistingSourceOrganizationResponse,
   type SourceCategory,
   type SourceOrganizationDraft,
   type SourceOrganizationResponse,
 } from '@worldbookllm/shared';
 
+import { NotFoundError } from '../errors.js';
 import type { NotebookService } from './notebooks.js';
 import type { ProviderService } from './providers.js';
 import type { SourceService } from './sources.js';
@@ -128,7 +131,7 @@ export function parseSourceOrganizationCompletion(
 export class SourceOrganizationService {
   constructor(
     private readonly notebooks: Pick<NotebookService, 'get'>,
-    private readonly sources: Pick<SourceService, 'list'>,
+    private readonly sources: Pick<SourceService, 'list' | 'get'>,
     private readonly providers: Pick<ProviderService, 'completeChat'>,
     private readonly logError: (error: unknown) => void = () => undefined,
   ) {}
@@ -157,5 +160,54 @@ export class SourceOrganizationService {
       this.logError(error);
       return { suggestions: blank(drafts), warning: SOURCE_ORGANIZATION_WARNING };
     }
+  }
+
+  /**
+   * Classifies sources that already exist in the notebook. Content is read
+   * from the stored files and excerpted so a full batch stays within the same
+   * prompt budget as a draft request. A source whose file cannot be read gets
+   * a blank suggestion instead of failing the batch.
+   */
+  async suggestForSources(
+    notebookId: string,
+    sourceIds: string[],
+    signal?: AbortSignal,
+  ): Promise<ExistingSourceOrganizationResponse> {
+    const known = new Map(this.sources.list(notebookId).map((source) => [source.id, source]));
+    for (const sourceId of sourceIds) {
+      if (!known.has(sourceId)) throw new NotFoundError(`Source ${sourceId} not found`);
+    }
+    const drafts: SourceOrganizationDraft[] = [];
+    let unreadable = false;
+    for (const [index, sourceId] of sourceIds.entries()) {
+      try {
+        const source = this.sources.get(sourceId);
+        drafts.push({
+          index,
+          title: source.title,
+          content: source.content.slice(0, SOURCE_ORGANIZATION_EXCERPT_LENGTH),
+        });
+      } catch (error) {
+        this.logError(error);
+        unreadable = true;
+      }
+    }
+    if (drafts.length === 0) {
+      return {
+        suggestions: sourceIds.map((sourceId) => ({ sourceId, category: null, tags: [] })),
+        warning: SOURCE_ORGANIZATION_WARNING,
+      };
+    }
+    const result = await this.suggest(notebookId, drafts, signal);
+    const byIndex = new Map(result.suggestions.map((suggestion) => [suggestion.index, suggestion]));
+    return {
+      suggestions: sourceIds.map((sourceId, index) => {
+        const suggestion = byIndex.get(index);
+        return suggestion === undefined
+          ? { sourceId, category: null, tags: [] }
+          : { sourceId, category: suggestion.category, tags: suggestion.tags };
+      }),
+      warning: unreadable ? SOURCE_ORGANIZATION_WARNING : result.warning,
+    };
   }
 }
