@@ -303,6 +303,102 @@ describe('database startup', () => {
     migrated.close();
   });
 
+  it('seeds the global provider from a chat-only override when no notebook default exists', () => {
+    // A workspace that only ever configured a provider as a per-chat
+    // override (notebook default left null) relied on the old
+    // `chat.providerOverride ?? notebook.settings` resolution. The seed must
+    // consider chats.provider_override_json too, not just notebooks, or this
+    // workspace's only configured provider is silently discarded.
+    const dataDir = makeTempDir();
+    const file = join(dataDir, 'worldbookllm.db');
+    const legacy = new Database(file);
+    migrateToVersion1(legacy);
+    migrateToVersion2(legacy);
+    migrateToVersion3(legacy);
+    migrateToVersion4(legacy);
+    migrateToVersion5(legacy);
+    migrateToVersion6(legacy);
+    legacy.pragma('user_version = 6');
+    legacy.pragma('foreign_keys = ON');
+    const now = '2026-07-16T12:00:00.000Z';
+    legacy
+      .prepare(
+        'INSERT INTO notebooks (id, name, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run('notebook', 'Atlas', 'null', now, now);
+    legacy
+      .prepare(
+        'INSERT INTO chats (id, notebook_id, title, source_ids_json, skill_ids_json, provider_override_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        'chat',
+        'notebook',
+        'Continuity',
+        '[]',
+        '[]',
+        JSON.stringify({ source: 'claude', model: 'claude-3-5-sonnet-20241022' }),
+        now,
+        now,
+      );
+    legacy.close();
+
+    const migrated = openDatabase(dataDir);
+    expect(
+      migrated.prepare('SELECT provider_config_json FROM app_settings WHERE id = 1').pluck().get(),
+    ).toBe(JSON.stringify({ source: 'claude', model: 'claude-3-5-sonnet-20241022' }));
+    migrated.close();
+  });
+
+  it('seeds the global provider from whichever of a notebook or chat override is most recent', () => {
+    const dataDir = makeTempDir();
+    const file = join(dataDir, 'worldbookllm.db');
+    const legacy = new Database(file);
+    migrateToVersion1(legacy);
+    migrateToVersion2(legacy);
+    migrateToVersion3(legacy);
+    migrateToVersion4(legacy);
+    migrateToVersion5(legacy);
+    migrateToVersion6(legacy);
+    legacy.pragma('user_version = 6');
+    legacy.pragma('foreign_keys = ON');
+    const older = '2026-07-15T12:00:00.000Z';
+    const newer = '2026-07-16T12:00:00.000Z';
+    legacy
+      .prepare(
+        'INSERT INTO notebooks (id, name, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(
+        'notebook',
+        'Atlas',
+        JSON.stringify({ source: 'openai', model: 'gpt-4o' }),
+        newer,
+        newer,
+      );
+    legacy
+      .prepare(
+        'INSERT INTO chats (id, notebook_id, title, source_ids_json, skill_ids_json, provider_override_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        'chat',
+        'notebook',
+        'Continuity',
+        '[]',
+        '[]',
+        JSON.stringify({ source: 'claude', model: 'claude-3-5-sonnet-20241022' }),
+        older,
+        older,
+      );
+    legacy.close();
+
+    // The notebook default is the more recently updated of the two
+    // configured values, so it wins even though a chat override also exists.
+    const migrated = openDatabase(dataDir);
+    expect(
+      migrated.prepare('SELECT provider_config_json FROM app_settings WHERE id = 1').pluck().get(),
+    ).toBe(JSON.stringify({ source: 'openai', model: 'gpt-4o' }));
+    migrated.close();
+  });
+
   it('enforces cascade, role, status, and message sequence constraints', () => {
     const db = openDatabase(makeTempDir());
     const now = new Date().toISOString();
