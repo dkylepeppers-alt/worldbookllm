@@ -20,16 +20,20 @@ smoke(
         url: '/api/secrets',
         payload: { key: 'api_key_nanogpt', value: apiKey, label: 'Smoke' },
       });
-      const notebookResponse = await app.inject({
-        method: 'POST',
-        url: '/api/notebooks',
+      await app.inject({
+        method: 'PATCH',
+        url: '/api/app-settings',
         payload: {
-          name: 'Live smoke',
-          settings: {
+          providerConfig: {
             source: 'nanogpt',
             model: process.env.SMOKE_NANOGPT_MODEL ?? 'gpt-4o-mini',
           },
         },
+      });
+      const notebookResponse = await app.inject({
+        method: 'POST',
+        url: '/api/notebooks',
+        payload: { name: 'Live smoke' },
       });
       const notebook = notebookResponse.json<{ id: string }>();
       const sourceResponse = await app.inject({
@@ -77,16 +81,20 @@ smoke(
         url: '/api/secrets',
         payload: { key: 'api_key_nanogpt', value: apiKey, label: 'Smoke' },
       });
-      const notebookResponse = await app.inject({
-        method: 'POST',
-        url: '/api/notebooks',
+      await app.inject({
+        method: 'PATCH',
+        url: '/api/app-settings',
         payload: {
-          name: 'Live organize smoke',
-          settings: {
+          providerConfig: {
             source: 'nanogpt',
             model: process.env.SMOKE_NANOGPT_MODEL ?? 'gpt-4o-mini',
           },
         },
+      });
+      const notebookResponse = await app.inject({
+        method: 'POST',
+        url: '/api/notebooks',
+        payload: { name: 'Live organize smoke' },
       });
       const notebook = notebookResponse.json<{ id: string }>();
       const sourceResponse = await app.inject({
