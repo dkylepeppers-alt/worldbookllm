@@ -134,17 +134,24 @@ label {
 
 .site-header {
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
   min-height: 58px;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--ink);
   background: rgb(248 248 244 / 90%);
-  padding: 0 1rem;
+  padding: 0.5rem 1rem;
 }
 
 .site-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
+}
+
+.site-nav a[aria-current='page'] {
+  color: var(--blueprint);
 }
 
 .site-nav a {
@@ -268,8 +275,7 @@ label {
 }
 
 .request-error {
-  border-style: solid;
-  border-left: 5px solid var(--vermilion);
+  border: 1px solid var(--vermilion);
 }
 
 .survey-pulse {
@@ -1243,7 +1249,6 @@ label {
   border-top: 1px solid var(--ink);
   background: var(--surface);
   padding-bottom: env(safe-area-inset-bottom);
-  box-shadow: 0 -8px 22px rgb(23 33 43 / 10%);
 }
 
 .mobile-tabs a,
@@ -1446,7 +1451,7 @@ label {
 }
 
 .conversion-notes {
-  color: var(--ink-muted);
+  color: var(--muted);
   padding-left: 1.25rem;
 }
 

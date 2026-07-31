@@ -1,4 +1,4 @@
-import { Link, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 
 export function AppShell() {
   return (
@@ -8,10 +8,12 @@ export function AppShell() {
           worldbookllm
         </Link>
         <nav className="site-nav" aria-label="Primary">
-          <Link to="/">Notebooks</Link>
-          <Link to="/presets">Presets</Link>
-          <Link to="/skills">Skills</Link>
-          <Link to="/settings">Settings</Link>
+          <NavLink to="/" end>
+            Notebooks
+          </NavLink>
+          <NavLink to="/presets">Presets</NavLink>
+          <NavLink to="/skills">Skills</NavLink>
+          <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>
       <main className="app-main">
