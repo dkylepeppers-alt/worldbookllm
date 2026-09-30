@@ -459,9 +459,17 @@ describe('story-skills install', () => {
     ]);
     const install = await app.inject({ method: 'POST', url: '/api/skills-story/install' });
     expect(install.statusCode).toBe(201);
-    const result = install.json<{ installed: Array<{ name: string }>; skipped: string[] }>();
+    const result = install.json<{
+      installed: Array<{ name: string; origin: Record<string, string> }>;
+      skipped: string[];
+    }>();
     expect(result.installed).toHaveLength(23);
     expect(result.installed.map((skill) => skill.name)).toContain('story-maintenance');
+    expect(result.installed.find((skill) => skill.name === 'worldbuilding')?.origin).toEqual({
+      type: 'story-skills',
+      package: 'story-skills@0.18.0',
+      skillId: 'worldbuilding',
+    });
     expect(existsSync(join(dataDir, 'skills/worldbuilding/references/location-template.md'))).toBe(
       true,
     );

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ToolDefinition } from '@worldbookllm/providers';
-import { bookFilePathSchema, storyOptionsSchema } from '@worldbookllm/shared';
+import { bookFilePathSchema, sha256Schema, storyOptionsSchema } from '@worldbookllm/shared';
 import { z } from 'zod';
 
 import type { BookService } from '../services/books.js';
@@ -130,10 +130,13 @@ export class AgentToolRegistry {
       ),
       tool(
         'read_file',
-        'Read a book file, frontmatter included.',
+        'Read a book file, frontmatter included, with the hash required to replace it safely.',
         { properties: { path: pathParameter }, required: ['path'] },
         z.object({ path: bookFilePathSchema }),
-        ({ path }, context) => this.books.readFile(context.book, path).content,
+        ({ path }, context) => {
+          const file = this.books.readFile(context.book, path);
+          return JSON.stringify({ path: file.path, hash: file.hash, content: file.content });
+        },
       ),
       tool(
         'search',
@@ -144,14 +147,26 @@ export class AgentToolRegistry {
       ),
       tool(
         'write_file',
-        'Create or replace a Markdown file in the book. Registries (_index.md) are generated; do not write them.',
+        'Create or replace a Markdown file in the book. Pass the hash from read_file when replacing, or null when creating. Registries (_index.md) are generated; do not write them.',
         {
-          properties: { path: pathParameter, content: { type: 'string' } },
-          required: ['path', 'content'],
+          properties: {
+            path: pathParameter,
+            content: { type: 'string' },
+            expectedHash: {
+              type: ['string', 'null'],
+              pattern: '^[a-f0-9]{64}$',
+              description: 'The hash returned by read_file, or null only when creating a new file.',
+            },
+          },
+          required: ['path', 'content', 'expectedHash'],
         },
-        z.object({ path: bookFilePathSchema, content: z.string().max(5_000_000) }),
-        async ({ path, content }, context) => {
-          await this.books.writeInSession(context.session, path, content);
+        z.object({
+          path: bookFilePathSchema,
+          content: z.string().max(5_000_000),
+          expectedHash: sha256Schema.nullable(),
+        }),
+        async ({ path, content, expectedHash }, context) => {
+          await this.books.writeInSession(context.session, path, content, expectedHash);
           return `Wrote ${path}.`;
         },
       ),

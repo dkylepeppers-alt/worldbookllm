@@ -173,11 +173,11 @@ export class ProviderService {
         maxTokens: controls.maxTokens ?? undefined,
         assistantPrefill: controls.assistantPrefill ?? undefined,
         ...(tools && tools.length > 0 ? { tools } : {}),
-        // The thinking toggle asks the provider to reason and to surface that
-        // reasoning in the response. Effort 'auto' lets each provider pick a
-        // sensible budget; some providers (e.g. Claude) only engage thinking
-        // when maxTokens is also set.
-        ...(controls.thinking === true
+        // The thinking toggle asks the provider to reason and surface it in
+        // the response. Claude requires signed thinking blocks to be replayed
+        // unchanged after a tool call; agent messages do not persist those
+        // provider blocks, so tool-enabled Claude requests disable it.
+        ...(controls.thinking === true && !(config.source === 'claude' && tools && tools.length > 0)
           ? { includeReasoning: true, reasoningEffort: 'auto' as const }
           : {}),
       });

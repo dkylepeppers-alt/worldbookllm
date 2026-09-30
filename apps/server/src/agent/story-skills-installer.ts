@@ -8,9 +8,16 @@ import type { SkillMetadata } from '@worldbookllm/shared';
 
 import type { SkillService } from '../services/skills.js';
 
+const packageJson = createRequire(import.meta.url).resolve('story-skills/package.json');
+const packageVersion = (JSON.parse(readFileSync(packageJson, 'utf8')) as { version?: unknown })
+  .version;
+if (typeof packageVersion !== 'string' || packageVersion.trim() === '') {
+  throw new Error('The installed story-skills package has no version.');
+}
+export const STORY_SKILLS_PACKAGE = `story-skills@${packageVersion}`;
+
 /** The pinned story-skills package's skills folder. */
 export function resolveStorySkillsDir(): string {
-  const packageJson = createRequire(import.meta.url).resolve('story-skills/package.json');
   return join(dirname(packageJson), 'skills');
 }
 
@@ -58,7 +65,11 @@ export class StorySkillsInstaller {
         // A skill we installed that is missing pinned reference files (a copy
         // that stopped partway) is repaired. Existing files, including user
         // edits, are left alone, and a skill the user created is not touched.
-        if (current.origin.type === 'bundled' && current.origin.starterId === name) {
+        if (
+          current.origin.type === 'story-skills' &&
+          current.origin.package === STORY_SKILLS_PACKAGE &&
+          current.origin.skillId === name
+        ) {
           this.copyMissingReferences(name);
         }
         skipped.push(name);
@@ -75,7 +86,7 @@ export class StorySkillsInstaller {
           description,
           content: parsed.content,
           license: 'MIT',
-          origin: { type: 'bundled', starterId: name },
+          origin: { type: 'story-skills', package: STORY_SKILLS_PACKAGE, skillId: name },
         });
         this.copyMissingReferences(name);
       } catch (error) {

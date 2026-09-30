@@ -470,10 +470,29 @@ export class BookService {
    * book lock, with the same path rules as user writes, reindexing after
    * entity edits.
    */
-  async writeInSession(session: CheckpointSession, path: string, content: string): Promise<void> {
+  async writeInSession(
+    session: CheckpointSession,
+    path: string,
+    content: string,
+    expectedHash: string | null,
+  ): Promise<void> {
     assertWritablePath(path);
     const slug = session.book;
-    await this.locks.run(slug, () => this.writeCaptured(session, path, content));
+    await this.locks.run(slug, () => {
+      const current = this.files.readBytes(slug, path);
+      const currentHash = current === null ? null : sha256(current);
+      if (currentHash !== expectedHash) {
+        throw new ConflictError(
+          'file_changed',
+          current === null
+            ? `${path} does not exist anymore.`
+            : expectedHash === null
+              ? `${path} already exists.`
+              : `${path} changed since it was read.`,
+        );
+      }
+      return this.writeCaptured(session, path, content);
+    });
   }
 
   /**
@@ -492,7 +511,12 @@ export class BookService {
       const bytes = this.files.readBytes(slug, path);
       if (bytes === null) throw new NotFoundError(`${path} was not found in ${slug}`);
       const current = bytes.toString('utf8');
-      const occurrences = current.split(find).length - 1;
+      let occurrences = 0;
+      let offset = 0;
+      while ((offset = current.indexOf(find, offset)) !== -1) {
+        occurrences += 1;
+        offset += 1;
+      }
       if (occurrences !== 1) {
         throw new Error(
           occurrences === 0

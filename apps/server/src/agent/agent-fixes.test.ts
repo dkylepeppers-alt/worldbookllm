@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -229,6 +229,26 @@ describe('story-skills installer recovery', () => {
     );
     db.close();
   });
+
+  it('does not repair a legacy bundled skill from the starter catalog', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-skills-'));
+    const sourceDir = mkdtempSync(join(tmpdir(), 'worldbookllm-skill-src-'));
+    tempDirs.push(dataDir, sourceDir);
+    sourceWith(sourceDir);
+    const db = openDatabase(dataDir);
+    const skills = new SkillService(db, new SkillFileStore(dataDir));
+    skills.create({
+      name: 'alpha',
+      description: 'Legacy starter.',
+      content: '# Legacy starter\n',
+      origin: { type: 'bundled', starterId: 'alpha' },
+    });
+
+    const installer = new StorySkillsInstaller(skills, join(dataDir, 'skills'), sourceDir);
+    expect(installer.install()).toMatchObject({ installed: [], skipped: ['alpha'] });
+    expect(existsSync(join(dataDir, 'skills/alpha/references/a.md'))).toBe(false);
+    db.close();
+  });
 });
 
 describe('agent edits and checkpoints', () => {
@@ -302,17 +322,65 @@ describe('agent edits and checkpoints', () => {
     }
   });
 
+  it('requires write_file to match the hash returned by read_file', async () => {
+    const { books, slug } = await bootBook();
+    const path = 'notes/page.md';
+    await books.writeFile(slug, path, { content: 'original', expectedHash: null });
+    const session = books.startSession(slug, 'Agent: guarded write', 'agent');
+    const registry = new AgentToolRegistry(books, app.services.skills, join(dataDir, 'skills'));
+    const writeTool = registry
+      .definitions()
+      .find((definition) => definition.function.name === 'write_file');
+    expect(writeTool?.function.parameters).toMatchObject({
+      required: expect.arrayContaining(['expectedHash']),
+    });
+
+    const read = await registry.execute('read_file', JSON.stringify({ path }), {
+      book: slug,
+      session,
+    });
+    expect(read.ok).toBe(true);
+    const observed = JSON.parse(read.result) as { path: string; hash: string; content: string };
+    expect(observed).toMatchObject({ path, content: 'original' });
+
+    await books.writeFile(slug, path, { content: 'user edit', expectedHash: observed.hash });
+    const stale = await registry.execute(
+      'write_file',
+      JSON.stringify({ path, content: 'agent edit', expectedHash: observed.hash }),
+      { book: slug, session },
+    );
+    expect(stale).toMatchObject({ ok: false, result: expect.stringMatching(/changed/u) });
+    expect(books.readFile(slug, path).content).toBe('user edit');
+  });
+
+  it('rejects overlapping edit_file matches as ambiguous', async () => {
+    const { books, slug } = await bootBook();
+    const path = 'notes/page.md';
+    await books.writeFile(slug, path, { content: 'banana', expectedHash: null });
+    const session = books.startSession(slug, 'Agent: ambiguous edit', 'agent');
+    const registry = new AgentToolRegistry(books, app.services.skills, join(dataDir, 'skills'));
+
+    const outcome = await registry.execute(
+      'edit_file',
+      JSON.stringify({ path, find: 'ana', replace: 'X' }),
+      { book: slug, session },
+    );
+    expect(outcome).toMatchObject({ ok: false });
+    expect(outcome.result).toMatch(/2 times/u);
+    expect(books.readFile(slug, path).content).toBe('banana');
+  });
+
   it('preserves both checkpoints when a user edit lands between agent writes', async () => {
     const { books, slug } = await bootBook();
     const path = 'notes/page.md';
     await books.writeFile(slug, path, { content: 'original', expectedHash: null });
     const session = books.startSession(slug, 'Agent: two writes', 'agent');
-    await books.writeInSession(session, path, 'agent-1');
+    await books.writeInSession(session, path, 'agent-1', books.readFile(slug, path).hash);
     const current = books.readFile(slug, path);
     await books.writeFile(slug, path, { content: 'user-edit', expectedHash: current.hash });
-    await expect(books.writeInSession(session, path, 'agent-2')).rejects.toMatchObject({
-      code: 'checkpoint_interleaved',
-    });
+    await expect(
+      books.writeInSession(session, path, 'agent-2', books.readFile(slug, path).hash),
+    ).rejects.toMatchObject({ code: 'checkpoint_interleaved' });
     expect(books.readFile(slug, path).content).toBe('user-edit');
 
     const checkpoint = await books.commitSession(session);
@@ -333,7 +401,7 @@ describe('agent edits and checkpoints', () => {
     const path = 'notes/page.md';
     await books.writeFile(slug, path, { content: 'original', expectedHash: null });
     const session = books.startSession(slug, 'Agent: one write', 'agent');
-    await books.writeInSession(session, path, 'agent');
+    await books.writeInSession(session, path, 'agent', books.readFile(slug, path).hash);
     const current = books.readFile(slug, path);
     await books.writeFile(slug, path, { content: 'user', expectedHash: current.hash });
     const checkpoint = await books.commitSession(session);

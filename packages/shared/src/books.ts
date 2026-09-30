@@ -65,7 +65,7 @@ export const BOOK_FILE_KINDS = [
 
 export const bookFileKindSchema = z.enum(BOOK_FILE_KINDS);
 
-const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
+export const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 
 export const bookFileSchema = z.strictObject({
   path: bookFilePathSchema,

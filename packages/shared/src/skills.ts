@@ -27,6 +27,11 @@ export const skillOriginSchema = z.discriminatedUnion('type', [
     type: z.literal('bundled'),
     starterId: skillNameSchema,
   }),
+  z.strictObject({
+    type: z.literal('story-skills'),
+    package: z.string().regex(/^story-skills@[^\s@]+$/u),
+    skillId: skillNameSchema,
+  }),
 ]);
 
 export const skillContentSchema = z.string().max(200_000);
