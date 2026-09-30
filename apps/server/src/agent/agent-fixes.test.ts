@@ -302,39 +302,48 @@ describe('agent edits and checkpoints', () => {
     }
   });
 
-  it('does not fold a user edit between two agent writes into the agent checkpoint', async () => {
+  it('preserves both checkpoints when a user edit lands between agent writes', async () => {
     const { books, slug } = await bootBook();
     const path = 'notes/page.md';
+    await books.writeFile(slug, path, { content: 'original', expectedHash: null });
     const session = books.startSession(slug, 'Agent: two writes', 'agent');
     await books.writeInSession(session, path, 'agent-1');
     const current = books.readFile(slug, path);
     await books.writeFile(slug, path, { content: 'user-edit', expectedHash: current.hash });
-    await books.writeInSession(session, path, 'agent-2');
+    await expect(books.writeInSession(session, path, 'agent-2')).rejects.toMatchObject({
+      code: 'checkpoint_interleaved',
+    });
+    expect(books.readFile(slug, path).content).toBe('user-edit');
+
     const checkpoint = await books.commitSession(session);
     expect(checkpoint).not.toBeNull();
     expect(checkpoint?.files.map((file) => file.path)).toEqual([path]);
 
-    await books.undo(slug, checkpoint!.id);
-    expect(books.readFile(slug, path).content).toBe('user-edit');
-    const user = books.listCheckpoints(slug).find((entry) => entry.actor === 'user');
-    expect(user).toBeDefined();
-    await books.undo(slug, user!.id);
+    const checkpoints = books.listCheckpoints(slug);
+    expect(checkpoints.slice(0, 2).map((entry) => entry.actor)).toEqual(['user', 'agent']);
+    expect(checkpoints[1]?.id).toBe(checkpoint!.id);
+    await books.undo(slug, checkpoints[0]!.id);
     expect(books.readFile(slug, path).content).toBe('agent-1');
+    await books.undo(slug, checkpoint!.id);
+    expect(books.readFile(slug, path).content).toBe('original');
   });
 
-  it('does not commit a path someone else changed after the last agent write', async () => {
+  it('preserves the agent checkpoint when a user writes after the last agent write', async () => {
     const { books, slug } = await bootBook();
     const path = 'notes/page.md';
+    await books.writeFile(slug, path, { content: 'original', expectedHash: null });
     const session = books.startSession(slug, 'Agent: one write', 'agent');
     await books.writeInSession(session, path, 'agent');
     const current = books.readFile(slug, path);
     await books.writeFile(slug, path, { content: 'user', expectedHash: current.hash });
     const checkpoint = await books.commitSession(session);
-    expect(checkpoint).toBeNull();
+    expect(checkpoint).not.toBeNull();
 
     const latest = books.listCheckpoints(slug)[0];
     expect(latest?.actor).toBe('user');
     await books.undo(slug, latest!.id);
     expect(books.readFile(slug, path).content).toBe('agent');
+    await books.undo(slug, checkpoint!.id);
+    expect(books.readFile(slug, path).content).toBe('original');
   });
 });

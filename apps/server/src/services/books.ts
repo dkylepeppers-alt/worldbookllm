@@ -554,13 +554,9 @@ export class BookService {
     return this.checkpoints.session(slug, label, actor);
   }
 
-  /**
-   * Stores a session's changes as one checkpoint under the book lock, after
-   * dropping any path someone else changed since it was captured.
-   */
+  /** Finalizes a session's already ordered checkpoint under the book lock. */
   commitSession(session: CheckpointSession): Promise<Checkpoint | null> {
     return this.locks.run(session.book, () => {
-      session.omitStale((path) => this.files.readBytes(session.book, path));
       const checkpoint = session.commit();
       this.index.reconcile(session.book);
       return checkpoint;

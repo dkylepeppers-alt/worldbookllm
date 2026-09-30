@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative } from 'node:path';
 
@@ -21,8 +21,9 @@ export interface StorySkillsInstallResult {
 
 function filesUnder(dir: string): string[] {
   const files: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    const entry = statSync(path);
     if (entry.isDirectory()) files.push(...filesUnder(path));
     else if (entry.isFile()) files.push(path);
   }
