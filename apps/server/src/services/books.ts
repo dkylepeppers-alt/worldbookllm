@@ -384,12 +384,12 @@ export class BookService {
     });
   }
 
-  async check(slug: string, command: BookCheckCommand): Promise<BookCheckResult> {
+  async check(slug: string, command: BookCheckCommand, fresh = false): Promise<BookCheckResult> {
     const root = this.files.root(slug);
     this.index.reconcile(slug);
     const revision = this.index.revision(slug);
     const cached = this.checkCache.get(`${slug}:${command}`);
-    if (cached && cached.revision === revision) return cached.result;
+    if (!fresh && cached && cached.revision === revision) return cached.result;
     const result = await this.cli.run({ command, root, json: true });
     if (!result.envelope) {
       throw new StoryCommandError(
