@@ -4,6 +4,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # @types/node tracks the Node runtime major (.nvmrc, engines); move it
+      # with a runtime upgrade rather than as a standalone types bump.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       # @eslint/js is versioned with eslint core; bump them together so the
       # recommended rules never lag the linter (including across majors).
