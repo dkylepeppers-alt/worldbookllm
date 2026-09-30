@@ -93,7 +93,8 @@ export class CheckpointService {
     return { result: result as T, checkpoint };
   }
 
-  private store(
+  /** Stores a before/after pair as one checkpoint; files absent from a map did not exist. */
+  store(
     book: string,
     label: string,
     actor: CheckpointActor,
@@ -142,6 +143,16 @@ export class CheckpointService {
       }
     })();
     return this.get(book, row.id);
+  }
+
+  /** Starts a checkpoint that gathers several separately locked changes into one entry. */
+  session(book: string, label: string, actor: CheckpointActor): CheckpointSession {
+    return new CheckpointSession(this, book, label, actor);
+  }
+
+  /** Current bytes of the files in `scope`, for a session's before/after images. */
+  snapshotScope(book: string, scope: CheckpointScope): Map<string, Buffer> {
+    return this.capture(book, scope);
   }
 
   list(book: string, limit = 50): Checkpoint[] {
@@ -245,5 +256,57 @@ export class CheckpointService {
           .all(row.id) as Array<Pick<CheckpointFileRow, 'path' | 'before_hash' | 'after_hash'>>
       ).map((file) => ({ path: file.path, change: changeOf(file) })),
     };
+  }
+}
+
+/**
+ * One checkpoint assembled from several changes, each captured separately
+ * (typically each under the book lock): an agent turn that writes files
+ * and runs story commands becomes a single undoable entry, without holding
+ * the book lock for the whole turn. A path keeps the "before" bytes from the
+ * first change that touched it and the "after" bytes from the last.
+ */
+export class CheckpointSession {
+  private readonly before = new Map<string, Buffer | null>();
+  private readonly after = new Map<string, Buffer | null>();
+
+  constructor(
+    private readonly checkpoints: CheckpointService,
+    readonly book: string,
+    readonly label: string,
+    readonly actor: CheckpointActor,
+  ) {}
+
+  async capture<T>(scope: CheckpointScope, change: () => Promise<T> | T): Promise<T> {
+    const before = this.checkpoints.snapshotScope(this.book, scope);
+    try {
+      return await change();
+    } finally {
+      const after = this.checkpoints.snapshotScope(this.book, scope);
+      for (const path of new Set([...before.keys(), ...after.keys()])) {
+        const previous = before.get(path) ?? null;
+        const next = after.get(path) ?? null;
+        if (previous !== null && next !== null && previous.equals(next)) continue;
+        if (!this.before.has(path)) this.before.set(path, previous);
+        this.after.set(path, next);
+      }
+    }
+  }
+
+  get changedPaths(): string[] {
+    return [...this.after.keys()].sort();
+  }
+
+  /** Stores the gathered changes as one checkpoint; null when nothing changed overall. */
+  commit(): Checkpoint | null {
+    const present = (map: Map<string, Buffer | null>) =>
+      new Map([...map].filter((entry): entry is [string, Buffer] => entry[1] !== null));
+    return this.checkpoints.store(
+      this.book,
+      this.label,
+      this.actor,
+      present(this.before),
+      present(this.after),
+    );
   }
 }

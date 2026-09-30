@@ -16,6 +16,7 @@ import {
   ProviderError,
   type ChatMessage,
   type ProviderChatRequest,
+  type ToolDefinition,
 } from '@worldbookllm/providers';
 
 import { ConfigurationError } from '../errors.js';
@@ -156,6 +157,7 @@ export class ProviderService {
     config: ProviderConfig,
     messages: ChatMessage[],
     controls: GenerationControls,
+    tools?: ToolDefinition[],
   ): ProviderChatRequest {
     const apiKey = this.requireApiKey(config);
     try {
@@ -170,6 +172,7 @@ export class ProviderService {
         topP: controls.topP ?? undefined,
         maxTokens: controls.maxTokens ?? undefined,
         assistantPrefill: controls.assistantPrefill ?? undefined,
+        ...(tools && tools.length > 0 ? { tools } : {}),
         // The thinking toggle asks the provider to reason and to surface that
         // reasoning in the response. Effort 'auto' lets each provider pick a
         // sensible budget; some providers (e.g. Claude) only engage thinking

@@ -51,9 +51,14 @@ import {
 import { sha256 } from '../story/book-files.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { classifyBookPath } from '../story/book-paths.js';
-import type { CheckpointActor, CheckpointService } from '../story/checkpoints.js';
+import type {
+  CheckpointActor,
+  CheckpointService,
+  CheckpointSession,
+} from '../story/checkpoints.js';
 import { KeyedMutex } from '../story/keyed-mutex.js';
-import type { StoryCli } from '../story/story-cli.js';
+import type { StoryCli, StoryRunResult } from '../story/story-cli.js';
+import { STORY_COMMANDS, type StoryCommandName } from '../story/story-commands.js';
 import { convertUpload } from './converters/index.js';
 
 /** Lock key for book creation; the NUL byte keeps it apart from every book slug. */
@@ -434,6 +439,74 @@ export class BookService {
     }
   }
 
+  /** The book's root folder, for callers that confine paths themselves. */
+  root(slug: string): string {
+    return this.files.root(slug);
+  }
+
+  /** Lists the book's indexed files after reconciling with the disk. */
+  listFiles(slug: string): BookFile[] {
+    this.files.root(slug);
+    this.index.reconcile(slug);
+    return this.index.list(slug);
+  }
+
+  /**
+   * Writes a file as part of a checkpoint session (an agent turn): under the
+   * book lock, with the same path rules as user writes, reindexing after
+   * entity edits.
+   */
+  async writeInSession(session: CheckpointSession, path: string, content: string): Promise<void> {
+    assertWritablePath(path);
+    const slug = session.book;
+    const root = this.files.root(slug);
+    const reindex = REINDEXED_KINDS.has(classifyBookPath(path).kind);
+    await this.locks.run(slug, async () => {
+      await session.capture(reindex ? 'book' : { paths: [path] }, async () => {
+        this.files.write(slug, path, content);
+        if (reindex) await this.cli.runOrThrow({ command: 'reindex', root });
+      });
+      this.index.reconcile(slug);
+    });
+  }
+
+  /**
+   * Runs a story command for the agent. Read-only commands run directly;
+   * commands that write run under the book lock inside the session, so the
+   * files they change join the turn's checkpoint. Exit codes are returned as
+   * data: a failed check or a refused write is information for the model.
+   */
+  async runStoryForAgent(
+    session: CheckpointSession,
+    command: StoryCommandName,
+    args: string[],
+    options: StoryOptions,
+  ): Promise<StoryRunResult> {
+    const slug = session.book;
+    const root = this.files.root(slug);
+    const json = Object.hasOwn(STORY_COMMANDS[command].options, 'json');
+    const request = { command, root, args, options, json };
+    if (!storyCommandWrites(command, options)) return this.cli.run(request);
+    return this.locks.run(slug, async () => {
+      const result = await session.capture('book', () => this.cli.run(request));
+      this.index.reconcile(slug);
+      return result;
+    });
+  }
+
+  /** Opens a checkpoint session: several locked changes recorded as one undoable entry. */
+  startSession(slug: string, label: string, actor: CheckpointActor): CheckpointSession {
+    this.files.root(slug);
+    return this.checkpoints.session(slug, label, actor);
+  }
+
+  /** Stores a session's changes as one checkpoint and refreshes the index. */
+  commitSession(session: CheckpointSession): Checkpoint | null {
+    const checkpoint = session.commit();
+    this.index.reconcile(session.book);
+    return checkpoint;
+  }
+
   private async runEntityCommand(
     slug: string,
     label: string,
@@ -488,6 +561,29 @@ export class BookService {
     }
     return candidate;
   }
+}
+
+/** Story commands that always write, and flags that make read commands write. */
+const WRITING_COMMANDS = new Set<string>([
+  'add',
+  'rename',
+  'move',
+  'remove',
+  'reindex',
+  'export',
+  'build',
+]);
+const WRITING_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  passes: ['init', 'start', 'done'],
+  wordcount: ['write'],
+  progress: ['log'],
+};
+
+export function storyCommandWrites(command: string, options: StoryOptions): boolean {
+  if (WRITING_COMMANDS.has(command)) return true;
+  return (WRITING_FLAGS[command] ?? []).some(
+    (flag) => options[flag] !== undefined && options[flag] !== false,
+  );
 }
 
 /** One entry to write into a book: its content, target kind, and provenance lines. */
