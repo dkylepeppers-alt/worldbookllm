@@ -1,4 +1,5 @@
 import {
+  bookSlugSchema,
   type AddEntityInput,
   type BookImportKind,
   type BookImportPreview,
@@ -76,6 +77,21 @@ function stringField(frontmatter: Record<string, unknown> | null, key: string): 
 function numberField(frontmatter: Record<string, unknown> | null, key: string): number | null {
   const value = frontmatter?.[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function linkField(frontmatter: Record<string, unknown> | null, key: string): string[] {
+  const value = frontmatter?.[key];
+  if (!Array.isArray(value)) return [];
+  const slugs = value.flatMap((reference) => {
+    if (typeof reference !== 'string') return [];
+    const projectPath = reference
+      .trim()
+      .replace(/\/story\.md$/u, '')
+      .replace(/\/+$/u, '');
+    const slug = projectPath.split('/').at(-1);
+    return slug !== undefined && bookSlugSchema.safeParse(slug).success ? [slug] : [];
+  });
+  return [...new Set(slugs)];
 }
 
 /**
@@ -793,6 +809,8 @@ export class BookService {
       kind: location.kind,
       seriesId: location.seriesId,
       bookNumber: numberField(story, 'book-number'),
+      follows: linkField(story, 'follows'),
+      precedes: linkField(story, 'precedes'),
       counts: this.index.counts(slug),
       updatedAt: new Date(latest ?? Date.now()).toISOString(),
     };

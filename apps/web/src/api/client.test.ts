@@ -18,6 +18,8 @@ const book: BookSummary = {
   kind: 'book',
   seriesId: null,
   bookNumber: null,
+  follows: [],
+  precedes: [],
   counts: {},
   updatedAt: '2026-07-10T12:00:00.000Z',
 };

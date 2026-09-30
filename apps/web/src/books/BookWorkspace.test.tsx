@@ -27,6 +27,8 @@ const book: BookSummary = {
   kind: 'book',
   seriesId: null,
   bookNumber: null,
+  follows: [],
+  precedes: [],
   counts: { chapter: 1, character: 1 },
   updatedAt: '2026-09-30T00:00:00.000Z',
 };
@@ -396,16 +398,24 @@ describe('book health and project', () => {
     });
   });
 
-  it('adds the next book after this one in its series', async () => {
+  it('adds a linked book after the highest existing book number', async () => {
     const inSeries: BookSummary = { ...book, seriesId: 'tides', bookNumber: 1 };
+    const existingSequel: BookSummary = {
+      ...book,
+      slug: 'high-water',
+      title: 'High Water',
+      seriesId: 'tides',
+      bookNumber: 2,
+    };
     const addSeriesBook = vi.fn(() =>
-      Promise.resolve({ ...book, slug: 'high-water', title: 'High Water', seriesId: 'tides' }),
+      Promise.resolve({ ...book, slug: 'spring-tide', title: 'Spring Tide', seriesId: 'tides' }),
     );
     renderAt('/books/the-salt-road/project', {
       getBookTree: () => Promise.resolve({ ...tree, book: inSeries }),
       listBooks: () =>
         Promise.resolve([
           inSeries,
+          existingSequel,
           { ...book, slug: 'tides', title: 'Tides', kind: 'series-bible', seriesId: 'tides' },
         ]),
       listCheckpoints: () => Promise.resolve([]),
@@ -415,19 +425,19 @@ describe('book health and project', () => {
     expect(screen.queryByRole('button', { name: 'Move book to trash' })).toBeNull();
     await userEvent.type(
       screen.getByRole('textbox', { name: 'Add a book to this series' }),
-      'High Water',
+      'Spring Tide',
     );
     expect((screen.getByRole('combobox', { name: 'Comes after' }) as HTMLSelectElement).value).toBe(
       'the-salt-road',
     );
     await userEvent.click(screen.getByRole('button', { name: 'Add book' }));
     expect(addSeriesBook).toHaveBeenCalledWith('tides', {
-      title: 'High Water',
+      title: 'Spring Tide',
       follows: 'the-salt-road',
-      bookNumber: 2,
+      bookNumber: 3,
     });
     await waitFor(() =>
-      expect(screen.getByTestId('location').textContent).toBe('/books/high-water/write'),
+      expect(screen.getByTestId('location').textContent).toBe('/books/spring-tide/write'),
     );
   });
 });

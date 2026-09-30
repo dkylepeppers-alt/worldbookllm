@@ -35,6 +35,8 @@ const book: BookSummary = {
   kind: 'book',
   seriesId: null,
   bookNumber: null,
+  follows: [],
+  precedes: [],
   counts: { character: 1 },
   updatedAt: NOW,
 };

@@ -8,11 +8,10 @@ import { useBook } from './book-context.js';
 import { groupLibrary } from './library-groups.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
-/** The number a new book gets: one past the book it follows, else one past the last. */
-function nextBookNumber(books: BookSummary[], follows: BookSummary | undefined): number {
+/** New linked books append after the highest numbered book, avoiding duplicate numbers. */
+function nextBookNumber(books: BookSummary[]): number {
   const numbers = books.flatMap((book) => (book.bookNumber === null ? [] : [book.bookNumber]));
-  const base = follows?.bookNumber ?? Math.max(0, ...numbers);
-  return base + 1;
+  return Math.max(0, ...numbers) + 1;
 }
 
 /**
@@ -85,7 +84,7 @@ export function SeriesSection() {
       const created = await api.addSeriesBook(seriesId, {
         title,
         ...(anchor === undefined ? {} : { follows: anchor.slug }),
-        bookNumber: nextBookNumber(books, anchor),
+        bookNumber: nextBookNumber(books),
       });
       await navigate(`/books/${created.slug}`);
     });

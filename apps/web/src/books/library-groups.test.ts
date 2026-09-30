@@ -12,6 +12,8 @@ function summary(slug: string, title: string, extra: Partial<BookSummary> = {}):
     kind: 'book',
     seriesId: null,
     bookNumber: null,
+    follows: [],
+    precedes: [],
     counts: {},
     updatedAt: '2026-09-30T00:00:00.000Z',
     ...extra,
@@ -45,5 +47,21 @@ describe('groupLibrary', () => {
     expect(groups.series).toEqual([
       { id: 'tides', bible: null, books: [expect.objectContaining({ slug: 'ebb' })] },
     ]);
+  });
+
+  it('uses series links before titles for books with the same number', () => {
+    const books = [
+      summary('last', 'Alpha', { seriesId: 'tides', follows: ['middle'] }),
+      summary('first', 'Zulu', { seriesId: 'tides', precedes: ['middle'] }),
+      summary('middle', 'Middle', {
+        seriesId: 'tides',
+        follows: ['first'],
+        precedes: ['last'],
+      }),
+    ];
+
+    const groups = groupLibrary(books);
+
+    expect(groups.series[0]?.books.map((book) => book.slug)).toEqual(['first', 'middle', 'last']);
   });
 });

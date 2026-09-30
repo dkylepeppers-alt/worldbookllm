@@ -93,6 +93,10 @@ export const bookSummarySchema = z.strictObject({
   /** The series whose folder holds the book (ADR 0018); null for a standalone book. */
   seriesId: z.string().nullable(),
   bookNumber: z.number().nullable(),
+  /** Linked predecessor book slugs, normalized from story.md's relative paths. */
+  follows: z.array(bookSlugSchema),
+  /** Linked successor book slugs, normalized from story.md's relative paths. */
+  precedes: z.array(bookSlugSchema),
   counts: z.record(z.string(), z.number().int().nonnegative()),
   updatedAt: z.iso.datetime(),
 });
