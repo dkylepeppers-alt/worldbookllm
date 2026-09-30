@@ -1,0 +1,596 @@
+import { randomUUID } from 'node:crypto';
+
+import type Database from 'better-sqlite3';
+
+import {
+  ProviderError,
+  ToolCallAccumulator,
+  normalizeStreamChunk,
+  parseSseStream,
+  supportsTools,
+  type ChatMessage,
+} from '@worldbookllm/providers';
+import type {
+  AgentChat,
+  AgentChatDetail,
+  AgentMessage,
+  AgentStep,
+  AgentStreamEvent,
+  ProviderConfig,
+} from '@worldbookllm/shared';
+
+import { ConfigurationError, ConflictError, NotFoundError } from '../errors.js';
+import type { BookService } from '../services/books.js';
+import type { PresetService } from '../services/presets.js';
+import type { ProviderService } from '../services/providers.js';
+import type { SkillService } from '../services/skills.js';
+import type { CheckpointSession } from '../story/checkpoints.js';
+import type { AgentToolRegistry } from './tools.js';
+
+export const AGENT_MAX_STEPS = 24;
+const TOOL_RESULT_MAX_BYTES = 24 * 1024;
+const SUMMARY_MAX_CHARS = 200;
+
+interface AgentChatRow {
+  id: string;
+  book: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AgentMessageRow {
+  id: string;
+  chat_id: string;
+  seq: number;
+  role: 'user' | 'assistant';
+  content: string;
+  reasoning: string | null;
+  status: AgentMessage['status'];
+  steps_json: string;
+  checkpoint_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function toChat(row: AgentChatRow): AgentChat {
+  return {
+    id: row.id,
+    book: row.book,
+    title: row.title,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toMessage(row: AgentMessageRow): AgentMessage {
+  return {
+    id: row.id,
+    chatId: row.chat_id,
+    seq: row.seq,
+    role: row.role,
+    content: row.content,
+    reasoning: row.reasoning,
+    status: row.status,
+    steps: JSON.parse(row.steps_json) as AgentStep[],
+    checkpointId: row.checkpoint_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function omissionNotice(omitted: number): string {
+  return `\n[truncated: ${omitted} bytes omitted]`;
+}
+
+/**
+ * Caps a tool result at 24 KB, including the omission notice, and never cuts
+ * inside a UTF-8 character.
+ */
+export function truncateResult(result: string): string {
+  const buf = Buffer.from(result, 'utf8');
+  if (buf.length <= TOOL_RESULT_MAX_BYTES) return result;
+
+  // A continuation byte is 10xxxxxx. Walk back to the start of the character.
+  const boundary = (index: number): number => {
+    let end = index;
+    while (end > 0 && (buf[end]! & 0xc0) === 0x80) end -= 1;
+    return end;
+  };
+
+  let kept = boundary(
+    Math.max(0, TOOL_RESULT_MAX_BYTES - Buffer.byteLength(omissionNotice(buf.length), 'utf8')),
+  );
+  let notice = omissionNotice(buf.length - kept);
+  while (kept > 0 && kept + Buffer.byteLength(notice, 'utf8') > TOOL_RESULT_MAX_BYTES) {
+    kept = boundary(kept - 1);
+    notice = omissionNotice(buf.length - kept);
+  }
+  return `${buf.subarray(0, kept).toString('utf8')}${notice}`;
+}
+
+/**
+ * Arguments sent back to the provider. A malformed JSON string would make
+ * Claude's next request fail to build (`JSON.parse` in convertClaudeMessages),
+ * so the provider sees an empty object and the tool result carries the error.
+ * The recorded step keeps the raw string.
+ */
+export function providerToolArguments(raw: string): string {
+  try {
+    JSON.parse(raw);
+    return raw;
+  } catch {
+    return '{}';
+  }
+}
+
+/** Rebuilds the provider conversation, including tool calls stored on each step. */
+export function historyMessages(history: AgentMessage[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  for (const message of history) {
+    if (message.role === 'user') {
+      if (message.content.trim() !== '') messages.push({ role: 'user', content: message.content });
+      continue;
+    }
+    if (message.steps.length === 0) {
+      if (message.content.trim() !== '') {
+        messages.push({ role: 'assistant', content: message.content });
+      }
+      continue;
+    }
+    for (const step of message.steps) {
+      if (step.toolCalls.length > 0) {
+        messages.push({
+          role: 'assistant',
+          content: step.text === '' ? null : step.text,
+          tool_calls: step.toolCalls.map((call) => ({
+            id: call.id,
+            type: 'function' as const,
+            function: { name: call.name, arguments: providerToolArguments(call.arguments) },
+          })),
+        });
+        for (const call of step.toolCalls) {
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: call.ok ? call.result : `Error: ${call.result}`,
+          });
+        }
+      } else if (step.text.trim() !== '') {
+        messages.push({ role: 'assistant', content: step.text });
+      }
+    }
+    const fromSteps = message.steps
+      .map((step) => step.text)
+      .filter((text) => text.trim() !== '')
+      .join('\n\n');
+    const extra =
+      message.content === fromSteps
+        ? ''
+        : fromSteps.length === 0
+          ? message.content
+          : message.content.startsWith(`${fromSteps}\n\n`)
+            ? message.content.slice(fromSteps.length + 2)
+            : '';
+    if (extra.trim() !== '') messages.push({ role: 'assistant', content: extra });
+  }
+  return messages;
+}
+
+/** Gemma 3 on Google sources is sent no tools (see buildGoogleRequest). */
+function googleModelWithoutTools(config: ProviderConfig): boolean {
+  return (
+    (config.source === 'makersuite' || config.source === 'vertexai') && /gemma-3/.test(config.model)
+  );
+}
+
+function summarize(result: string): string {
+  const firstLine = result.split('\n', 1)[0] ?? '';
+  return firstLine.length > SUMMARY_MAX_CHARS
+    ? `${firstLine.slice(0, SUMMARY_MAX_CHARS)}…`
+    : firstLine;
+}
+
+export interface PreparedAgentTurn {
+  chat: AgentChat;
+  config: ProviderConfig;
+  history: AgentMessage[];
+  userContent: string;
+  assistant: AgentMessage;
+  release(): void;
+}
+
+/**
+ * The story-skills agent (ADR 0015): a bounded tool-calling loop over one
+ * book. Each turn streams the model's text, runs the tools it calls, and
+ * feeds the results back until the model answers without tools or the step
+ * limit is reached. Every request body and tool result is recorded on the
+ * assistant message, and every file the turn changed lands in one
+ * checkpoint, committed even when the turn is stopped or fails, so it can
+ * always be undone.
+ */
+export class AgentService {
+  private readonly active = new Set<string>();
+
+  constructor(
+    private readonly db: Database.Database,
+    private readonly books: BookService,
+    private readonly skills: SkillService,
+    private readonly presets: PresetService,
+    private readonly providers: ProviderService,
+    private readonly tools: AgentToolRegistry,
+    private readonly logError: (error: unknown) => void = () => undefined,
+  ) {}
+
+  createChat(book: string, title?: string): AgentChat {
+    this.books.root(book);
+    const now = new Date().toISOString();
+    const row: AgentChatRow = {
+      id: randomUUID(),
+      book,
+      title: title ?? 'New chat',
+      created_at: now,
+      updated_at: now,
+    };
+    this.db
+      .prepare(
+        'INSERT INTO agent_chats (id, book, title, created_at, updated_at) VALUES (@id, @book, @title, @created_at, @updated_at)',
+      )
+      .run(row);
+    return toChat(row);
+  }
+
+  listChats(book: string): AgentChat[] {
+    this.books.root(book);
+    return (
+      this.db
+        .prepare('SELECT * FROM agent_chats WHERE book = ? ORDER BY updated_at DESC, id')
+        .all(book) as AgentChatRow[]
+    ).map(toChat);
+  }
+
+  getChat(id: string): AgentChatDetail {
+    const chat = this.chatRow(id);
+    const messages = (
+      this.db
+        .prepare('SELECT * FROM agent_messages WHERE chat_id = ? ORDER BY seq')
+        .all(id) as AgentMessageRow[]
+    ).map(toMessage);
+    return { ...toChat(chat), messages };
+  }
+
+  deleteChat(id: string): void {
+    this.chatRow(id);
+    if (this.active.has(id)) {
+      throw new ConflictError(
+        'generation_in_progress',
+        'This chat has a turn running. Wait for it to finish before deleting it.',
+      );
+    }
+    this.db.prepare('DELETE FROM agent_chats WHERE id = ?').run(id);
+  }
+
+  /** Refuses trash while one of the book's chats has a turn running. */
+  assertBookIdle(book: string): void {
+    const ids = this.db
+      .prepare('SELECT id FROM agent_chats WHERE book = ?')
+      .pluck()
+      .all(book) as string[];
+    if (ids.some((id) => this.active.has(id))) {
+      throw new ConflictError(
+        'generation_in_progress',
+        'An agent turn is running in this book. Wait for it to finish before trashing it.',
+      );
+    }
+  }
+
+  /** Removes the book's agent chats. Caller must have checked assertBookIdle. */
+  removeChatsForBook(book: string): void {
+    this.db.prepare('DELETE FROM agent_chats WHERE book = ?').run(book);
+  }
+
+  /** Validates the turn can run and records the user message and a streaming assistant message. */
+  prepare(chatId: string, content: string): PreparedAgentTurn {
+    if (this.active.has(chatId)) {
+      throw new ConflictError(
+        'generation_in_progress',
+        'The agent is already working in this chat.',
+      );
+    }
+    const detail = this.getChat(chatId);
+    const config = this.presets.getSettings().providerConfig;
+    if (!config) throw new ConfigurationError('Configure a provider before talking to the agent.');
+    if (!supportsTools(config.source)) {
+      throw new ConfigurationError(
+        'The configured provider does not support tool calling, which the agent needs.',
+      );
+    }
+    if (googleModelWithoutTools(config)) {
+      throw new ConfigurationError(
+        'Gemma 3 models on Google sources do not support tool calling, which the agent needs.',
+      );
+    }
+    this.active.add(chatId);
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        this.active.delete(chatId);
+      }
+    };
+    try {
+      const now = new Date().toISOString();
+      const seq = detail.messages.length;
+      const insert = this.db.prepare(
+        `INSERT INTO agent_messages (id, chat_id, seq, role, content, reasoning, status, steps_json, checkpoint_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, '[]', NULL, ?, ?)`,
+      );
+      const assistantId = randomUUID();
+      this.db.transaction(() => {
+        insert.run(randomUUID(), chatId, seq, 'user', content, 'complete', now, now);
+        insert.run(assistantId, chatId, seq + 1, 'assistant', '', 'streaming', now, now);
+        const title = detail.messages.length === 0 ? content.slice(0, 80) : detail.title;
+        this.db
+          .prepare('UPDATE agent_chats SET title = ?, updated_at = ? WHERE id = ?')
+          .run(title, now, chatId);
+      })();
+      return {
+        chat: detail,
+        config,
+        history: detail.messages,
+        userContent: content,
+        assistant: this.message(assistantId),
+        release,
+      };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
+  async run(
+    prepared: PreparedAgentTurn,
+    signal: AbortSignal,
+    emit: (event: AgentStreamEvent) => void,
+  ): Promise<void> {
+    const { chat, config } = prepared;
+    const steps: AgentStep[] = [];
+    const texts: string[] = [];
+    let reasoning = '';
+    let limited = false;
+    let session: CheckpointSession | undefined;
+
+    const persist = (status: AgentMessage['status'], checkpointId: string | null = null) => {
+      const content = [...texts, ...(limited ? [`(Stopped after ${AGENT_MAX_STEPS} steps.)`] : [])]
+        .filter((text) => text.trim() !== '')
+        .join('\n\n');
+      this.db
+        .prepare(
+          'UPDATE agent_messages SET content = ?, reasoning = ?, status = ?, steps_json = ?, checkpoint_id = ?, updated_at = ? WHERE id = ?',
+        )
+        .run(
+          content,
+          reasoning || null,
+          status,
+          JSON.stringify(steps),
+          checkpointId,
+          new Date().toISOString(),
+          prepared.assistant.id,
+        );
+      return this.message(prepared.assistant.id);
+    };
+    let checkpointSettled = false;
+    let checkpointId: string | null = null;
+    const finishCheckpoint = async (): Promise<string | null> => {
+      if (checkpointSettled) return checkpointId;
+      checkpointSettled = true;
+      if (!session) return null;
+      const checkpoint = await this.books.commitSession(session);
+      if (checkpoint) emit({ type: 'checkpoint', checkpoint });
+      checkpointId = checkpoint?.id ?? null;
+      return checkpointId;
+    };
+
+    try {
+      // Setup stays inside the try: a failure after prepare() has already
+      // stored a streaming message must be recorded, not left hanging.
+      const controls = this.presets.resolve(null).generation;
+      session = this.books.startSession(
+        chat.book,
+        `Agent: ${prepared.userContent.slice(0, 60)}`,
+        'agent',
+      );
+      const messages: ChatMessage[] = [
+        { role: 'system', content: this.systemPrompt(chat.book) },
+        ...historyMessages(prepared.history),
+        { role: 'user', content: prepared.userContent },
+      ];
+
+      for (let index = 0; ; index += 1) {
+        if (index === AGENT_MAX_STEPS) {
+          limited = true;
+          break;
+        }
+        emit({ type: 'step', index });
+        const request = this.providers.createChatRequest(
+          config,
+          messages,
+          controls,
+          this.tools.definitions(),
+        );
+        const step: AgentStep = {
+          index,
+          requestBody: this.providers.snapshotRequestBody(request),
+          text: '',
+          toolCalls: [],
+        };
+        steps.push(step);
+        texts.push('');
+
+        const accumulator = new ToolCallAccumulator();
+        let sawCompletion = false;
+        const stream = await this.providers.openChatStream(config.source, request, signal);
+        for await (const event of parseSseStream(stream)) {
+          if (event.data === '[DONE]') break;
+          let payload: unknown;
+          try {
+            payload = JSON.parse(event.data);
+          } catch {
+            throw new ProviderError('Provider stream contained invalid JSON.', config.source);
+          }
+          accumulator.push(payload);
+          const delta = normalizeStreamChunk(config.source, payload);
+          if (!delta) continue;
+          sawCompletion = true;
+          step.text += delta.text;
+          texts[texts.length - 1] = step.text;
+          reasoning += delta.reasoning ?? '';
+          emit({
+            type: 'delta',
+            text: delta.text,
+            ...(delta.reasoning ? { reasoning: delta.reasoning } : {}),
+          });
+        }
+
+        const calls = accumulator.toolCalls();
+        if (calls.length === 0) {
+          // The ordinary generation path treats a stream with no completion
+          // data as a provider error. A tool call counts as data; a blank
+          // step does not.
+          if (!sawCompletion) {
+            throw new ProviderError('Provider stream contained no completion data.', config.source);
+          }
+          break;
+        }
+        messages.push({
+          role: 'assistant',
+          content: step.text === '' ? null : step.text,
+          tool_calls: calls.map((call) => ({
+            id: call.id,
+            type: 'function',
+            function: { name: call.name, arguments: providerToolArguments(call.arguments) },
+            ...(call.signature ? { signature: call.signature } : {}),
+          })),
+        });
+        for (const call of calls) {
+          if (signal.aborted) break;
+          emit({
+            type: 'tool_call',
+            stepIndex: index,
+            id: call.id,
+            name: call.name,
+            arguments: call.arguments,
+          });
+          const started = Date.now();
+          const outcome = await this.tools.execute(call.name, call.arguments, {
+            book: chat.book,
+            session,
+          });
+          const result = truncateResult(outcome.result);
+          step.toolCalls.push({
+            id: call.id,
+            name: call.name,
+            arguments: call.arguments,
+            ok: outcome.ok,
+            result,
+            durationMs: Date.now() - started,
+          });
+          emit({
+            type: 'tool_result',
+            stepIndex: index,
+            id: call.id,
+            ok: outcome.ok,
+            summary: summarize(result),
+          });
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: outcome.ok ? result : `Error: ${result}`,
+          });
+        }
+        persist('streaming');
+        if (signal.aborted) break;
+      }
+
+      if (signal.aborted) {
+        persist('interrupted', await finishCheckpoint());
+        return;
+      }
+      emit({ type: 'done', message: persist('complete', await finishCheckpoint()) });
+    } catch (error) {
+      let savedCheckpoint: string | null = null;
+      try {
+        savedCheckpoint = await finishCheckpoint();
+      } catch (commitError) {
+        this.logError(commitError);
+      }
+      if (signal.aborted) {
+        persist('interrupted', savedCheckpoint);
+        return;
+      }
+      this.logError(error);
+      const messageState = persist('error', savedCheckpoint);
+      if (error instanceof ProviderError) {
+        emit({
+          type: 'error',
+          code: 'provider_error',
+          message: 'Provider generation failed',
+          messageState,
+        });
+      } else if (error instanceof ConfigurationError) {
+        emit({ type: 'error', code: 'configuration_error', message: error.message, messageState });
+      } else {
+        emit({
+          type: 'error',
+          code: 'internal_error',
+          message: 'Internal server error',
+          messageState,
+        });
+      }
+    } finally {
+      this.db
+        .prepare('UPDATE agent_chats SET updated_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), chat.id);
+    }
+  }
+
+  /** The agent's standing instructions, skill catalog, and book facts. */
+  systemPrompt(book: string): string {
+    const summary = this.books.get(book);
+    const skills = this.skills.list();
+    const counts = Object.entries(summary.counts)
+      .map(([kind, count]) => `${count} ${kind}`)
+      .join(', ');
+    return [
+      `You are the story-skills agent in worldbookllm, working on the book "${summary.title}".`,
+      'The book is a story-skills project: plain Markdown files with YAML frontmatter, one entity per file (characters/, worldbuilding/, plot/, chapters/, scenes/, continuity/, glossary/, research/). The filename is the entity id; _index.md registries are generated by story reindex.',
+      'Use the tools to read and change the book. Run the story CLI only through run_story (never bun, node, or npx); the server supplies --path and --json.',
+      'Your file changes apply immediately and are recorded as one undoable change for this turn. Tell the user what you changed.',
+      'Ask the user before inventing canon they have not given you.',
+      'When a request matches a skill below, load it with activate_skill and follow it; load its references with read_skill_file when it says to.',
+      '',
+      '## Skills',
+      ...(skills.length === 0
+        ? ['No skills are installed.']
+        : skills.map((skill) => `- ${skill.name}: ${skill.description}`)),
+      '',
+      '## Book',
+      `Title: ${summary.title}`,
+      `Genre: ${summary.genre ?? 'unset'} · Status: ${summary.status ?? 'unset'}`,
+      `Contents: ${counts || 'no entities yet'}`,
+    ].join('\n');
+  }
+
+  private chatRow(id: string): AgentChatRow {
+    const row = this.db.prepare('SELECT * FROM agent_chats WHERE id = ?').get(id) as
+      AgentChatRow | undefined;
+    if (!row) throw new NotFoundError(`Chat ${id} was not found`);
+    return row;
+  }
+
+  private message(id: string): AgentMessage {
+    return toMessage(
+      this.db.prepare('SELECT * FROM agent_messages WHERE id = ?').get(id) as AgentMessageRow,
+    );
+  }
+}

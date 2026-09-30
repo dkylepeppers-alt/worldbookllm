@@ -38,13 +38,15 @@ describe('database startup', () => {
 
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
-    expect(db.pragma('user_version', { simple: true })).toBe(9);
+    expect(db.pragma('user_version', { simple: true })).toBe(11);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .pluck()
       .all();
     expect(tables).toEqual([
+      'agent_chats',
+      'agent_messages',
       'app_settings',
       // Story-skills books (ADR 0014): the index, its FTS5 table, and checkpoints.
       'book_checkpoint_files',
@@ -138,6 +140,15 @@ describe('database startup', () => {
     }>;
     expect(chatColumns).toContainEqual(expect.objectContaining({ name: 'preset_id', notnull: 0 }));
 
+    const checkpointColumns = db.prepare('PRAGMA table_info(book_checkpoints)').all() as Array<{
+      name: string;
+      notnull: number;
+      dflt_value: string | null;
+    }>;
+    expect(checkpointColumns).toContainEqual(
+      expect.objectContaining({ name: 'pending', notnull: 1, dflt_value: '0' }),
+    );
+
     db.close();
   });
 
@@ -146,9 +157,36 @@ describe('database startup', () => {
     openDatabase(dataDir).close();
 
     const reopened = openDatabase(dataDir);
-    expect(reopened.pragma('user_version', { simple: true })).toBe(9);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(11);
     expect(reopened.prepare('SELECT count(*) FROM notebooks').pluck().get()).toBe(0);
     reopened.close();
+  });
+
+  it('upgrades schema v10 checkpoints without losing their history', () => {
+    const dataDir = makeTempDir();
+    const file = join(dataDir, 'worldbookllm.db');
+    const legacy = new Database(file);
+    legacy.exec(`
+      CREATE TABLE book_checkpoints (
+        id TEXT PRIMARY KEY,
+        book TEXT NOT NULL,
+        label TEXT NOT NULL,
+        actor TEXT NOT NULL CHECK (actor IN ('user', 'agent')),
+        created_at TEXT NOT NULL,
+        undone_at TEXT
+      );
+      INSERT INTO book_checkpoints (id, book, label, actor, created_at, undone_at)
+      VALUES ('checkpoint', 'harbor', 'Edit notes/page.md', 'user', '2026-09-30T00:00:00.000Z', NULL);
+    `);
+    legacy.pragma('user_version = 10');
+    legacy.close();
+
+    const migrated = openDatabase(dataDir);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(11);
+    expect(
+      migrated.prepare('SELECT id, pending FROM book_checkpoints WHERE id = ?').get('checkpoint'),
+    ).toEqual({ id: 'checkpoint', pending: 0 });
+    migrated.close();
   });
 
   it('migrates pasted source provenance from schema v1', () => {
@@ -182,7 +220,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(9);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(11);
     expect(
       migrated
         .prepare('SELECT origin_json, conversion_notes_json FROM sources WHERE id = ?')
@@ -238,7 +276,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(9);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(11);
     expect(migrated.prepare('SELECT id, name FROM notebooks').get()).toEqual({
       id: 'notebook',
       name: 'Atlas',
@@ -298,7 +336,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(9);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(11);
     // Seeded from the most-recently-updated notebook's configured provider.
     expect(
       migrated.prepare('SELECT provider_config_json FROM app_settings WHERE id = 1').pluck().get(),
@@ -467,13 +505,13 @@ describe('database startup', () => {
     const dataDir = makeTempDir();
     const file = join(dataDir, 'worldbookllm.db');
     const future = new Database(file);
-    future.pragma('user_version = 10');
+    future.pragma('user_version = 12');
     future.close();
 
-    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 10/u);
+    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 12/u);
 
     const unchanged = new Database(file);
-    expect(unchanged.pragma('user_version', { simple: true })).toBe(10);
+    expect(unchanged.pragma('user_version', { simple: true })).toBe(12);
     unchanged.close();
   });
 });

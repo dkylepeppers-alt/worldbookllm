@@ -1,15 +1,20 @@
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 
+import { AgentService } from './agent/agent-service.js';
+import { StorySkillsInstaller } from './agent/story-skills-installer.js';
+import { AgentToolRegistry } from './agent/tools.js';
 import { openDatabase } from './db/database.js';
 import { resolveDataDir, resolveStarterSkillsDir, resolveWebDistDir } from './env.js';
 import { SkillFileStore } from './files/skill-files.js';
 import { SourceFileStore } from './files/source-files.js';
 import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
+import { registerAgentRoutes } from './routes/agent.js';
 import { registerBookRoutes } from './routes/books.js';
 import { registerChatRoutes } from './routes/chats.js';
 import { registerMessageRoutes } from './routes/messages.js';
@@ -56,6 +61,8 @@ function isSpaNavigation(method: string, url: string): boolean {
 
 export interface AppServices {
   books: BookService;
+  agent: AgentService;
+  storySkills: StorySkillsInstaller;
   notebookMigration: NotebookMigrationService;
   notebooks: NotebookService;
   sources: SourceService;
@@ -134,6 +141,21 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     resolveStarterSkillsDir(options.starterSkillsDir),
     skills,
   );
+  const skillsRoot = join(resolveDataDir(options.dataDir), 'skills');
+  const agent = new AgentService(
+    db,
+    books,
+    skills,
+    presets,
+    providers,
+    new AgentToolRegistry(books, skills, skillsRoot),
+    (error) => app.log.error(error),
+  );
+  const storySkills = new StorySkillsInstaller(skills, skillsRoot);
+  books.attachChatLifecycle({
+    assertIdle: (book) => agent.assertBookIdle(book),
+    removeForBook: (book) => agent.removeChatsForBook(book),
+  });
   const generation = new GenerationService(
     chats,
     presets,
@@ -144,6 +166,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.decorate('services', {
     books,
+    agent,
+    storySkills,
     notebookMigration: new NotebookMigrationService(db, notebooks, sources, books),
     notebooks,
     sources,
@@ -174,6 +198,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.get('/api/health', () => ({ status: 'ok' }));
 
   registerBookRoutes(app);
+  registerAgentRoutes(app);
   registerNotebookRoutes(app);
   registerSourceRoutes(app);
   registerSecretRoutes(app);

@@ -233,6 +233,37 @@ describe('ProviderService', () => {
     expect(on.body.reasoning).toMatchObject({ exclude: false });
   });
 
+  it('disables Claude extended thinking when tools require a continuation', () => {
+    const secrets = store();
+    secrets.add('api_key_claude', 'claude-key', 'Primary');
+    const service = new ProviderService(
+      secrets,
+      new ProviderHttpClient(async () => Promise.reject(new Error('not called'))),
+    );
+    const request = service.createChatRequest(
+      { source: 'claude', model: 'claude-fable' },
+      [{ role: 'user', content: 'Read the book.' }],
+      {
+        temperature: 0.5,
+        topP: null,
+        maxTokens: 4096,
+        assistantPrefill: null,
+        thinking: true,
+      },
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'read_file',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      ],
+    );
+
+    expect(request.body).not.toHaveProperty('thinking');
+  });
+
   it('snapshots only the JSON request body and redacts active secrets inside nested strings', () => {
     const secrets = store();
     secrets.add('api_key_custom', 'active-secret', 'Primary');

@@ -51,13 +51,24 @@ import {
 import { sha256 } from '../story/book-files.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { classifyBookPath } from '../story/book-paths.js';
-import type { CheckpointActor, CheckpointService } from '../story/checkpoints.js';
+import type {
+  CheckpointActor,
+  CheckpointService,
+  CheckpointSession,
+} from '../story/checkpoints.js';
 import { KeyedMutex } from '../story/keyed-mutex.js';
-import type { StoryCli } from '../story/story-cli.js';
+import type { StoryCli, StoryRunResult } from '../story/story-cli.js';
+import { STORY_COMMANDS, type StoryCommandName } from '../story/story-commands.js';
 import { convertUpload } from './converters/index.js';
 
 /** Lock key for book creation; the NUL byte keeps it apart from every book slug. */
 const CREATE_LOCK = '\0create';
+
+/** Agent chats tied to a book. Attached after both services exist (they refer to each other). */
+export interface BookChatLifecycle {
+  assertIdle(book: string): void;
+  removeForBook(book: string): void;
+}
 
 /**
  * File kinds whose edits change what `story reindex` writes into the
@@ -85,6 +96,7 @@ function numberField(frontmatter: Record<string, unknown> | null, key: string): 
 export class BookService {
   private readonly locks = new KeyedMutex();
   private readonly checkCache = new Map<string, { revision: number; result: BookCheckResult }>();
+  private chatLifecycle: BookChatLifecycle | null = null;
 
   constructor(
     private readonly files: BookFileStore,
@@ -124,12 +136,19 @@ export class BookService {
     return this.summary(slug);
   }
 
+  /** Wires agent-chat cleanup so trashing a book retires its chats. */
+  attachChatLifecycle(lifecycle: BookChatLifecycle): void {
+    this.chatLifecycle = lifecycle;
+  }
+
   async trash(slug: string): Promise<void> {
     await this.locks.run(slug, () => {
+      this.chatLifecycle?.assertIdle(slug);
       this.files.trash(slug);
       this.index.removeBook(slug);
       this.checkpoints.removeBook(slug);
       this.checkCache.delete(slug);
+      this.chatLifecycle?.removeForBook(slug);
     });
   }
 
@@ -434,6 +453,140 @@ export class BookService {
     }
   }
 
+  /** The book's root folder, for callers that confine paths themselves. */
+  root(slug: string): string {
+    return this.files.root(slug);
+  }
+
+  /** Lists the book's indexed files after reconciling with the disk. */
+  listFiles(slug: string): BookFile[] {
+    this.files.root(slug);
+    this.index.reconcile(slug);
+    return this.index.list(slug);
+  }
+
+  /**
+   * Writes a file as part of a checkpoint session (an agent turn): under the
+   * book lock, with the same path rules as user writes, reindexing after
+   * entity edits.
+   */
+  async writeInSession(
+    session: CheckpointSession,
+    path: string,
+    content: string,
+    expectedHash: string | null,
+  ): Promise<void> {
+    assertWritablePath(path);
+    const slug = session.book;
+    await this.locks.run(slug, () => {
+      const current = this.files.readBytes(slug, path);
+      const currentHash = current === null ? null : sha256(current);
+      if (currentHash !== expectedHash) {
+        throw new ConflictError(
+          'file_changed',
+          current === null
+            ? `${path} does not exist anymore.`
+            : expectedHash === null
+              ? `${path} already exists.`
+              : `${path} changed since it was read.`,
+        );
+      }
+      return this.writeCaptured(session, path, content);
+    });
+  }
+
+  /**
+   * Replaces one exact passage. The read, the uniqueness check, and the write
+   * share the book lock so a user edit cannot land between them.
+   */
+  async editInSession(
+    session: CheckpointSession,
+    path: string,
+    find: string,
+    replace: string,
+  ): Promise<void> {
+    assertWritablePath(path);
+    const slug = session.book;
+    await this.locks.run(slug, () => {
+      const bytes = this.files.readBytes(slug, path);
+      if (bytes === null) throw new NotFoundError(`${path} was not found in ${slug}`);
+      const current = bytes.toString('utf8');
+      let occurrences = 0;
+      let offset = 0;
+      while ((offset = current.indexOf(find, offset)) !== -1) {
+        occurrences += 1;
+        offset += 1;
+      }
+      if (occurrences !== 1) {
+        throw new Error(
+          occurrences === 0
+            ? `The passage to replace was not found in ${path}.`
+            : `The passage occurs ${occurrences} times in ${path}; include more context so it is unique.`,
+        );
+      }
+      return this.writeCaptured(
+        session,
+        path,
+        current.replace(find, () => replace),
+      );
+    });
+  }
+
+  /** Writes under a lock the caller already holds, capturing the change in the session. */
+  private async writeCaptured(
+    session: CheckpointSession,
+    path: string,
+    content: string,
+  ): Promise<void> {
+    const slug = session.book;
+    const root = this.files.root(slug);
+    const reindex = REINDEXED_KINDS.has(classifyBookPath(path).kind);
+    await session.capture(reindex ? 'book' : { paths: [path] }, async () => {
+      this.files.write(slug, path, content);
+      if (reindex) await this.cli.runOrThrow({ command: 'reindex', root });
+    });
+    this.index.reconcile(slug);
+  }
+
+  /**
+   * Runs a story command for the agent. Read-only commands run directly;
+   * commands that write run under the book lock inside the session, so the
+   * files they change join the turn's checkpoint. Exit codes are returned as
+   * data: the tool decides which of them are failures.
+   */
+  async runStoryForAgent(
+    session: CheckpointSession,
+    command: StoryCommandName,
+    args: string[],
+    options: StoryOptions,
+  ): Promise<StoryRunResult> {
+    const slug = session.book;
+    const root = this.files.root(slug);
+    const json = Object.hasOwn(STORY_COMMANDS[command].options, 'json');
+    const request = { command, root, args, options, json };
+    if (!storyCommandWrites(command, options)) return this.cli.run(request);
+    return this.locks.run(slug, async () => {
+      const result = await session.capture('book', () => this.cli.run(request));
+      this.index.reconcile(slug);
+      return result;
+    });
+  }
+
+  /** Opens a checkpoint session: several locked changes recorded as one undoable entry. */
+  startSession(slug: string, label: string, actor: CheckpointActor): CheckpointSession {
+    this.files.root(slug);
+    return this.checkpoints.session(slug, label, actor);
+  }
+
+  /** Finalizes a session's already ordered checkpoint under the book lock. */
+  commitSession(session: CheckpointSession): Promise<Checkpoint | null> {
+    return this.locks.run(session.book, () => {
+      const checkpoint = session.commit();
+      this.index.reconcile(session.book);
+      return checkpoint;
+    });
+  }
+
   private async runEntityCommand(
     slug: string,
     label: string,
@@ -488,6 +641,29 @@ export class BookService {
     }
     return candidate;
   }
+}
+
+/** Story commands that always write, and flags that make read commands write. */
+const WRITING_COMMANDS = new Set<string>([
+  'add',
+  'rename',
+  'move',
+  'remove',
+  'reindex',
+  'export',
+  'build',
+]);
+const WRITING_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  passes: ['init', 'start', 'done'],
+  wordcount: ['write'],
+  progress: ['log'],
+};
+
+export function storyCommandWrites(command: string, options: StoryOptions): boolean {
+  if (WRITING_COMMANDS.has(command)) return true;
+  return (WRITING_FLAGS[command] ?? []).some(
+    (flag) => options[flag] !== undefined && options[flag] !== false,
+  );
 }
 
 /** One entry to write into a book: its content, target kind, and provenance lines. */
