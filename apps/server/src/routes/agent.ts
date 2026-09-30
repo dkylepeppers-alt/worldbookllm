@@ -46,8 +46,8 @@ export function registerAgentRoutes(app: FastifyInstance): void {
 
   app.post('/api/agent-chats/:id/messages', async (request, reply) => {
     const { id } = agentChatParamsSchema.parse(request.params);
-    const { content } = sendAgentMessageSchema.parse(request.body);
-    const prepared = agent().prepare(id, content);
+    const { content, pinnedPaths } = sendAgentMessageSchema.parse(request.body);
+    const prepared = agent().prepare(id, content, pinnedPaths);
     const controller = new AbortController();
     const onClose = () => controller.abort();
     reply.hijack();

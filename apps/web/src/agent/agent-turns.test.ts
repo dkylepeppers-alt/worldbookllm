@@ -13,6 +13,7 @@ function message(content: string, texts: string[]): AgentMessage {
     reasoning: null,
     status: 'complete',
     note: null,
+    pinnedPaths: [],
     steps: texts.map((text, index) => ({ index, requestBody: {}, text, toolCalls: [] })),
     checkpointId: null,
     createdAt: '2026-09-30T12:00:00.000Z',

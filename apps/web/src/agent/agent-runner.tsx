@@ -43,16 +43,21 @@ export function AgentRunnerProvider({ onBookChanged, children }: AgentRunnerProv
   });
 
   const send = useCallback(
-    async (chatId: string, content: string): Promise<'accepted' | 'rejected'> => {
+    async (
+      chatId: string,
+      content: string,
+      pinnedPaths: readonly string[] = [],
+    ): Promise<'accepted' | 'rejected'> => {
       if (controllerRef.current !== null) return 'rejected';
       const controller = new AbortController();
       controllerRef.current = controller;
-      setRun({ chatId, turn: startTurn(content) });
+      setRun({ chatId, turn: startTurn(content, pinnedPaths) });
       setError(null);
       let started = false;
       let outcome: 'accepted' | 'rejected' = 'accepted';
       try {
         await api.streamAgentMessage(chatId, content, {
+          pinnedPaths,
           signal: controller.signal,
           onEvent: (event) => {
             started = true;

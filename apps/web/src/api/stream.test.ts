@@ -15,6 +15,7 @@ const assistantMessage: AgentMessage = {
   reasoning: null,
   status: 'complete',
   note: null,
+  pinnedPaths: [],
   steps: [],
   checkpointId: null,
   createdAt: '2026-07-14T12:00:00.000Z',
@@ -40,6 +41,20 @@ function sseResponse(chunks: string[]): Response {
 }
 
 describe('SSE stream reading', () => {
+  it('sends pinned paths only when the message has some', async () => {
+    const done = frame({ type: 'done', message: assistantMessage });
+    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(sseResponse([done])));
+    const onEvent = () => undefined;
+
+    await streamAgentMessage(chatId, 'Hi', { onEvent, fetchImpl, pinnedPaths: ['notes/a.md'] });
+    await streamAgentMessage(chatId, 'Hi', { onEvent, fetchImpl, pinnedPaths: [] });
+
+    expect(fetchImpl.mock.calls.map(([, init]) => (init as RequestInit).body)).toEqual([
+      JSON.stringify({ content: 'Hi', pinnedPaths: ['notes/a.md'] }),
+      JSON.stringify({ content: 'Hi' }),
+    ]);
+  });
+
   it('posts the user message and emits events split across chunk boundaries', async () => {
     const first = frame({ type: 'delta', text: 'Hel' });
     const second = frame({ type: 'delta', text: 'lo' });
@@ -222,6 +237,7 @@ describe('streamAgentMessage', () => {
     reasoning: null,
     status: 'complete',
     note: null,
+    pinnedPaths: [],
     steps: [],
     checkpointId: null,
     createdAt: '2026-09-30T12:00:00.000Z',

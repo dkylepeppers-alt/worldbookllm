@@ -1520,6 +1520,15 @@ ol.inspector-sections {
   color: var(--muted);
 }
 
+.pinned-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .text-button {
   border-color: transparent;
   background: transparent;

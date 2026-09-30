@@ -181,6 +181,8 @@ export interface ApiClient {
 interface StreamAgentMessageOptions {
   onEvent: (event: AgentStreamEvent) => void;
   signal?: AbortSignal;
+  /** Book files whose contents go to the model with this message. */
+  pinnedPaths?: readonly string[];
 }
 
 type CreateSecretInput = z.input<typeof createSecretSchema>;
