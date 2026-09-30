@@ -1,3 +1,13 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# Dependencies allowed to run install scripts; pnpm blocks all others, and
+# strictDepBuilds makes a new unapproved one fail the install instead of
+# being skipped with a warning. better-sqlite3 fetches or compiles its native
+# addon; esbuild installs its platform binary. sharp ships prebuilt optional
+# packages and needs no entry.
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+strictDepBuilds: true

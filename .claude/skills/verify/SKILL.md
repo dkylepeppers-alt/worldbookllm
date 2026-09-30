@@ -7,7 +7,7 @@ description: Run and verify worldbookllm end-to-end — boot the server and web 
 
 ## Boot the app
 
-From the repo root (pnpm 9, Node ≥ 20, run `pnpm install` first if `node_modules` is missing):
+From the repo root (pnpm 10, Node ≥ 24, run `pnpm install` first if `node_modules` is missing):
 
 ```bash
 pnpm dev
