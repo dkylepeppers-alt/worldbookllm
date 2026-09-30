@@ -88,6 +88,35 @@ function renderAt(path: string, overrides: Partial<ApiClient> = {}) {
   return client;
 }
 
+describe('remaining series structure', () => {
+  it('reports conflicting copied folders in the library without opening them', async () => {
+    renderAt('/books', {
+      listBookConflicts: async () => [
+        { slug: 'harbor', path: 'series/tides/harbor', seriesId: 'tides', kind: 'book' },
+      ],
+    });
+    expect(await screen.findByText('series/tides/harbor')).toBeTruthy();
+    expect(screen.getByText(/Duplicate book folders/i)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'series/tides/harbor' })).toBeNull();
+  });
+
+  it('confirms removing a series book and reloads its standalone project', async () => {
+    const user = userEvent.setup();
+    let removed = false;
+    renderAt(`/books/${book.slug}/project`, {
+      getBookTree: async () => ({ ...tree, book: { ...book, seriesId: removed ? null : 'tides' } }),
+      removeSeriesBook: async (id, slug) => {
+        expect([id, slug]).toEqual(['tides', 'the-salt-road']);
+        removed = true;
+        return book;
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Remove book from series' }));
+    await user.click(screen.getByRole('button', { name: 'Move to standalone books' }));
+    expect(await screen.findByText(/This book stands alone/)).toBeTruthy();
+  });
+});
+
 describe('book library', () => {
   it('lists books and creates a new one', async () => {
     const createBook = vi.fn(() => Promise.resolve({ ...book, slug: 'embers', title: 'Embers' }));

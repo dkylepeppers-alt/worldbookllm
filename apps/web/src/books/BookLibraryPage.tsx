@@ -35,6 +35,7 @@ export function BookLibraryPage() {
   const api = useApi();
   const navigate = useNavigate();
   const books = useLoad((signal) => api.listBooks(signal), 'books');
+  const conflicts = useLoad((signal) => api.listBookConflicts(signal), 'conflicts');
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState<'create' | 'series' | 'import' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +105,29 @@ export function BookLibraryPage() {
       </header>
 
       <MigrationReport />
+      {conflicts.status === 'error' ? (
+        <ErrorState
+          title="Folder conflicts could not be checked"
+          message={conflicts.message}
+          onRetry={conflicts.reload}
+        />
+      ) : null}
+      {conflicts.status !== 'ready' || conflicts.data.length === 0 ? null : (
+        <section role="alert">
+          <h2>Duplicate book folders</h2>
+          <p>
+            These later copies share a slug with an existing book and cannot be opened. Rename or
+            move the conflicting folders on disk before using them.
+          </p>
+          <ul>
+            {conflicts.data.map((conflict) => (
+              <li key={conflict.path}>
+                <code>{conflict.path}</code>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <form className="book-create" onSubmit={(event) => void handleCreate(event)}>
         <label htmlFor="new-book-title">New book or series title</label>

@@ -1,10 +1,17 @@
-import type { BookCheckResult, SeriesHealth } from '@worldbookllm/shared';
+import {
+  seriesEntitySchema,
+  type BookCheckResult,
+  type SeriesHealth,
+  type SeriesSummary,
+  type SeriesSyncInput,
+} from '@worldbookllm/shared';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { fileHref } from './book-sections.js';
-import { useLoad } from './useLoad.js';
+import { errorMessage, useLoad } from './useLoad.js';
 
 /** A series-wide reference view; books stay navigable even if a CLI check fails. */
 export function SeriesPage() {
@@ -12,6 +19,25 @@ export function SeriesPage() {
   const api = useApi();
   const series = useLoad((signal) => api.getSeries(id, signal), id);
   const health = useLoad((signal) => api.getSeriesHealth(id, signal), id);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  async function sync(input: SeriesSyncInput) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.syncSeries(id, input);
+      setNotice(
+        `Series sync recorded in ${result.checkpoints.length} ${result.checkpoints.length === 1 ? 'book' : 'books'}. Undo is available in each book’s Project history.`,
+      );
+      health.reload();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
   if (series.status === 'loading') return <LoadingState>Reading series…</LoadingState>;
   if (series.status === 'error')
     return (
@@ -39,6 +65,13 @@ export function SeriesPage() {
       {series.data.books.length === 0 ? (
         <p>No books yet. Add one from the bible’s Project tab.</p>
       ) : null}
+      {error === null ? null : (
+        <p role="alert" className="form-error">
+          {error}
+        </p>
+      )}
+      {notice === null ? null : <p role="status">{notice}</p>}
+      <CarryForm series={series.data} busy={busy} onSync={(input) => void sync(input)} />
       {health.status === 'loading' ? (
         <LoadingState>Checking series canon and links…</LoadingState>
       ) : null}
@@ -50,13 +83,28 @@ export function SeriesPage() {
         />
       ) : null}
       {health.status === 'ready' ? (
-        <SeriesHealthView health={health.data} bible={series.data.bible.slug} />
+        <SeriesHealthView
+          health={health.data}
+          bible={series.data.bible.slug}
+          busy={busy}
+          onSync={(input) => void sync(input)}
+        />
       ) : null}
     </section>
   );
 }
 
-function SeriesHealthView({ health, bible }: { health: SeriesHealth; bible: string }) {
+function SeriesHealthView({
+  health,
+  bible,
+  busy,
+  onSync,
+}: {
+  health: SeriesHealth;
+  bible: string;
+  busy: boolean;
+  onSync(input: SeriesSyncInput): void;
+}) {
   const checks: Array<{ book: string; result: BookCheckResult }> = [
     { book: bible, result: health.series },
     ...health.links,
@@ -76,6 +124,26 @@ function SeriesHealthView({ health, bible }: { health: SeriesHealth; bible: stri
                 {row.entity.kind} · {row.book}
               </span>
               <span>{row.fields.map((field) => field.replace(/^body:/u, '')).join(', ')}</span>
+              <div className="field-action">
+                <button
+                  className="button-primary"
+                  disabled={busy}
+                  onClick={() =>
+                    onSync({ direction: 'push', entity: row.entity, books: [row.book] })
+                  }
+                  aria-label={`Push ${row.entity.id} to ${row.book}`}
+                >
+                  Push bible canon
+                </button>
+                <button
+                  className="button-secondary"
+                  disabled={busy}
+                  onClick={() => onSync({ direction: 'pull', entity: row.entity, book: row.book })}
+                  aria-label={`Pull ${row.entity.id} from ${row.book}`}
+                >
+                  Pull into bible
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -103,5 +171,81 @@ function SeriesHealthView({ health, bible }: { health: SeriesHealth; bible: stri
         ))}
       </ul>
     </>
+  );
+}
+
+function CarryForm({
+  series,
+  busy,
+  onSync,
+}: {
+  series: SeriesSummary;
+  busy: boolean;
+  onSync(input: SeriesSyncInput): void;
+}) {
+  const api = useApi();
+  const tree = useLoad((signal) => api.getBookTree(series.bible.slug, signal), series.id);
+  const [entity, setEntity] = useState('');
+  const [book, setBook] = useState('');
+  if (series.books.length === 0) return null;
+  if (tree.status === 'loading') return <LoadingState>Reading bible entities…</LoadingState>;
+  if (tree.status === 'error')
+    return (
+      <ErrorState
+        title="Bible entities could not load"
+        message={tree.message}
+        onRetry={tree.reload}
+      />
+    );
+  const entities = tree.data.files.filter(
+    (file) => seriesEntitySchema.safeParse({ kind: file.kind, id: file.entityId }).success,
+  );
+  return (
+    <section aria-labelledby="carry-heading">
+      <h2 id="carry-heading">Carry canon into a book</h2>
+      <p>Creates a missing entity with fresh local state. Existing copies are never overwritten.</p>
+      <form
+        className="series-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const [kind, id] = entity.split(':');
+          const parsed = seriesEntitySchema.safeParse({ kind, id });
+          if (parsed.success && book !== '')
+            onSync({ direction: 'carry', entity: parsed.data, book });
+        }}
+      >
+        <label htmlFor="carry-entity">Bible entity</label>
+        <select
+          id="carry-entity"
+          value={entity}
+          onChange={(event) => setEntity(event.target.value)}
+          disabled={busy}
+        >
+          <option value="">Choose an entity</option>
+          {entities.map((file) => (
+            <option key={file.path} value={`${file.kind}:${file.entityId}`}>
+              {file.title} · {file.kind}
+            </option>
+          ))}
+        </select>
+        <label htmlFor="carry-book">Carry into book</label>
+        <select
+          id="carry-book"
+          value={book}
+          onChange={(event) => setBook(event.target.value)}
+          disabled={busy}
+        >
+          <option value="">Choose a book</option>
+          {series.books.map((book) => (
+            <option key={book.slug} value={book.slug}>
+              {book.title}
+            </option>
+          ))}
+        </select>
+        <button className="button-secondary" disabled={busy || entity === '' || book === ''}>
+          Carry entity
+        </button>
+      </form>
+    </section>
   );
 }

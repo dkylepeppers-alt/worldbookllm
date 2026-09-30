@@ -6,6 +6,8 @@ import {
   apiErrorSchema,
   appSettingsSchema,
   bookCheckResultSchema,
+  bookConflictSchema,
+  type BookConflict,
   bookFileDetailSchema,
   bookFileSchema,
   bookSearchResultSchema,
@@ -29,6 +31,9 @@ import {
   storySkillsInstallResultSchema,
   seriesSummarySchema,
   seriesHealthSchema,
+  seriesSyncResultSchema,
+  type SeriesSyncInput,
+  type SeriesSyncResult,
   type SeriesSummary,
   type SeriesHealth,
   type AddEntityInput,
@@ -98,6 +103,9 @@ export class ApiClientError extends Error {
 }
 
 export interface ApiClient {
+  listBookConflicts(signal?: AbortSignal): Promise<BookConflict[]>;
+  removeSeriesBook(id: string, book: string, signal?: AbortSignal): Promise<BookSummary>;
+  syncSeries(id: string, input: SeriesSyncInput, signal?: AbortSignal): Promise<SeriesSyncResult>;
   getSeries(id: string, signal?: AbortSignal): Promise<SeriesSummary>;
   getSeriesHealth(id: string, signal?: AbortSignal): Promise<SeriesHealth>;
   listBooks(signal?: AbortSignal): Promise<BookSummary[]>;
@@ -290,6 +298,21 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
   }
 
   return {
+    listBookConflicts: (signal) =>
+      request('/api/books/conflicts', { schema: z.array(bookConflictSchema), signal }),
+    removeSeriesBook: (id, book, signal) =>
+      request(`/api/series/${encodeURIComponent(id)}/books/${encodeURIComponent(book)}`, {
+        method: 'DELETE',
+        schema: bookSummarySchema,
+        signal,
+      }),
+    syncSeries: (id, input, signal) =>
+      request(`/api/series/${encodeURIComponent(id)}/sync`, {
+        method: 'POST',
+        body: input,
+        schema: seriesSyncResultSchema,
+        signal,
+      }),
     getSeries: (id, signal) =>
       request(`/api/series/${encodeURIComponent(id)}`, { schema: seriesSummarySchema, signal }),
     getSeriesHealth: (id, signal) =>

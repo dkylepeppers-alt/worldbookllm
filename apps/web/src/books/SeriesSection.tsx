@@ -160,6 +160,27 @@ export function SeriesSection() {
         </p>
       )}
       {library.status === 'loading' ? <LoadingState>Reading the series…</LoadingState> : null}
+      {book.kind !== 'book' || book.seriesId === null ? null : (
+        <>
+          <p>
+            Seed missing canon entities in the bible from this book. Existing bible entries stay
+            unchanged.
+          </p>
+          <button
+            className="button-secondary"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await api.syncSeries(book.seriesId!, { direction: 'seed', book: slug });
+                reload();
+                library.reload();
+              })
+            }
+          >
+            Seed bible from this book
+          </button>
+        </>
+      )}
       <form className="series-form" onSubmit={addBook}>
         <label htmlFor="series-book-title">Add a book to this series</label>
         <input

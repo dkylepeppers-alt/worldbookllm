@@ -6,6 +6,9 @@ const unused = () => Promise.reject(new Error('Unexpected API call'));
 
 export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
+    listBookConflicts: async () => [],
+    removeSeriesBook: unused,
+    syncSeries: unused,
     getSeries: unused,
     getSeriesHealth: unused,
     listBooks: () => Promise.resolve([]),

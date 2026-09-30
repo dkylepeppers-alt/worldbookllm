@@ -67,6 +67,75 @@ const health: SeriesHealth = {
 };
 
 describe('Series screen', () => {
+  it('carries a selected bible entity into a book from the overview', async () => {
+    const user = userEvent.setup();
+    let carried = false;
+    const client = createTestClient({
+      getSeries: async () => series,
+      getSeriesHealth: async () => health,
+      getBookTree: async () => ({
+        book: bible,
+        files: [
+          {
+            path: 'characters/mira.md',
+            kind: 'character',
+            entityId: 'mira',
+            title: 'Mira',
+            hash: 'a'.repeat(64),
+            size: 1,
+            updatedAt: bible.updatedAt,
+          },
+        ],
+      }),
+      syncSeries: async (_id, input) => {
+        expect(input).toEqual({
+          direction: 'carry',
+          entity: { kind: 'character', id: 'mira' },
+          book: 'low-water',
+        });
+        carried = true;
+        return { checkpoints: [] };
+      },
+    });
+    render(
+      <ApiProvider client={client}>
+        <MemoryRouter initialEntries={['/series/tides']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </ApiProvider>,
+    );
+    await user.selectOptions(await screen.findByLabelText('Bible entity'), 'character:mira');
+    await user.selectOptions(screen.getByLabelText('Carry into book'), 'low-water');
+    await user.click(screen.getByRole('button', { name: 'Carry entity' }));
+    expect(carried).toBe(true);
+  });
+  it('pushes a drift row and refreshes the canon report', async () => {
+    const user = userEvent.setup();
+    let pushed = false;
+    const client = createTestClient({
+      getSeries: async () => series,
+      getSeriesHealth: async () => (pushed ? { ...health, drift: [] } : health),
+      syncSeries: async (id, input) => {
+        expect(id).toBe('tides');
+        expect(input).toEqual({
+          direction: 'push',
+          entity: { kind: 'character', id: 'mira' },
+          books: ['low-water'],
+        });
+        pushed = true;
+        return { checkpoints: [] };
+      },
+    });
+    render(
+      <ApiProvider client={client}>
+        <MemoryRouter initialEntries={['/series/tides']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </ApiProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Push mira to low-water' }));
+    expect(await screen.findByText('No canon drift in existing book copies.')).toBeTruthy();
+  });
   it('is reachable from the library and shows books, drift, and check findings', async () => {
     const user = userEvent.setup();
     const client = createTestClient({
@@ -97,6 +166,7 @@ describe('Series screen', () => {
     let attempts = 0;
     const user = userEvent.setup();
     const client = createTestClient({
+      getBookTree: async () => ({ book: bible, files: [] }),
       getSeries: async () => series,
       getSeriesHealth: async () => {
         if (attempts++ === 0) throw new Error('CLI unavailable');
