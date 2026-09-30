@@ -179,6 +179,11 @@ function LibraryGroupsView({ books }: { books: BookSummary[] }) {
             </p>
             <h2 id={`series-${group.id}`}>{title}</h2>
             {group.bible === null ? null : (
+              <p>
+                <Link to={`/series/${group.id}`}>Series overview</Link>
+              </p>
+            )}
+            {group.bible === null ? null : (
               <Link className="series-bible-link" to={`/books/${group.bible.slug}`}>
                 Series bible
               </Link>

@@ -27,6 +27,10 @@ import {
   skillMetadataSchema,
   storyCommandOutcomeSchema,
   storySkillsInstallResultSchema,
+  seriesSummarySchema,
+  seriesHealthSchema,
+  type SeriesSummary,
+  type SeriesHealth,
   type AddEntityInput,
   type AgentChangesetDetail,
   type AgentChangesetResolution,
@@ -94,6 +98,8 @@ export class ApiClientError extends Error {
 }
 
 export interface ApiClient {
+  getSeries(id: string, signal?: AbortSignal): Promise<SeriesSummary>;
+  getSeriesHealth(id: string, signal?: AbortSignal): Promise<SeriesHealth>;
   listBooks(signal?: AbortSignal): Promise<BookSummary[]>;
   createBook(input: CreateBookInput, signal?: AbortSignal): Promise<BookSummary>;
   /** Creates a series and its bible; resolves to the bible, addressed by the series id. */
@@ -284,6 +290,13 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
   }
 
   return {
+    getSeries: (id, signal) =>
+      request(`/api/series/${encodeURIComponent(id)}`, { schema: seriesSummarySchema, signal }),
+    getSeriesHealth: (id, signal) =>
+      request(`/api/series/${encodeURIComponent(id)}/health`, {
+        schema: seriesHealthSchema,
+        signal,
+      }),
     listBooks: (signal) => request('/api/books', { schema: bookListSchema, signal }),
     createBook: (input, signal) =>
       request('/api/books', { method: 'POST', body: input, schema: bookSummarySchema, signal }),

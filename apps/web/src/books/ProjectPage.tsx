@@ -85,6 +85,11 @@ export function ProjectPage() {
       </ul>
 
       <SeriesSection />
+      {tree.book.seriesId === null ? null : (
+        <p>
+          <Link to={`/series/${tree.book.seriesId}`}>Series overview</Link>
+        </p>
+      )}
 
       <h3>History</h3>
       {error === null ? null : (
