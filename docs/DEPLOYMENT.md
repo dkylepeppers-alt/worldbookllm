@@ -74,13 +74,23 @@ docker run -d --name worldbookllm -p 3001:3001 -v worldbookllm-data:/data worldb
 ### Upgrading from an image that ran as root
 
 Images built before the server ran as the `node` user wrote `/data` as root, and the new image
-cannot write to those files (the server fails to start with `EPERM`). Hand the volume to uid 1000
-once, then start the new image as usual:
+cannot write to those files: the server exits at startup with `unable to open database file` or
+`EPERM`. Hand the data to the `node` user (uid 1000) once, then start the new image as usual.
+
+With Compose, run the fix through Compose so it mounts the project's actual volume (Compose names
+it `<project>_worldbookllm-data`, e.g. `worldbookllm_worldbookllm-data`, not `worldbookllm-data`):
 
 ```bash
 docker compose down
-docker run --rm -v worldbookllm-data:/data --entrypoint chown node:24-slim -R 1000:1000 /data
-docker compose up -d --build
+docker compose build
+docker compose run --rm --user root --entrypoint chown worldbookllm -R node:node /data
+docker compose up -d
+```
+
+With plain `docker run` and the `worldbookllm-data` volume from the example above:
+
+```bash
+docker run --rm -v worldbookllm-data:/data --user root --entrypoint chown worldbookllm -R node:node /data
 ```
 
 For a bind mount, run `sudo chown -R 1000:1000 ./data` on the host instead.

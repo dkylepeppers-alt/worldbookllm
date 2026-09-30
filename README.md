@@ -40,7 +40,7 @@ Not there yet (see the [roadmap](docs/ROADMAP.md)): series and a series bible, `
 ```bash
 git clone https://github.com/dkylepeppers-alt/worldbookllm.git
 cd worldbookllm
-corepack enable          # or: npm install -g pnpm@9
+corepack enable          # or: npm install -g pnpm@10
 pnpm install
 ```
 
@@ -71,7 +71,7 @@ pkg update && pkg upgrade
 pkg install nodejs-lts git python clang make binutils
 
 # 2. pnpm
-corepack enable          # or: npm install -g pnpm@9
+corepack enable          # or: npm install -g pnpm@10
 
 # 3. Clone and install (better-sqlite3 compiles here — be patient)
 git clone https://github.com/dkylepeppers-alt/worldbookllm.git
