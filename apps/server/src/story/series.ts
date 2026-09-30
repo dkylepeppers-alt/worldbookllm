@@ -1,8 +1,20 @@
-import type { SeriesDrift, SeriesHealth, SeriesSummary } from '@worldbookllm/shared';
+import type {
+  SeriesDrift,
+  SeriesHealth,
+  SeriesSummary,
+  SeriesSyncInput,
+  SeriesSyncResult,
+} from '@worldbookllm/shared';
 
-import { NotFoundError } from '../errors.js';
+import { ConflictError, NotFoundError } from '../errors.js';
 import type { BookService } from '../services/books.js';
-import { identityDifferences, isSeriesEntityKind } from './series-fields.js';
+import {
+  carryIdentity,
+  mergeIdentity,
+  identityDifferences,
+  isSeriesEntityKind,
+} from './series-fields.js';
+import type { CheckpointActor } from './checkpoints.js';
 
 /** Read-only series views over the same indexed, on-disk books as the book workspace. */
 export class SeriesService {
@@ -74,5 +86,96 @@ export class SeriesService {
       links.push({ book: book.slug, result: await this.books.check(book.slug, 'links', true) });
     }
     return { series: checked, links, drift: this.drift(id) };
+  }
+
+  async sync(
+    id: string,
+    input: SeriesSyncInput,
+    actor: CheckpointActor = 'user',
+    activeBook?: string,
+  ): Promise<SeriesSyncResult> {
+    const series = this.get(id);
+    const targets = input.direction === 'push' ? [...new Set(input.books)] : [input.book];
+    const assertMembers = () => {
+      const current = this.get(id);
+      for (const book of targets) {
+        if (!current.books.some((member) => member.slug === book)) {
+          throw new ConflictError('foreign_series_book', `${book} is not a book in series ${id}.`);
+        }
+      }
+    };
+    assertMembers();
+    const label = `Series ${input.direction}: ${input.direction === 'seed' ? input.book : input.entity.id} → ${input.direction === 'pull' || input.direction === 'seed' ? id : targets.join(', ')}`;
+    const checkpoints = await this.books.updateBooksAtomically(
+      [series.bible.slug, ...targets],
+      label,
+      () => {
+        assertMembers();
+        const plans: Array<{ book: string; path: string; content: string }> = [];
+        const find = (book: string, kind: string, entityId: string) =>
+          this.books
+            .tree(book)
+            .files.find((file) => file.kind === kind && file.entityId === entityId);
+        if (input.direction === 'seed') {
+          for (const entity of this.books.tree(input.book).files) {
+            if (
+              !isSeriesEntityKind(entity.kind) ||
+              entity.entityId === null ||
+              find(id, entity.kind, entity.entityId)
+            )
+              continue;
+            plans.push({
+              book: id,
+              path: entity.path,
+              content: carryIdentity(
+                entity.kind,
+                this.books.readFile(input.book, entity.path).content,
+                entity.entityId,
+              ),
+            });
+          }
+          return plans;
+        }
+        const { kind, id: entityId } = input.entity;
+        const sourceBook = input.direction === 'pull' ? input.book : id;
+        const source = find(sourceBook, kind, entityId);
+        if (source === undefined)
+          throw new NotFoundError(`${kind} ${entityId} was not found in ${sourceBook}`);
+        const content = this.books.readFile(sourceBook, source.path).content;
+        const destinations = input.direction === 'pull' ? [id] : targets;
+        for (const book of destinations) {
+          const copy = find(book, kind, entityId);
+          if (input.direction === 'carry') {
+            if (copy !== undefined)
+              throw new ConflictError(
+                'entity_exists',
+                `${kind} ${entityId} already exists in ${book}. Use push to update canon.`,
+              );
+            plans.push({
+              book,
+              path: source.path,
+              content: carryIdentity(kind, content, entityId),
+            });
+          } else {
+            if (copy === undefined)
+              throw new NotFoundError(
+                `${kind} ${entityId} was not found in ${book}. Carry it first.`,
+              );
+            const targetContent = this.books.readFile(book, copy.path).content;
+            if (identityDifferences(kind, content, targetContent).length > 0) {
+              plans.push({
+                book,
+                path: copy.path,
+                content: mergeIdentity(kind, content, targetContent),
+              });
+            }
+          }
+        }
+        return plans;
+      },
+      actor,
+      activeBook,
+    );
+    return { checkpoints };
   }
 }

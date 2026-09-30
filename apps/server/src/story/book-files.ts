@@ -210,6 +210,18 @@ export class BookFileStore {
     });
   }
 
+  /** Moves a series book back to projects without changing its slug or deleting any files. */
+  moveOutOfSeries(slug: string, seriesId: string): void {
+    const location = this.locate(slug);
+    if (location.kind !== 'book' || location.seriesId !== seriesId)
+      throw new ConflictError('not_series_book', `${slug} is not a book in series ${seriesId}.`);
+    const target = confine(this.projectsDir, bookSlugSchema.parse(slug));
+    if (existsSync(target))
+      throw new ConflictError('slug_taken', `projects already has a folder named ${slug}.`);
+    renameSync(location.root, target);
+    this.rescan();
+  }
+
   /** Raw bytes of a book file, or null when it does not exist. */
   readBytes(slug: string, path: string): Buffer | null {
     const absolute = confine(this.root(slug), path);

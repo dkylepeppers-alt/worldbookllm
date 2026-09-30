@@ -3,9 +3,60 @@ import { createRequire } from 'node:module';
 
 import { describe, expect, it } from 'vitest';
 
-import { identityDifferences, SERIES_FIELDS, SERIES_FIELDS_VERSION } from './series-fields.js';
+import {
+  carryIdentity,
+  mergeIdentity,
+  identityDifferences,
+  SERIES_FIELDS,
+  SERIES_FIELDS_VERSION,
+} from './series-fields.js';
+import { parseFrontmatter } from './book-index.js';
 
 describe('series identity contract', () => {
+  it('merges only canon while keeping local fields and body sections', () => {
+    const bible =
+      '---\nid: mira\nname: Mira\naliases: [Captain]\nrole: antagonist\nstatus: dead\n---\n# Mira\n\n## Appearance\nGreen eyes.\n\n## Character Arc\nBible arc.\n';
+    const target =
+      '---\nid: mira\nname: Mira\nrole: protagonist\nstatus: alive\ncustom: keep\n---\n# Mira\n\n## Appearance\nBlue eyes.\n\n## Character Arc\nLocal arc.\n';
+    const merged = mergeIdentity('character', bible, target);
+    expect(parseFrontmatter(merged).frontmatter).toMatchObject({
+      aliases: ['Captain'],
+      role: 'protagonist',
+      status: 'alive',
+      custom: 'keep',
+    });
+    expect(merged).toContain('## Appearance\nGreen eyes.');
+    expect(merged).toContain('## Character Arc\nLocal arc.');
+    expect(merged).not.toContain('Bible arc.');
+    expect(identityDifferences('character', bible, merged)).toEqual([]);
+  });
+
+  it('removes absent canon fields/sections without deleting local content', () => {
+    const result = mergeIdentity(
+      'character',
+      '---\nname: Mira\n---\n',
+      '---\nname: Mira\naliases: [Queen]\n---\n## Appearance\nOld canon\n\n## Timeline\nKeep me\n',
+    );
+    expect(parseFrontmatter(result).frontmatter).not.toHaveProperty('aliases');
+    expect(result).not.toContain('Old canon');
+    expect(result).toContain('## Timeline\nKeep me');
+  });
+
+  it('carries identity without source-book state or references', () => {
+    const content =
+      '---\nid: mira\nname: Mira\naliases: [Captain]\nrole: antagonist\nstatus: dead\nlocations: [old-city]\ncustom: secret\n---\n# Mira\n\n## Appearance\nGreen eyes.\n\n## Timeline\nLocal history.\n';
+    const result = carryIdentity('character', content, 'mira');
+    expect(parseFrontmatter(result).frontmatter).toEqual({
+      id: 'mira',
+      name: 'Mira',
+      aliases: ['Captain'],
+      role: 'supporting',
+      status: 'alive',
+    });
+    expect(result).toContain('Green eyes.');
+    expect(result).not.toContain('Local history');
+    expect(result).not.toContain('old-city');
+  });
   it('only names fields present in the pinned upstream schema', () => {
     const require = createRequire(import.meta.url);
     const schema = JSON.parse(

@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
+import matter from 'gray-matter';
 
 import { parseFrontmatter } from './book-index.js';
 
@@ -136,4 +137,66 @@ export function identityDifferences(
     }
   }
   return fields;
+}
+
+/** Replaces only named canon sections, preserving every other target section verbatim. */
+function mergeBody(kind: SeriesEntityKind, source: string, target: string): string {
+  const sections: readonly string[] | null = SERIES_FIELDS[kind].sections;
+  if (sections === null) return source;
+  const sourceSections = bodySections(source);
+  // Section boundaries use the same fence-aware parser as comparison. Mark a boundary
+  // with a sentinel so local prose (including duplicate headings) is retained as written.
+  const canon = new Set(sections);
+  let fence: { marker: string; length: number } | undefined;
+  const blocks: Array<{ title: string | null; lines: string[] }> = [{ title: null, lines: [] }];
+  for (const line of target.split(/\r?\n/u)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/u.exec(line);
+    if (marker !== null) {
+      const run = marker[1]!;
+      if (fence === undefined) fence = { marker: run[0]!, length: run.length };
+      else if (run[0] === fence.marker && run.length >= fence.length && marker[2]!.trim() === '')
+        fence = undefined;
+      blocks.at(-1)!.lines.push(line);
+      continue;
+    }
+    const heading =
+      fence === undefined ? /^ {0,3}##[\t ]+(.+?)(?:[\t ]+#+)?[\t ]*$/u.exec(line) : null;
+    if (heading !== null) blocks.push({ title: heading[1]!.trim(), lines: [line] });
+    else blocks.at(-1)!.lines.push(line);
+  }
+  const seen = new Set<string>();
+  const output = blocks.flatMap((block) => {
+    if (block.title === null || !canon.has(block.title)) return [block.lines.join('\n')];
+    if (seen.has(block.title)) return [];
+    seen.add(block.title);
+    const content = sourceSections.get(block.title);
+    return content === undefined ? [] : [`## ${block.title}\n${content}\n`];
+  });
+  for (const section of sections) {
+    const content = sourceSections.get(section);
+    if (!seen.has(section) && content !== undefined) output.push(`\n## ${section}\n${content}\n`);
+  }
+  return output.join('\n');
+}
+
+export function mergeIdentity(kind: SeriesEntityKind, source: string, target: string): string {
+  // Unlike read-only drift, writes must refuse malformed YAML rather than replace it.
+  const canon = matter(source);
+  const local = matter(target);
+  const data: Record<string, unknown> = { ...local.data };
+  for (const field of SERIES_FIELDS[kind].identity) {
+    if (Object.hasOwn(canon.data, field)) data[field] = canon.data[field];
+    else delete data[field];
+  }
+  return matter.stringify(mergeBody(kind, canon.content, local.content), data);
+}
+
+/** New copies have fresh safe local defaults, never source-book references or state. */
+export function carryIdentity(kind: SeriesEntityKind, source: string, id: string): string {
+  const canon = matter(source);
+  const defaults: Record<string, unknown> = { id };
+  if (kind === 'character') Object.assign(defaults, { role: 'supporting', status: 'alive' });
+  if (kind === 'faction' || kind === 'artifact') defaults.status = 'active';
+  const title = String(canon.data.name ?? canon.data.term ?? id);
+  return mergeIdentity(kind, source, matter.stringify(`# ${title}\n\n`, defaults));
 }

@@ -41,6 +41,7 @@ export function registerBookRoutes(app: FastifyInstance): void {
   const books = () => app.services.books;
 
   app.get('/api/books', () => books().list());
+  app.get('/api/books/conflicts', () => books().conflicts());
 
   app.post('/api/books', async (request, reply) =>
     reply.status(201).send(await books().create(createBookSchema.parse(request.body))),

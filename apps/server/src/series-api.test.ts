@@ -37,6 +37,54 @@ async function history(slug: string): Promise<Checkpoint[]> {
 }
 
 describe('series (ADR 0018)', () => {
+  it('removes a book to projects, cleans sibling links, and preserves files and history', async () => {
+    await post('/api/series', { title: 'Tides' });
+    await post('/api/series/tides/books', { title: 'Low Water', bookNumber: 1 });
+    await post('/api/series/tides/books', {
+      title: 'High Water',
+      follows: 'low-water',
+      bookNumber: 2,
+    });
+    await app.services.books.writeFile('high-water', 'notes/keep.md', {
+      content: '# Keep this\n',
+      expectedHash: null,
+    });
+    const removal = await app.inject({
+      method: 'DELETE',
+      url: '/api/series/tides/books/high-water',
+    });
+    expect(removal.statusCode, removal.body).toBe(200);
+    expect(removal.json()).toMatchObject({ slug: 'high-water', seriesId: null });
+    expect(existsSync(join(dataDir, 'projects/high-water/story.md'))).toBe(true);
+    expect(app.services.books.readFile('high-water', 'notes/keep.md').content).toBe(
+      '# Keep this\n',
+    );
+    expect(story('projects/high-water')).not.toMatch(/^series:|^follows:|^book-number:/mu);
+    expect(app.services.books.get('low-water').precedes).toEqual([]);
+    expect((await history('high-water')).some((row) => row.label === 'Create notes/keep.md')).toBe(
+      true,
+    );
+    expect(
+      (await app.inject({ method: 'DELETE', url: '/api/series/tides/books/tides' })).statusCode,
+    ).toBe(409);
+  }, 30_000);
+
+  it('reports duplicate disk slugs without exposing server paths or opening the later copy', async () => {
+    await post('/api/series', { title: 'Tides' });
+    await post('/api/series/tides/books', { title: 'Harbor' });
+    // A separate project with the same slug simulates a writer copying folders outside the app.
+    const { cpSync, mkdirSync } = await import('node:fs');
+    mkdirSync(join(dataDir, 'projects/harbor'), { recursive: true });
+    cpSync(join(dataDir, 'series/tides/harbor'), join(dataDir, 'projects/harbor'), {
+      recursive: true,
+    });
+    const conflicts = await app.inject('/api/books/conflicts');
+    expect(conflicts.statusCode, conflicts.body).toBe(200);
+    expect(conflicts.json()).toEqual([
+      { slug: 'harbor', path: 'series/tides/harbor', seriesId: 'tides', kind: 'book' },
+    ]);
+    expect(app.services.books.get('harbor').seriesId).toBe(null);
+  }, 30_000);
   it('creates a series whose bible is addressed by the series id', async () => {
     const bible = await post<BookSummary>('/api/series', { title: 'Tides' });
     expect(bible).toMatchObject({

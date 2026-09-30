@@ -157,6 +157,20 @@ export class CheckpointService {
   }
 
   /** Starts a checkpoint that gathers several separately locked changes into one entry. */
+  storeGroup(
+    label: string,
+    actor: CheckpointActor,
+    snapshots: Array<{ book: string; before: Map<string, Buffer>; after: Map<string, Buffer> }>,
+  ): Checkpoint[] {
+    return this.db.transaction(() =>
+      snapshots.flatMap(({ book, before, after }) => {
+        const checkpoint = this.store(book, label, actor, before, after);
+        return checkpoint === null ? [] : [checkpoint];
+      }),
+    )();
+  }
+
+  /** Starts a checkpoint that gathers several separately locked changes into one entry. */
   session(book: string, label: string, actor: CheckpointActor): CheckpointSession {
     return new CheckpointSession(this, book, label, actor);
   }
