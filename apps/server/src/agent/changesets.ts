@@ -10,6 +10,7 @@ import type {
 
 import { NotFoundError, ValidationError } from '../errors.js';
 import type { BookService } from '../services/books.js';
+import { KeyedMutex } from '../story/keyed-mutex.js';
 import type { StagedChange } from '../story/staging.js';
 
 interface ChangesetRow {
@@ -47,6 +48,9 @@ function listPaths(paths: readonly string[]): string {
  * the start of the chat's next turn.
  */
 export class AgentChangesetService {
+  /** One decision per changeset at a time, so an apply and a skip cannot both win. */
+  private readonly decisions = new KeyedMutex();
+
   constructor(
     private readonly db: Database.Database,
     private readonly books: BookService,
@@ -116,7 +120,11 @@ export class AgentChangesetService {
   }
 
   /** Applies the named pending files (all pending files when none are named) as one checkpoint. */
-  async apply(id: string, paths?: readonly string[]): Promise<AgentChangesetResolution> {
+  apply(id: string, paths?: readonly string[]): Promise<AgentChangesetResolution> {
+    return this.decisions.run(id, () => this.applyNow(id, paths));
+  }
+
+  private async applyNow(id: string, paths?: readonly string[]): Promise<AgentChangesetResolution> {
     const row = this.row(id);
     const files = this.pendingFiles(id, paths);
     const label =
@@ -137,10 +145,12 @@ export class AgentChangesetService {
   }
 
   /** Discards the named pending files (all pending files when none are named). */
-  skip(id: string, paths?: readonly string[]): AgentChangesetResolution {
-    this.row(id);
-    this.mark(id, this.pendingFiles(id, paths), 'skipped');
-    return { changeset: this.get(id), checkpoint: null };
+  skip(id: string, paths?: readonly string[]): Promise<AgentChangesetResolution> {
+    return this.decisions.run(id, () => {
+      this.row(id);
+      this.mark(id, this.pendingFiles(id, paths), 'skipped');
+      return { changeset: this.get(id), checkpoint: null };
+    });
   }
 
   /**

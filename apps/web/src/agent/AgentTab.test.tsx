@@ -547,6 +547,38 @@ describe('agent tab', () => {
       ]);
     });
 
+    it('offers Open file only for applied files the book still has', async () => {
+      const resolvedChangeset: AgentChangeset = {
+        ...changeset,
+        files: changeset.files.map((file) => ({ ...file, status: 'applied' as const })),
+      };
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+        getAgentChat: () => Promise.resolve({ ...proposed, changesets: [resolvedChangeset] }),
+        getAgentChangeset: () =>
+          Promise.resolve({
+            ...resolvedChangeset,
+            files: resolvedChangeset.files.map((file) => ({
+              ...file,
+              before: null,
+              after: '# File\n',
+            })),
+          }),
+      });
+      const card = await screen.findByRole('region', { name: 'Proposed changes' });
+      // research/tides.md was applied, then removed: it is not in the book's tree.
+      await userEvent.click(within(card).getByRole('button', { name: 'new research/tides.md' }));
+      let dialog = await screen.findByRole('dialog');
+      await within(dialog).findByRole('list', { name: 'Changes to research/tides.md' });
+      expect(within(dialog).queryByRole('link', { name: 'Open file' })).toBeNull();
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+
+      await userEvent.click(
+        within(card).getByRole('button', { name: 'edited characters/mara-quill.md' }),
+      );
+      dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByRole('link', { name: 'Open file' })).toBeDefined();
+    });
+
     it('shows a running turn’s proposal without actions until it ends', async () => {
       const stream = createScriptedAgentStream();
       renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {

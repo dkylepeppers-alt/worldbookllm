@@ -257,6 +257,48 @@ describe('review mode', () => {
     expect(detail.messages[2]?.note).toContain('Skipped (not applied): research/tides.md.');
   });
 
+  it('lets only one of a concurrent apply and skip decide a file', async () => {
+    const { app, book, bookDir } = await boot([
+      () =>
+        sse(
+          toolCall('c1', 'write_file', {
+            path: 'notes/harbor.md',
+            content: '# Harbor\n',
+            expectedHash: null,
+          }),
+        ),
+      () => sse(text('Proposed.')),
+    ]);
+    const chat = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/books/${book.slug}/agent-chats`,
+        payload: { reviewMode: true },
+      })
+    ).json<AgentChat>();
+    await send(app, chat.id, 'Write harbor notes.');
+    const [changeset] = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>().changesets;
+
+    const [applied, skipped] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: `/api/agent-changesets/${changeset!.id}/apply`,
+        payload: {},
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/api/agent-changesets/${changeset!.id}/skip`,
+        payload: {},
+      }),
+    ]);
+    expect(applied.statusCode).toBe(200);
+    expect(skipped.statusCode).toBe(400);
+    expect(applied.json<AgentChangesetResolution>().changeset.files[0]?.status).toBe('applied');
+    expect(readFileSync(join(bookDir, 'notes/harbor.md'), 'utf8')).toBe('# Harbor\n');
+  });
+
   it('keeps build output out of review mode', async () => {
     const { app, book } = await boot([
       () => sse(toolCall('c1', 'run_story', { command: 'build', args: [] })),

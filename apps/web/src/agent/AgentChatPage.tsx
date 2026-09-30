@@ -180,6 +180,10 @@ function AgentChatPage({ chatId }: { chatId: string }) {
     }
   }
 
+  // "Open file" only for files the book has now: a later undo, edit, or
+  // removal can take away a file a change once created.
+  const inBook = (path: string) => tree.files.some((file) => file.path === path);
+
   function openCheckpoint(checkpoint: Checkpoint, path: string) {
     setDiff({
       label: checkpoint.label,
@@ -188,9 +192,7 @@ function AgentChatPage({ chatId }: { chatId: string }) {
       loadKey: `checkpoint:${checkpoint.id}`,
       load: (signal) =>
         api.getCheckpoint(slug, checkpoint.id, signal).then((detail) => detail.files),
-      canOpen: (target) =>
-        checkpoint.undoneAt === null &&
-        checkpoint.files.find((file) => file.path === target)?.change !== 'deleted',
+      canOpen: (target) => checkpoint.undoneAt === null && inBook(target),
     });
   }
 
@@ -201,10 +203,9 @@ function AgentChatPage({ chatId }: { chatId: string }) {
       path,
       loadKey: `changeset:${changeset.id}`,
       load: (signal) => api.getAgentChangeset(changeset.id, signal).then((detail) => detail.files),
-      canOpen: (target) => {
-        const file = changeset.files.find((entry) => entry.path === target);
-        return file?.status === 'applied' && file.change !== 'deleted';
-      },
+      canOpen: (target) =>
+        changeset.files.find((entry) => entry.path === target)?.status === 'applied' &&
+        inBook(target),
     });
   }
 

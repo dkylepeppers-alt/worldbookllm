@@ -60,21 +60,27 @@ export class StagedBook {
   static create(book: string, sourceRoot: string, stagingDir: string, cli: StoryCli): StagedBook {
     mkdirSync(stagingDir, { recursive: true });
     const root = join(stagingDir, randomUUID());
-    cpSync(sourceRoot, root, {
-      recursive: true,
-      filter: (source) => {
-        const path = relative(sourceRoot, source);
-        if (path === '') return true;
-        const segments = path.split(sep);
-        if (segments.some((segment) => segment.startsWith('.'))) return false;
-        return segments[0] !== 'dist';
-      },
-    });
-    const staged = new StagedBook(book, root, cli);
-    for (const path of listMarkdownFiles(root)) {
-      staged.baseline.set(path, readFileSync(join(root, path)));
+    try {
+      cpSync(sourceRoot, root, {
+        recursive: true,
+        filter: (source) => {
+          const path = relative(sourceRoot, source);
+          if (path === '') return true;
+          const segments = path.split(sep);
+          if (segments.some((segment) => segment.startsWith('.'))) return false;
+          return segments[0] !== 'dist';
+        },
+      });
+      const staged = new StagedBook(book, root, cli);
+      for (const path of listMarkdownFiles(root)) {
+        staged.baseline.set(path, readFileSync(join(root, path)));
+      }
+      return staged;
+    } catch (error) {
+      // Nothing owns a copy that failed partway, so it is removed here.
+      rmSync(root, { recursive: true, force: true });
+      throw error;
     }
-    return staged;
   }
 
   private bytes(path: string): Buffer | null {
