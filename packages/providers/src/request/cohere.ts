@@ -3,13 +3,14 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:936.
- * Not ported in M1: tools, JSON schema, documents, or reverse proxies.
+ * Not ported in M1: JSON schema, documents, or reverse proxies.
  */
 
 import { convertCohereMessages } from '../convert/prompt-converters.js';
 import { API_URLS } from '../sources.js';
 import { makePromptNames, type GenerationParams, type ProviderChatRequest } from '../types.js';
 import { compactObject, requireApiKey } from './provider-helpers.js';
+import { cohereTools } from './tools.js';
 
 export function buildCohereRequest(params: GenerationParams): ProviderChatRequest {
   const apiKey = requireApiKey('cohere', params.apiKey);
@@ -30,7 +31,7 @@ export function buildCohereRequest(params: GenerationParams): ProviderChatReques
     frequency_penalty: params.frequencyPenalty,
     presence_penalty: params.presencePenalty,
     documents: [],
-    tools: [],
+    tools: cohereTools(params),
   });
   if (params.model.endsWith('08-2024')) {
     body.safety_mode = 'OFF';

@@ -3,7 +3,7 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:1572.
- * Not ported in M1: tools or reverse proxies.
+ * Not ported in M1: reverse proxies.
  */
 
 import { postProcessPrompt, PROMPT_PROCESSING_TYPE } from '../convert/prompt-converters.js';
@@ -15,6 +15,7 @@ import {
   extraString,
   requireApiKey,
 } from './provider-helpers.js';
+import { openAiToolFields } from './tools.js';
 
 export function buildMinimaxRequest(params: GenerationParams): ProviderChatRequest {
   const apiKey = requireApiKey('minimax', params.apiKey);
@@ -28,6 +29,7 @@ export function buildMinimaxRequest(params: GenerationParams): ProviderChatReque
       Authorization: `Bearer ${apiKey}`,
     },
     body: compactObject({
+      ...openAiToolFields(params),
       messages: postProcessPrompt(
         structuredClone(params.messages),
         PROMPT_PROCESSING_TYPE.MERGE_TOOLS,

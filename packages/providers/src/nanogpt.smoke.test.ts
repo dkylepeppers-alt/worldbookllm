@@ -6,6 +6,7 @@ import {
   getStaticModels,
   normalizeStreamChunk,
   parseSseStream,
+  ToolCallAccumulator,
 } from './index.js';
 
 const apiKey = process.env.SMOKE_NANOGPT_KEY;
@@ -57,6 +58,57 @@ smoke(
     }
 
     expect(text.trim().toLowerCase()).toContain('brass');
+  },
+  30_000,
+);
+
+smoke(
+  'streams a live NanoGPT tool call',
+  async () => {
+    const request = buildChatRequest('nanogpt', {
+      model: process.env.SMOKE_NANOGPT_MODEL ?? 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'What is the weather in Port Kestrel? Use the tool.' }],
+      stream: true,
+      apiKey,
+      maxTokens: 64,
+      temperature: 0,
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            description: 'Look up the weather in a town.',
+            parameters: {
+              type: 'object',
+              properties: { town: { type: 'string' } },
+              required: ['town'],
+            },
+          },
+        },
+      ],
+      toolChoice: 'required',
+    });
+
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: JSON.stringify(request.body),
+    });
+    if (!response.ok) {
+      throw new Error(`NanoGPT tool request failed (${response.status}): ${await response.text()}`);
+    }
+
+    const accumulator = new ToolCallAccumulator();
+    for await (const event of parseSseStream(response.body!)) {
+      if (event.data === '[DONE]') break;
+      accumulator.push(JSON.parse(event.data));
+    }
+
+    const [call] = accumulator.toolCalls();
+    expect(call?.name).toBe('get_weather');
+    expect(JSON.parse(call?.arguments ?? '{}')).toMatchObject({
+      town: expect.stringMatching(/kestrel/iu),
+    });
   },
   30_000,
 );

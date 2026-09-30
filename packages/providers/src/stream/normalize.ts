@@ -3,7 +3,8 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, public/scripts/openai.js:getStreamingReply.
- * Images, tool calls, signatures, logprobs, and multi-swipe state are not ported.
+ * Images, signatures, logprobs, and multi-swipe state are not ported; tool
+ * calls are accumulated separately by ToolCallAccumulator (tool-calls.ts).
  */
 
 import { ProviderError, type ChatCompletionSource, type StreamDelta } from '../types.js';

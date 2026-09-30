@@ -3,12 +3,13 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:1471.
- * Not ported in M1: tools, JSON schema, logprobs, or reverse proxies.
+ * Not ported in M1: JSON schema, logprobs, or reverse proxies.
  */
 
 import { API_URLS } from '../sources.js';
 import { type GenerationParams, type ProviderChatRequest } from '../types.js';
 import { chatCompletionsUrl, compactObject, requireApiKey } from './provider-helpers.js';
+import { openAiToolFields } from './tools.js';
 
 function extraNumber(params: GenerationParams, key: string): number | undefined {
   const value = params.extra?.[key];
@@ -32,6 +33,7 @@ export function buildChutesRequest(params: GenerationParams): ProviderChatReques
       Authorization: `Bearer ${apiKey}`,
     },
     body: compactObject({
+      ...openAiToolFields(params),
       messages: structuredClone(params.messages),
       model: params.model,
       temperature: params.temperature,

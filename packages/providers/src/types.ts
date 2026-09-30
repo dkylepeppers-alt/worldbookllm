@@ -83,6 +83,25 @@ export function makePromptNames(
 
 export type ReasoningEffort = 'auto' | 'min' | 'low' | 'medium' | 'high' | 'max';
 
+/**
+ * A function tool the model may call, in the OpenAI `tools` shape that
+ * SillyTavern uses as its provider-neutral form. Builders translate it for
+ * providers with their own shape (Claude, Google).
+ */
+export interface ToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    /** JSON Schema for the arguments object. */
+    parameters?: Record<string, unknown>;
+  };
+}
+
+/** OpenAI-style tool choice: let the model decide, forbid, require, or force one tool. */
+export type ToolChoice =
+  'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };
+
 /** Everything needed to build one provider request. Keys are injected — the
  * package never reads secrets or config itself. */
 export interface GenerationParams {
@@ -107,6 +126,10 @@ export interface GenerationParams {
   assistantPrefill?: string;
   /** Character/user names for message-name flattening. */
   names?: PromptNames;
+  /** Function tools offered to the model; omitted or empty means no tool calling. */
+  tools?: ToolDefinition[];
+  /** How the model may use `tools` (default `auto` when tools are present). */
+  toolChoice?: ToolChoice;
   /** Provider-specific extras (azure deployment, workers_ai account id, zai endpoint, …). */
   extra?: Record<string, unknown>;
 }

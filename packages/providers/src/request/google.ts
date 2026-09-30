@@ -3,7 +3,7 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:428.
- * Not ported in M1: tools, JSON schema, web search, media, signatures,
+ * Not ported in M1: JSON schema, web search, media, signatures,
  * reverse proxies, or service-account token exchange execution.
  */
 
@@ -16,6 +16,7 @@ import {
   type ProviderChatRequest,
 } from '../types.js';
 import { compactObject, extraString, requireApiKey } from './provider-helpers.js';
+import { googleToolFields } from './tools.js';
 
 type GoogleSource = 'makersuite' | 'vertexai';
 
@@ -153,6 +154,8 @@ export function buildGoogleRequest(
   if (prompt.system_instruction.parts.length) {
     body.systemInstruction = prompt.system_instruction;
   }
+  // Gemma 3 models take no function tools (chat-completions.js:536).
+  if (!/gemma-3/.test(params.model)) Object.assign(body, googleToolFields(params));
 
   const target = isVertex
     ? vertexUrl(params, authMode, credential)

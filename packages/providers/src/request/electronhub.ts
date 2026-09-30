@@ -3,12 +3,13 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:1359.
- * Not ported in M1: tools, JSON schema, web search, prompt caching, or reverse proxies.
+ * Not ported in M1: JSON schema, web search, prompt caching, or reverse proxies.
  */
 
 import { API_URLS } from '../sources.js';
 import { type GenerationParams, type ProviderChatRequest } from '../types.js';
 import { chatCompletionsUrl, compactObject, requireApiKey } from './provider-helpers.js';
+import { openAiToolFields } from './tools.js';
 
 export function buildElectronHubRequest(params: GenerationParams): ProviderChatRequest {
   const apiKey = requireApiKey('electronhub', params.apiKey);
@@ -20,6 +21,7 @@ export function buildElectronHubRequest(params: GenerationParams): ProviderChatR
       Authorization: `Bearer ${apiKey}`,
     },
     body: compactObject({
+      ...openAiToolFields(params),
       messages: structuredClone(params.messages),
       model: params.model,
       temperature: params.temperature,

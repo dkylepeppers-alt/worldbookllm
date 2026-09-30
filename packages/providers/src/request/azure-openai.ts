@@ -3,11 +3,12 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:1652.
- * Not ported in M1: tools, JSON schema, logprobs, or reverse proxies.
+ * Not ported in M1: JSON schema, logprobs, or reverse proxies.
  */
 
 import { ProviderError, type GenerationParams, type ProviderChatRequest } from '../types.js';
 import { compactObject, extraString } from './provider-helpers.js';
+import { openAiToolFields } from './tools.js';
 import { getOpenAiReasoningEffort } from './openai-compatible.js';
 
 export function buildAzureOpenAiRequest(params: GenerationParams): ProviderChatRequest {
@@ -34,6 +35,7 @@ export function buildAzureOpenAiRequest(params: GenerationParams): ProviderChatR
       'api-key': params.apiKey,
     },
     body: compactObject({
+      ...openAiToolFields(params),
       messages: structuredClone(params.messages),
       temperature: params.temperature,
       frequency_penalty: params.frequencyPenalty,
