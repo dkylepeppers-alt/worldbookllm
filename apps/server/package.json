@@ -12,28 +12,28 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fastify/multipart": "10.1.0",
-    "@fastify/static": "^10.1.2",
-    "@joplin/turndown-plugin-gfm": "^1.0.67",
+    "@fastify/multipart": "10.1.2",
+    "@fastify/static": "^10.1.5",
+    "@joplin/turndown-plugin-gfm": "^1.0.68",
     "@mozilla/readability": "^0.6.0",
     "@worldbookllm/providers": "workspace:*",
     "@worldbookllm/shared": "workspace:*",
-    "better-sqlite3": "12.11.1",
-    "fastify": "^5.4.0",
+    "better-sqlite3": "13.0.3",
+    "fastify": "^5.12.5",
     "gray-matter": "4.0.3",
     "linkedom": "^0.18.13",
     "story-skills": "0.18.0",
     "turndown": "^7.2.4",
-    "unpdf": "^1.8.0",
-    "zod": "^4.0.0"
+    "unpdf": "^1.8.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "^24.19.0",
     "@types/turndown": "^5.0.6",
     "@vitest/coverage-v8": "^4.1.10",
-    "esbuild": "0.28.1",
-    "tsx": "^4.23.1",
+    "esbuild": "0.28.2",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vitest": "^5.0.2"
   }
