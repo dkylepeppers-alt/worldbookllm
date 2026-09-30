@@ -11,6 +11,7 @@ export function AppShell() {
           <NavLink to="/" end>
             Notebooks
           </NavLink>
+          <NavLink to="/books">Books</NavLink>
           <NavLink to="/presets">Presets</NavLink>
           <NavLink to="/skills">Skills</NavLink>
           <NavLink to="/settings">Settings</NavLink>

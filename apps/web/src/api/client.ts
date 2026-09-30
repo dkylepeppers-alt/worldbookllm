@@ -1,5 +1,15 @@
 import {
   apiErrorSchema,
+  bookCheckResultSchema,
+  bookFileDetailSchema,
+  bookFileSchema,
+  bookSearchResultSchema,
+  bookSummarySchema,
+  bookTreeSchema,
+  checkpointDetailSchema,
+  checkpointSchema,
+  manuscriptImportResultSchema,
+  storyCommandOutcomeSchema,
   appSettingsSchema,
   chatDetailSchema,
   chatSchema,
@@ -26,7 +36,23 @@ import {
   sourceOrganizationResponseSchema,
   sourcePreviewSchema,
   sourceSearchResultListSchema,
+  type AddEntityInput,
   type ApiErrorIssue,
+  type BookCheckCommand,
+  type BookCheckResult,
+  type BookEntityKind,
+  type BookFile,
+  type BookFileDetail,
+  type BookSearchResult,
+  type BookSummary,
+  type BookTree,
+  type Checkpoint,
+  type CheckpointDetail,
+  type CreateBookInput,
+  type ManuscriptImportResult,
+  type RenameEntityInput,
+  type StoryCommandOutcome,
+  type WriteBookFileInput,
   type AppSettings,
   type Chat,
   type ChatDetail,
@@ -85,6 +111,45 @@ export class ApiClientError extends Error {
 }
 
 export interface ApiClient {
+  listBooks(signal?: AbortSignal): Promise<BookSummary[]>;
+  createBook(input: CreateBookInput, signal?: AbortSignal): Promise<BookSummary>;
+  importManuscript(file: File, signal?: AbortSignal): Promise<ManuscriptImportResult>;
+  trashBook(slug: string, signal?: AbortSignal): Promise<void>;
+  getBookTree(slug: string, signal?: AbortSignal): Promise<BookTree>;
+  readBookFile(slug: string, path: string, signal?: AbortSignal): Promise<BookFileDetail>;
+  writeBookFile(
+    slug: string,
+    path: string,
+    input: WriteBookFileInput,
+    signal?: AbortSignal,
+  ): Promise<{ file: BookFile; checkpoint: Checkpoint | null }>;
+  searchBook(slug: string, q: string, signal?: AbortSignal): Promise<BookSearchResult[]>;
+  addBookEntity(
+    slug: string,
+    input: AddEntityInput,
+    signal?: AbortSignal,
+  ): Promise<StoryCommandOutcome>;
+  renameBookEntity(
+    slug: string,
+    kind: BookEntityKind,
+    id: string,
+    input: RenameEntityInput,
+    signal?: AbortSignal,
+  ): Promise<StoryCommandOutcome>;
+  removeBookEntity(
+    slug: string,
+    kind: BookEntityKind,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<StoryCommandOutcome>;
+  runBookCheck(
+    slug: string,
+    command: BookCheckCommand,
+    signal?: AbortSignal,
+  ): Promise<BookCheckResult>;
+  listCheckpoints(slug: string, signal?: AbortSignal): Promise<Checkpoint[]>;
+  getCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<CheckpointDetail>;
+  undoCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<Checkpoint>;
   listNotebooks(signal?: AbortSignal): Promise<Notebook[]>;
   createNotebook(input: CreateNotebookInput, signal?: AbortSignal): Promise<Notebook>;
   getNotebook(id: string, signal?: AbortSignal): Promise<Notebook>;
@@ -156,7 +221,7 @@ export type CreateSecretInput = z.input<typeof createSecretSchema>;
 export type CreateChatInput = z.input<typeof createChatSchema>;
 
 interface RequestOptions<T> {
-  method?: 'POST' | 'PATCH' | 'DELETE';
+  method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   formData?: FormData;
   signal?: AbortSignal;
@@ -171,6 +236,16 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
   const providerCatalogSchema = z.array(providerCatalogEntrySchema);
   const chatListSchema = z.array(chatSchema);
   const starterSkillListSchema = z.array(starterSkillSchema);
+  const bookListSchema = z.array(bookSummarySchema);
+  const bookSearchResultListSchema = z.array(bookSearchResultSchema);
+  const checkpointListSchema = z.array(checkpointSchema);
+  const bookFileWriteSchema = z.object({
+    file: bookFileSchema,
+    checkpoint: checkpointSchema.nullable(),
+  });
+  const book = (slug: string) => `/api/books/${encodeURIComponent(slug)}`;
+  // Book paths are nested; encode each segment and keep the slashes.
+  const bookPath = (path: string) => path.split('/').map(encodeURIComponent).join('/');
 
   async function request<T>(path: string, options: RequestOptions<T> = {}): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
@@ -225,6 +300,71 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
   }
 
   return {
+    listBooks: (signal) => request('/api/books', { schema: bookListSchema, signal }),
+    createBook: (input, signal) =>
+      request('/api/books', { method: 'POST', body: input, schema: bookSummarySchema, signal }),
+    importManuscript: (file, signal) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return request('/api/books/import', {
+        method: 'POST',
+        formData,
+        schema: manuscriptImportResultSchema,
+        signal,
+      });
+    },
+    trashBook: (slug, signal) => request(book(slug), { method: 'DELETE', signal }),
+    getBookTree: (slug, signal) =>
+      request(`${book(slug)}/tree`, { schema: bookTreeSchema, signal }),
+    readBookFile: (slug, path, signal) =>
+      request(`${book(slug)}/files/${bookPath(path)}`, { schema: bookFileDetailSchema, signal }),
+    writeBookFile: (slug, path, input, signal) =>
+      request(`${book(slug)}/files/${bookPath(path)}`, {
+        method: 'PUT',
+        body: input,
+        schema: bookFileWriteSchema,
+        signal,
+      }),
+    searchBook: (slug, q, signal) =>
+      request(`${book(slug)}/search?${new URLSearchParams({ q }).toString()}`, {
+        schema: bookSearchResultListSchema,
+        signal,
+      }),
+    addBookEntity: (slug, input, signal) =>
+      request(`${book(slug)}/entities`, {
+        method: 'POST',
+        body: input,
+        schema: storyCommandOutcomeSchema,
+        signal,
+      }),
+    renameBookEntity: (slug, kind, id, input, signal) =>
+      request(`${book(slug)}/entities/${kind}/${encodeURIComponent(id)}/rename`, {
+        method: 'POST',
+        body: input,
+        schema: storyCommandOutcomeSchema,
+        signal,
+      }),
+    removeBookEntity: (slug, kind, id, signal) =>
+      request(`${book(slug)}/entities/${kind}/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        schema: storyCommandOutcomeSchema,
+        signal,
+      }),
+    runBookCheck: (slug, command, signal) =>
+      request(`${book(slug)}/checks/${command}`, { schema: bookCheckResultSchema, signal }),
+    listCheckpoints: (slug, signal) =>
+      request(`${book(slug)}/checkpoints`, { schema: checkpointListSchema, signal }),
+    getCheckpoint: (slug, id, signal) =>
+      request(`${book(slug)}/checkpoints/${encodeURIComponent(id)}`, {
+        schema: checkpointDetailSchema,
+        signal,
+      }),
+    undoCheckpoint: (slug, id, signal) =>
+      request(`${book(slug)}/checkpoints/${encodeURIComponent(id)}/undo`, {
+        method: 'POST',
+        schema: checkpointSchema,
+        signal,
+      }),
     listNotebooks: (signal) => request('/api/notebooks', { schema: notebookListSchema, signal }),
     createNotebook: (input, signal) =>
       request('/api/notebooks', { method: 'POST', body: input, schema: notebookSchema, signal }),
