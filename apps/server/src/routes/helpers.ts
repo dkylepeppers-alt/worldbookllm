@@ -2,7 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import { ProviderError } from '@worldbookllm/providers';
 import { ZodError } from 'zod';
 
-import { ConfigurationError, ConflictError, InvalidImportError, NotFoundError } from '../errors.js';
+import {
+  ConfigurationError,
+  ConflictError,
+  InvalidImportError,
+  NotFoundError,
+  ReadOnlyBookPathError,
+  StoryCommandError,
+  UnsafePathError,
+} from '../errors.js';
 
 export function installErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error, _request, reply) => {
@@ -44,6 +52,27 @@ export function installErrorHandler(app: FastifyInstance): void {
 
     if (error instanceof ConflictError) {
       return reply.status(409).send({ error: error.code, message: error.message });
+    }
+
+    if (error instanceof UnsafePathError) {
+      return reply.status(400).send({ error: 'unsafe_path', message: error.message });
+    }
+
+    if (error instanceof ReadOnlyBookPathError) {
+      return reply.status(400).send({ error: 'read_only_path', message: error.message });
+    }
+
+    if (error instanceof StoryCommandError) {
+      // The story CLI's exit codes: 2 usage error, 3 unusable project, 4 write refused.
+      const [status, code] =
+        error.exitCode === 2
+          ? [400, 'story_usage_error']
+          : error.exitCode === 3
+            ? [409, 'story_unusable_project']
+            : error.exitCode === 4
+              ? [409, 'story_write_refused']
+              : [422, 'story_command_failed'];
+      return reply.status(status).send({ error: code, message: error.message });
     }
 
     if (error instanceof ProviderError) {
