@@ -74,6 +74,17 @@ describe('series (ADR 0018)', () => {
     expect(second.slug).toBe('high-water');
     expect(story('series/tides/high-water')).toContain('../low-water');
     expect(story('series/tides/low-water')).toContain('../high-water');
+    const listed = (await app.inject({ method: 'GET', url: '/api/books' })).json<
+      Array<Record<string, unknown>>
+    >();
+    expect(listed.find((book) => book.slug === 'low-water')).toMatchObject({
+      follows: [],
+      precedes: ['high-water'],
+    });
+    expect(listed.find((book) => book.slug === 'high-water')).toMatchObject({
+      follows: ['low-water'],
+      precedes: [],
+    });
 
     const [link] = await history('low-water');
     expect(link?.label).toBe('Link High Water');

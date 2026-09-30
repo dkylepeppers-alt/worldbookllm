@@ -743,6 +743,10 @@ label {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
+  .book-create .field-action {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
   .provider-settings-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -876,6 +880,35 @@ label {
 .book-link {
   color: var(--ink);
   text-decoration: none;
+}
+
+.series-section,
+.series-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.series-section h3,
+.series-section p {
+  margin: 0;
+}
+
+/* A series (ADR 0018): its title and bible link above its books in reading order. */
+.series-group {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 1px solid var(--ink);
+  padding-top: 1rem;
+}
+
+.series-group > h2,
+.series-group > .coordinate-label {
+  margin: 0;
+}
+
+.series-bible-link {
+  justify-self: start;
+  font-weight: 720;
 }
 
 .book-link:hover h2 {

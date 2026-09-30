@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
+import { SeriesSection } from './SeriesSection.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 const PROJECT_FILES = [
@@ -83,6 +84,8 @@ export function ProjectPage() {
         ))}
       </ul>
 
+      <SeriesSection />
+
       <h3>History</h3>
       {error === null ? null : (
         <p className="form-error" role="alert">
@@ -127,9 +130,16 @@ export function ProjectPage() {
       ) : null}
 
       <h3>Remove</h3>
-      <button type="button" className="button-danger" onClick={() => setTrashing(true)}>
-        Move book to trash
-      </button>
+      {tree.book.seriesId === null ? (
+        <button type="button" className="button-danger" onClick={() => setTrashing(true)}>
+          Move book to trash
+        </button>
+      ) : (
+        <p>
+          Books in a series and series bibles cannot be moved to trash yet. Their folders stay in
+          data/series/.
+        </p>
+      )}
       {trashing ? (
         <ConfirmDialog
           title={`Move ${tree.book.title} to trash?`}

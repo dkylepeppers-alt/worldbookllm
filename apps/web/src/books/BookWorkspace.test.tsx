@@ -27,6 +27,8 @@ const book: BookSummary = {
   kind: 'book',
   seriesId: null,
   bookNumber: null,
+  follows: [],
+  precedes: [],
   counts: { chapter: 1, character: 1 },
   updatedAt: '2026-09-30T00:00:00.000Z',
 };
@@ -95,11 +97,61 @@ describe('book library', () => {
     expect(within(list).getByRole('link', { name: 'The Salt Road' })).toBeDefined();
     expect(within(list).getByText('1 chapter · 1 in cast')).toBeDefined();
 
-    await userEvent.type(screen.getByRole('textbox', { name: 'New book title' }), 'Embers');
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'New book or series title' }),
+      'Embers',
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Create book' }));
     expect(createBook).toHaveBeenCalledWith({ title: 'Embers' });
     await waitFor(() =>
       expect(screen.getByTestId('location').textContent).toBe('/books/embers/write'),
+    );
+  });
+
+  it('gathers a series behind its bible, books in reading order, and creates a series', async () => {
+    const inSeries = (slug: string, title: string, bookNumber: number): BookSummary => ({
+      ...book,
+      slug,
+      title,
+      seriesId: 'tides',
+      bookNumber,
+    });
+    const createSeries = vi.fn(() =>
+      Promise.resolve({ ...book, slug: 'ember', title: 'Ember', kind: 'series-bible' as const }),
+    );
+    renderAt('/books', {
+      listBooks: () =>
+        Promise.resolve([
+          book,
+          inSeries('high-water', 'High Water', 2),
+          { ...book, slug: 'tides', title: 'Tides', kind: 'series-bible', seriesId: 'tides' },
+          inSeries('low-water', 'Low Water', 1),
+        ]),
+      createSeries,
+    });
+
+    const series = await screen.findByRole('region', { name: 'Tides' });
+    expect(within(series).getByRole('link', { name: 'Series bible' }).getAttribute('href')).toBe(
+      '/books/tides',
+    );
+    const books = within(series).getByRole('list', { name: 'Books in Tides' });
+    expect(
+      within(books)
+        .getAllByRole('heading')
+        .map((heading) => heading.textContent),
+    ).toEqual(['Low Water', 'High Water']);
+    expect(
+      within(screen.getByRole('list', { name: 'Books' })).getAllByRole('heading'),
+    ).toHaveLength(1);
+
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'New book or series title' }),
+      'Ember',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Create series' }));
+    expect(createSeries).toHaveBeenCalledWith({ title: 'Ember' });
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/books/ember/write'),
     );
   });
 
@@ -325,6 +377,67 @@ describe('book health and project', () => {
     expect(undoCheckpoint).toHaveBeenCalledWith(
       'the-salt-road',
       '11111111-1111-4111-8111-111111111111',
+    );
+  });
+
+  it('makes a standalone book the first book of a new series', async () => {
+    const moveBookToSeries = vi.fn(() =>
+      Promise.resolve({ ...book, seriesId: 'the-salt-road-cycle' }),
+    );
+    renderAt('/books/the-salt-road/project', {
+      listCheckpoints: () => Promise.resolve([]),
+      moveBookToSeries,
+    });
+    const title = await screen.findByRole('textbox', { name: 'New series title' });
+    expect((title as HTMLInputElement).value).toBe('The Salt Road');
+    await userEvent.clear(title);
+    await userEvent.type(title, 'The Salt Road Cycle');
+    await userEvent.click(screen.getByRole('button', { name: 'Make this a series' }));
+    expect(moveBookToSeries).toHaveBeenCalledWith('the-salt-road', {
+      newSeriesTitle: 'The Salt Road Cycle',
+    });
+  });
+
+  it('adds a linked book after the highest existing book number', async () => {
+    const inSeries: BookSummary = { ...book, seriesId: 'tides', bookNumber: 1 };
+    const existingSequel: BookSummary = {
+      ...book,
+      slug: 'high-water',
+      title: 'High Water',
+      seriesId: 'tides',
+      bookNumber: 2,
+    };
+    const addSeriesBook = vi.fn(() =>
+      Promise.resolve({ ...book, slug: 'spring-tide', title: 'Spring Tide', seriesId: 'tides' }),
+    );
+    renderAt('/books/the-salt-road/project', {
+      getBookTree: () => Promise.resolve({ ...tree, book: inSeries }),
+      listBooks: () =>
+        Promise.resolve([
+          inSeries,
+          existingSequel,
+          { ...book, slug: 'tides', title: 'Tides', kind: 'series-bible', seriesId: 'tides' },
+        ]),
+      listCheckpoints: () => Promise.resolve([]),
+      addSeriesBook,
+    });
+    expect(await screen.findByRole('link', { name: 'Tides' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Move book to trash' })).toBeNull();
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Add a book to this series' }),
+      'Spring Tide',
+    );
+    expect((screen.getByRole('combobox', { name: 'Comes after' }) as HTMLSelectElement).value).toBe(
+      'the-salt-road',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Add book' }));
+    expect(addSeriesBook).toHaveBeenCalledWith('tides', {
+      title: 'Spring Tide',
+      follows: 'the-salt-road',
+      bookNumber: 3,
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/books/spring-tide/write'),
     );
   });
 });
