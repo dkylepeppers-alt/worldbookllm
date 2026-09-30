@@ -11,7 +11,7 @@
  * name (null = unbounded); for "positional" commands that slot is the
  * project path, which StoryCli never passes.
  */
-export interface StoryOptionSpec {
+interface StoryOptionSpec {
   value: boolean;
   repeatable: boolean;
 }

@@ -178,12 +178,12 @@ export interface ApiClient {
   markNotebookMigrationSeen(signal?: AbortSignal): Promise<void>;
 }
 
-export interface StreamAgentMessageOptions {
+interface StreamAgentMessageOptions {
   onEvent: (event: AgentStreamEvent) => void;
   signal?: AbortSignal;
 }
 
-export type CreateSecretInput = z.input<typeof createSecretSchema>;
+type CreateSecretInput = z.input<typeof createSecretSchema>;
 
 interface RequestOptions<T> {
   method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE';

@@ -38,6 +38,9 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
+      - name: Check for unused files, exports and dependencies
+        run: pnpm knip
+
       - name: Typecheck
         run: pnpm typecheck
 

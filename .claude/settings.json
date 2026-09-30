@@ -39,7 +39,8 @@
       "Bash(pnpm -r:*)",
       "Bash(pnpm exec prettier:*)",
       "Bash(pnpm dev)",
-      "Bash(pnpm dedupe --check)"
+      "Bash(pnpm dedupe --check)",
+      "Bash(pnpm knip)"
     ]
   }
 }
