@@ -489,7 +489,11 @@ export class AgentService {
     try {
       // Setup stays inside the try: a failure after prepare() has already
       // stored a streaming message must be recorded, not left hanging.
-      const controls = this.presets.resolve(null).generation;
+      // Presets were designed for notebook chat. An assistant prefill would be
+      // sent as a trailing assistant message on every step and can break
+      // tool calling, so the agent never uses one. Presets' role for the
+      // agent is to be revisited when the notebook era is retired.
+      const controls = { ...this.presets.resolve(null).generation, assistantPrefill: null };
       let workspace: AgentWorkspace;
       if (prepared.reviewMode) {
         staged = await this.books.stage(chat.book, this.stagingDir);

@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { BookSummary } from '@worldbookllm/shared';
+import type { BookSummary, GenerationControls } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -141,6 +141,73 @@ describe('stopping a turn', () => {
     const detail = agent.getChat(chat.id);
     expect(detail.messages[1]?.status).toBe('interrupted');
     expect(detail.messages[1]?.steps[0]?.toolCalls.map((call) => call.name)).toEqual(['read_file']);
+    db.close();
+  });
+});
+
+describe('generation controls', () => {
+  it('never sends the default preset’s assistant prefill to the agent', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-prefill-'));
+    tempDirs.push(dataDir);
+    const db = openDatabase(dataDir);
+    const presets = new PresetService(db);
+    presets.updateSettings({
+      providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+    });
+    const preset = presets.resolve(null);
+    presets.patch(preset.id, {
+      generation: { temperature: 0.4, assistantPrefill: 'Certainly! Here is' },
+    });
+    const skills = new SkillService(db, new SkillFileStore(dataDir));
+    const books = {
+      root: () => dataDir,
+      get: () => ({
+        slug: 'harbor',
+        title: 'Harbor',
+        genre: null,
+        status: null,
+        seriesId: null,
+        bookNumber: null,
+        counts: {},
+        updatedAt: new Date().toISOString(),
+      }),
+      startSession: () => ({ book: 'harbor' }),
+      commitSession: async () => null,
+    } as unknown as BookService;
+    const seen: GenerationControls[] = [];
+    const providers = {
+      createChatRequest(_config: unknown, _messages: unknown, controls: GenerationControls) {
+        seen.push(controls);
+        return { url: 'http://provider.test/v1', method: 'POST', headers: {}, body: {} };
+      },
+      snapshotRequestBody: () => ({}),
+      openChatStream: () =>
+        Promise.resolve(
+          new Response(
+            `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: 'Hi.' } }] })}\n\ndata: [DONE]\n\n`,
+          ).body!,
+        ),
+    } as unknown as ProviderService;
+    const agent = new AgentService(
+      db,
+      books,
+      skills,
+      presets,
+      providers,
+      { definitions: () => [] } as unknown as AgentToolRegistry,
+      new AgentChangesetService(db, books),
+      new CustomAgentService(db, skills),
+      join(dataDir, 'staging'),
+    );
+    const chat = agent.createChat('harbor');
+    const prepared = agent.prepare(chat.id, 'Hello.');
+    try {
+      await agent.run(prepared, new AbortController().signal, () => undefined);
+    } finally {
+      prepared.release();
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ temperature: 0.4, assistantPrefill: null });
     db.close();
   });
 });
