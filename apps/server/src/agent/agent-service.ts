@@ -515,7 +515,10 @@ export class AgentService {
             content: outcome.ok ? result : `Error: ${result}`,
           });
         }
-        persist('streaming');
+        // Point the message at the pending checkpoint as soon as it exists:
+        // a restart promotes pending checkpoints to history, and the
+        // interrupted turn must still show its changes and be undoable.
+        persist('streaming', session.pendingId);
         if (signal.aborted) break;
       }
 

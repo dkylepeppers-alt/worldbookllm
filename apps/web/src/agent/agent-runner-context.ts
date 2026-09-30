@@ -13,6 +13,8 @@ export interface AgentRunError {
   message: string;
   /** Set when the provider settings are the problem, so the screen can point at Settings. */
   configuration: boolean;
+  /** The message the server refused, for the composer to restore. */
+  draft: string | null;
 }
 
 export interface AgentRunnerValue {

@@ -24,6 +24,7 @@ function SkillsNotice() {
   const skills = useLoad((signal) => api.listSkills(signal), 'skills');
   const [installed, setInstalled] = useState(false);
   if (skills.status !== 'ready') return null;
+  // Once installed here, the notice stays to show the report, without the button.
   if (!installed && skills.data.some((skill) => skill.origin.type === 'story-skills')) return null;
   return (
     <section className="agent-notice" aria-label="Story Skills">
@@ -32,7 +33,7 @@ function SkillsNotice() {
         The agent plans, drafts, and checks by following the story-skills craft skills. Install them
         into your skills library to give it the full set.
       </p>
-      <StorySkillsInstall onInstalled={() => setInstalled(true)} />
+      <StorySkillsInstall once onInstalled={() => setInstalled(true)} />
     </section>
   );
 }

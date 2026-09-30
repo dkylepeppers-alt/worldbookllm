@@ -6,6 +6,8 @@ import { errorMessage } from '../books/useLoad.js';
 
 interface StorySkillsInstallProps {
   onInstalled?: (result: StorySkillsInstallResult) => void;
+  /** Leaves only the report once the install succeeds, for one-time prompts. */
+  once?: boolean;
 }
 
 function report(result: StorySkillsInstallResult): string {
@@ -18,7 +20,7 @@ function report(result: StorySkillsInstallResult): string {
 }
 
 /** Installs the pinned story-skills craft skills into the skills library. */
-export function StorySkillsInstall({ onInstalled }: StorySkillsInstallProps) {
+export function StorySkillsInstall({ onInstalled, once = false }: StorySkillsInstallProps) {
   const api = useApi();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
@@ -39,14 +41,16 @@ export function StorySkillsInstall({ onInstalled }: StorySkillsInstallProps) {
 
   return (
     <>
-      <button
-        type="button"
-        className="button-secondary"
-        disabled={busy}
-        onClick={() => void install()}
-      >
-        {busy ? 'Installing…' : 'Install Story Skills'}
-      </button>
+      {once && status?.ok === true ? null : (
+        <button
+          type="button"
+          className="button-secondary"
+          disabled={busy}
+          onClick={() => void install()}
+        >
+          {busy ? 'Installing…' : 'Install Story Skills'}
+        </button>
+      )}
       {status === null ? null : (
         <p className={status.ok ? 'install-status' : 'form-error'} role="status">
           {status.text}

@@ -359,7 +359,9 @@ describe('agent tab', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Configure a provider before talking to the agent.');
     expect(within(alert).getByRole('link', { name: 'Open provider settings' })).toBeDefined();
-    await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe('Plan the book'));
+    await waitFor(() =>
+      expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('Plan the book'),
+    );
   });
 
   it('opens from a file with the file named in the draft', async () => {
@@ -390,5 +392,52 @@ describe('agent tab', () => {
     await userEvent.click(within(notice).getByRole('button', { name: 'Install Story Skills' }));
     expect(installStorySkills).toHaveBeenCalled();
     expect(await within(notice).findByText('Installed 1 skill.')).toBeDefined();
+    expect(within(notice).queryByRole('button', { name: 'Install Story Skills' })).toBeNull();
+  });
+
+  it('gives a new chat’s refused first message back in the chat’s composer', async () => {
+    const stream = createScriptedAgentStream();
+    renderAt('/books/the-salt-road/agent', {
+      createAgentChat: () => Promise.resolve(chat),
+      getAgentChat: () => Promise.resolve({ ...chat, messages: [] }),
+      streamAgentMessage: stream.streamAgentMessage,
+    });
+    await userEvent.type(await screen.findByLabelText('New chat'), 'Plan the book');
+    await userEvent.click(screen.getByRole('button', { name: 'Start chat' }));
+    await screen.findByLabelText('Message');
+    act(() =>
+      stream.fail(new ApiClientError(400, 'configuration_error', 'Configure a provider first.')),
+    );
+    await waitFor(() =>
+      expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('Plan the book'),
+    );
+  });
+
+  it('refuses a chat opened under another book', async () => {
+    renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+      getAgentChat: () => Promise.resolve({ ...chat, book: 'other-book', messages: [] }),
+    });
+    expect(
+      await screen.findByRole('heading', { name: 'This chat belongs to another book' }),
+    ).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+  });
+
+  it('loads a turn’s checkpoint that is older than the history page', async () => {
+    const getCheckpoint = vi.fn<ApiClient['getCheckpoint']>(() =>
+      Promise.resolve(checkpointDetail),
+    );
+    renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+      getAgentChat: () =>
+        Promise.resolve({
+          ...chat,
+          messages: [userMessage(0, 'Give Mara a scar'), assistantMessage(1)],
+        }),
+      listCheckpoints: () => Promise.resolve([]),
+      getCheckpoint,
+    });
+    const summary = await screen.findByRole('region', { name: 'Changes this turn' });
+    expect(getCheckpoint).toHaveBeenCalledWith('the-salt-road', CHECKPOINT_ID, expect.anything());
+    expect(within(summary).getByText('characters/mara-quill.md')).toBeDefined();
   });
 });

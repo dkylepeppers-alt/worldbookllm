@@ -62,6 +62,7 @@ export function AgentRunnerProvider({ onBookChanged, children }: AgentRunnerProv
                 chatId,
                 message: event.message,
                 configuration: event.code === 'configuration_error',
+                draft: null,
               });
             }
             setRun((current) =>
@@ -78,6 +79,7 @@ export function AgentRunnerProvider({ onBookChanged, children }: AgentRunnerProv
             message: errorMessage(caught),
             configuration:
               caught instanceof ApiClientError && caught.code === 'configuration_error',
+            draft: refused && !started ? content : null,
           });
         }
       }

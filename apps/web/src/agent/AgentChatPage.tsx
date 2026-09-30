@@ -60,6 +60,7 @@ function AgentChatPage({ chatId }: { chatId: string }) {
   const [undoError, setUndoError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [older, setOlder] = useState<ReadonlyMap<string, Checkpoint>>(new Map());
 
   const run = runner.run?.chatId === chatId ? runner.run : null;
   const chat = loaded.status === 'ready' ? newer(loaded.data, runner.settled) : null;
@@ -73,11 +74,50 @@ function AgentChatPage({ chatId }: { chatId: string }) {
     return () => clearTimeout(timer);
   }, [watching, reloadChat, chat]);
 
-  const checkpoints = new Map<string, Checkpoint>();
+  const checkpoints = new Map<string, Checkpoint>(older);
   if (runner.checkpoint !== null) checkpoints.set(runner.checkpoint.id, runner.checkpoint);
   if (history.status === 'ready') {
     for (const checkpoint of history.data) checkpoints.set(checkpoint.id, checkpoint);
   }
+  // The history lists only the book's newest checkpoints; turns older than
+  // that fetch their own so they keep their change summary and diffs.
+  const missing =
+    history.status === 'ready' && chat !== null && chat.book === slug
+      ? [
+          ...new Set(
+            chat.messages.flatMap((message) =>
+              message.checkpointId !== null &&
+              message.status !== 'streaming' &&
+              !checkpoints.has(message.checkpointId)
+                ? [message.checkpointId]
+                : [],
+            ),
+          ),
+        ]
+      : [];
+  const missingKey = missing.join();
+  useEffect(() => {
+    if (missingKey === '') return;
+    const controller = new AbortController();
+    void Promise.allSettled(
+      missingKey.split(',').map((id) => api.getCheckpoint(slug, id, controller.signal)),
+    ).then((results) => {
+      if (controller.signal.aborted) return;
+      setOlder((current) => {
+        const next = new Map(current);
+        for (const result of results) {
+          if (result.status !== 'fulfilled') continue;
+          const { files, ...rest } = result.value;
+          next.set(rest.id, {
+            ...rest,
+            files: files.map(({ path, change }) => ({ path, change })),
+          });
+        }
+        return next;
+      });
+    });
+    return () => controller.abort();
+  }, [api, slug, missingKey]);
   const latestLiveId =
     history.status === 'ready'
       ? (history.data.find((checkpoint) => checkpoint.undoneAt === null)?.id ?? null)
@@ -116,6 +156,15 @@ function AgentChatPage({ chatId }: { chatId: string }) {
         title="This chat could not open"
         message={loaded.status === 'error' ? loaded.message : ''}
         onRetry={loaded.reload}
+      />
+    );
+  }
+
+  if (chat.book !== slug) {
+    return (
+      <ErrorState
+        title="This chat belongs to another book"
+        message={`Open it from the book it was started in (${chat.book}).`}
       />
     );
   }
@@ -163,8 +212,12 @@ function AgentChatPage({ chatId }: { chatId: string }) {
       ) : null}
 
       <AgentComposer
+        // A turn the server refused before it started gives its message back
+        // (for a chat started from the Agent tab, the draft was typed there).
+        key={error?.draft ?? ''}
         id="agent-message-input"
         label="Message"
+        initialDraft={error?.draft ?? ''}
         submitLabel="Send"
         running={run !== null || watching}
         stopping={run?.turn.stopping ?? false}

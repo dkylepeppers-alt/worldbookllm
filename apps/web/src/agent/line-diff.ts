@@ -5,10 +5,17 @@ export type DiffLine =
 const MAX_TABLE_CELLS = 4_000_000;
 const CONTEXT = 3;
 
+/**
+ * Marks a last line that has no newline, as `diff` does, so a change that
+ * only adds or removes the final newline still shows a line.
+ */
+export const NO_NEWLINE = '\\ No newline at end of file';
+
 function splitLines(text: string | null): string[] {
   if (text === null || text === '') return [];
   const lines = text.split('\n');
   if (lines.at(-1) === '') lines.pop();
+  else lines.push(NO_NEWLINE);
   return lines;
 }
 

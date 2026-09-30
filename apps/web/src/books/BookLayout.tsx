@@ -63,6 +63,9 @@ function BookTabs() {
           className={tab.to === 'agent' && run !== null ? 'tab-working' : undefined}
         >
           {tab.label}
+          {tab.to === 'agent' && run !== null ? (
+            <span className="visually-hidden"> (working)</span>
+          ) : null}
         </NavLink>
       ))}
     </nav>
