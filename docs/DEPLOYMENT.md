@@ -7,7 +7,7 @@ needs lives under one data directory on the machine you run it on.
 
 ## Requirements
 
-- Node.js ≥ 22.12 and [pnpm](https://pnpm.io) 9 (or Docker, see below — it needs neither installed
+- Node.js ≥ 24 and [pnpm](https://pnpm.io) 9 (or Docker, see below — it needs neither installed
   on the host).
 - A machine or container that keeps running while you use the app (a laptop, a home server, a small
   VPS). Nothing here requires always-on availability the way a multi-user SaaS would.
