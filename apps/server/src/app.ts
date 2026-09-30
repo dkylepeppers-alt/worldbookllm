@@ -23,6 +23,7 @@ import { SecretStore } from './secrets/secret-store.js';
 import { BookService } from './services/books.js';
 import { ChatService } from './services/chats.js';
 import { GenerationService } from './services/generation.js';
+import { NotebookMigrationService } from './services/notebook-migration.js';
 import { NotebookService } from './services/notebooks.js';
 import { PromptAssembler } from './services/prompt-assembler.js';
 import { ProviderService } from './services/providers.js';
@@ -55,6 +56,7 @@ function isSpaNavigation(method: string, url: string): boolean {
 
 export interface AppServices {
   books: BookService;
+  notebookMigration: NotebookMigrationService;
   notebooks: NotebookService;
   sources: SourceService;
   skills: SkillService;
@@ -142,6 +144,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.decorate('services', {
     books,
+    notebookMigration: new NotebookMigrationService(db, notebooks, sources, books),
     notebooks,
     sources,
     skills,

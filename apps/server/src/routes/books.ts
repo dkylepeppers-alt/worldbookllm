@@ -5,16 +5,32 @@ import {
   bookParamsSchema,
   bookSearchQuerySchema,
   checkpointParamsSchema,
+  createBookImportSchema,
   createBookSchema,
   entityParamsSchema,
   moveEntitySchema,
   renameEntitySchema,
   writeBookFileSchema,
 } from '@worldbookllm/shared';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+
+import { InvalidImportError } from '../errors.js';
 
 function filePath(params: unknown): string {
   return bookFilePathSchema.parse((params as Record<string, unknown>)['*']);
+}
+
+/** Reads the single uploaded file of a multipart request, with the source-upload limits. */
+async function readUpload(request: FastifyRequest): Promise<{ bytes: Buffer; fileName: string }> {
+  const upload = await request.file();
+  if (upload === undefined) throw new InvalidImportError('Upload one file.');
+  const fileName = upload.filename.trim();
+  if (fileName === '' || fileName.length > 255) {
+    throw new InvalidImportError('The uploaded file name must be between 1 and 255 characters.');
+  }
+  const bytes = await upload.toBuffer();
+  if (upload.file.truncated) throw new InvalidImportError('The uploaded file exceeds 25 MiB.');
+  return { bytes, fileName };
 }
 
 /** Story-skills books (ADR 0014). */
@@ -26,6 +42,24 @@ export function registerBookRoutes(app: FastifyInstance): void {
   app.post('/api/books', async (request, reply) =>
     reply.status(201).send(await books().create(createBookSchema.parse(request.body))),
   );
+
+  app.post('/api/books/import', async (request, reply) => {
+    const { bytes, fileName } = await readUpload(request);
+    return reply.status(201).send(await books().importManuscript(bytes, fileName));
+  });
+
+  app.post('/api/books/:book/previews/file', async (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    books().get(book);
+    const { bytes, fileName } = await readUpload(request);
+    return books().previewImport(book, bytes, fileName);
+  });
+
+  app.post('/api/books/:book/imports', async (request, reply) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    const input = createBookImportSchema.parse(request.body);
+    return reply.status(201).send(await books().importEntries(book, input));
+  });
 
   app.get('/api/books/:book', (request) => {
     const { book } = bookParamsSchema.parse(request.params);
