@@ -18,7 +18,7 @@ needs lives under one data directory on the machine you run it on.
 | -------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `HOST`               | `127.0.0.1`                         | Interface the server binds to. Set to `0.0.0.0` to accept connections from other machines/containers.                                          |
 | `PORT`               | `3001`                              | Port the server (API + built web app) listens on.                                                                                              |
-| `DATA_DIR`           | `<repo>/data`                       | Where the SQLite database, source Markdown files, and secrets file live. **The only directory you need to back up.**                           |
+| `DATA_DIR`           | `<repo>/data`                       | Where the SQLite database, book Markdown files, and secrets file live. **The only directory you need to back up.**                             |
 | `WEB_DIST_DIR`       | `<repo>/apps/web/dist`              | The built web app the server serves. Only relevant if you build/host the web app somewhere other than its default location next to the server. |
 | `API_PROXY_TARGET`   | `http://127.0.0.1:3001`             | **Dev only** — where `pnpm dev`'s Vite server proxies `/api`. Not used in production, where there is only one server.                          |
 | `STARTER_SKILLS_DIR` | `<repo>/apps/server/skills-starter` | Where the vendored starter skill set is read from when a user installs it. Only relevant if you relocate the server away from the repo layout. |
@@ -159,8 +159,9 @@ Everything worth keeping lives under `DATA_DIR`:
 data/
 ├── worldbookllm.db      # SQLite: metadata, chats, settings — a rebuildable index (ADR 0003)
 ├── secrets.json          # your AI provider API keys, stored locally, never sent anywhere but the provider
-├── notebooks/
-│   └── <notebook-id>/sources/<source-id>-<slug>.md   # your actual source-of-truth Markdown
+├── projects/
+│   └── <book-slug>/      # your books: story-skills Markdown, the source of truth (ADR 0014)
+├── notebooks.migrated/   # notebook-era sources, kept after the move into books (ADR 0017)
 └── skills/
     └── <name>/SKILL.md   # your creative skills, also source-of-truth Markdown (ADR 0011)
 ```
@@ -169,7 +170,7 @@ A plain file copy or archive of `DATA_DIR` while the process is stopped is a com
 backup. If you need to back up while the app is running, `worldbookllm.db` is a WAL-mode SQLite
 database — copy `worldbookllm.db`, `worldbookllm.db-wal`, and `worldbookllm.db-shm` together, or use
 `sqlite3 worldbookllm.db ".backup backup.db"` for a consistent snapshot without stopping the process.
-The Markdown source files are always safe to copy directly at any time — they are never
+The Markdown files are always safe to copy directly at any time — they are never
 partially written (writes are atomic, temp-file-then-rename).
 
 ## Upgrading

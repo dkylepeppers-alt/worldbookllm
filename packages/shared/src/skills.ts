@@ -23,6 +23,8 @@ const skillLicenseSchema = z.string().trim().min(1).max(200);
 export const skillOriginSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('created') }),
   z.strictObject({ type: z.literal('paste') }),
+  // Skills installed from the retired jwynia starter set (ADR 0017) keep
+  // this origin in existing data directories.
   z.strictObject({
     type: z.literal('bundled'),
     starterId: skillNameSchema,
@@ -79,31 +81,9 @@ export const patchSkillSchema = z
     { message: 'At least one skill field is required' },
   );
 
-export const generationSkillSnapshotSchema = z.strictObject({
-  id: z.uuid(),
-  name: skillNameSchema,
-  description: skillDescriptionSchema,
-  contentHash: z.string().regex(/^[a-f0-9]{64}$/u),
-  content: skillContentSchema,
-});
-
-export const starterSkillSchema = z.strictObject({
-  starterId: skillNameSchema,
-  name: skillNameSchema,
-  description: skillDescriptionSchema,
-  installed: z.boolean(),
-});
-
-export const installStarterSkillsSchema = z.strictObject({
-  starterIds: z.array(skillNameSchema).min(1).max(100),
-});
-
 export type SkillOrigin = z.infer<typeof skillOriginSchema>;
 export type SkillMetadata = z.infer<typeof skillMetadataSchema>;
 export type SkillDetail = z.infer<typeof skillDetailSchema>;
 export type CreateSkill = z.output<typeof createSkillSchema>;
 export type CreateSkillInput = z.input<typeof createSkillSchema>;
 export type PatchSkill = z.infer<typeof patchSkillSchema>;
-export type GenerationSkillSnapshot = z.infer<typeof generationSkillSnapshotSchema>;
-export type StarterSkill = z.infer<typeof starterSkillSchema>;
-export type InstallStarterSkills = z.infer<typeof installStarterSkillsSchema>;

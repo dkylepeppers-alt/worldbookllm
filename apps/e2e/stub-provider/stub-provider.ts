@@ -3,12 +3,6 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 export const STUB_MODEL_ID = 'stub-model';
 export const STUB_MODEL_NAME = 'Stub Model';
 export const STUB_REPLY = 'Stub reply: the word is brass.';
-export const STUB_ORGANIZATION_REPLY = JSON.stringify({
-  suggestions: [
-    { index: 0, category: 'factions', tags: ['iron-compact', 'smugglers'] },
-    { index: 1, category: 'places', tags: ['glass-marsh', 'tides'] },
-  ],
-});
 
 // Agent turns (requests that offer tools) follow a two-step script: the
 // first step adds a character with run_story, and once a tool result is in
@@ -93,7 +87,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
           index: 0,
           message: {
             role: 'assistant',
-            content: isOrganizationRequest(body) ? STUB_ORGANIZATION_REPLY : STUB_REPLY,
+            content: STUB_REPLY,
           },
           finish_reason: 'stop',
         },
@@ -102,12 +96,6 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return;
   }
   json(res, 404, { error: { message: `no stub route for ${req.method ?? ''} ${path}` } });
-}
-
-function isOrganizationRequest(body: ChatCompletionRequest): boolean {
-  // The opening line of the organization system prompt is this feature's
-  // stable marker; category lists and delimiters also appear elsewhere.
-  return JSON.stringify(body.messages ?? []).includes('Classify source drafts');
 }
 
 function wantsSlowStream(body: ChatCompletionRequest): boolean {

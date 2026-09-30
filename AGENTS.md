@@ -1,6 +1,6 @@
 # worldbookllm
 
-A local-first, model-agnostic creative writing and worldbuilding workspace: sources in as Markdown, organized into notebooks, developed through AI chat with user-chosen providers. See `docs/ARCHITECTURE.md` for the system design and `docs/ROADMAP.md` for milestone scope — check the roadmap before adding features to keep milestones thin.
+A local-first, model-agnostic creative writing and worldbuilding workspace: story-skills books as Markdown on disk, developed with a tool-calling agent on user-chosen providers. See `docs/ARCHITECTURE.md` for the system design and `docs/ROADMAP.md` for milestone scope — check the roadmap before adding features to keep milestones thin.
 
 ## Commands
 
@@ -23,7 +23,7 @@ All from the repo root (pnpm 9, Node ≥ 20.19):
 
 - Strict TS everywhere (`tsconfig.base.json`: `strict` + `noUncheckedIndexedAccess`); packages extend the base.
 - ESLint flat config + Prettier at the root only — don't add per-package configs.
-- User data lives in `data/` (gitignored): sources as `.md` files on disk are the source of truth; SQLite is a rebuildable index (ADR 0003). Never design features that hide source content from the user.
+- User data lives in `data/` (gitignored): books as `.md` files on disk are the source of truth; SQLite is a rebuildable index (ADR 0003, ADR 0014). Never design features that hide the writer's content from them.
 - Architecture decisions get an ADR in `docs/decisions/`.
 
 ## Design context

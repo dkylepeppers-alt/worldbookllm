@@ -27,8 +27,8 @@ const executablePath = process.env.WORLDBOOKLLM_E2E_CHROMIUM;
 export default defineConfig({
   testDir: './tests',
   globalSetup: './global-setup.ts',
-  // The walking skeleton is one stateful journey against a shared server and
-  // data dir; parallel workers would interleave notebook state.
+  // The journeys share one server and data dir (and its global provider
+  // setting); parallel workers would interleave that state.
   workers: 1,
   fullyParallel: false,
   timeout: 60_000,

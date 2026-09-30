@@ -1,35 +1,33 @@
 # worldbookllm
 
-worldbookllm is a tool for **generating new lore**. You feed it your existing material — setting notes, character sheets, campaign logs, half-finished wiki pages — and then work with an AI model of your choice to produce _new_ source documents: factions, settlements, belief systems, character histories, timelines, story ideas. Everything the model generates can be reviewed, edited, and saved back into your project as a plain Markdown file, where it becomes canon the next generation is grounded in.
+worldbookllm is a workspace for **writing books and building their worlds** with an AI model of your choice. Each book is a [story-skills](https://github.com/danjdewhurst/story-skills) project: characters, places, chapters, scenes, continuity notes, and research as plain Markdown files. An agent works inside the book with you — it reads the files, loads craft skills, runs the `story` checks, and writes changes you can review and undo.
 
 It runs entirely on your own machine (or phone — see [Termux](#install-on-android-termux) below). Your writing, chat history, and API keys stay local; the only outbound traffic is the model call itself, to whichever provider you choose.
 
 ## The loop
 
-Worldbuilding in worldbookllm is a cycle, not a chat log:
+1. **Bring material in.** Paste text, or upload `.md`, `.txt`, PDF, HTML, or SillyTavern lorebook/character-card JSON. Everything is converted to Markdown you review _before_ it's filed into the book — as research notes by default, or as characters and other entities when the material already fits. A manuscript can become a new book.
+2. **Build the book.** Add characters, locations, chapters, and scenes; the `story` CLI keeps registries and cross-references correct, and the Health tab runs its continuity, timeline, and pacing checks.
+3. **Work with the agent.** Ask for a location, a revision, or a continuity pass. The agent loads the story-skills craft skills it needs, reads and searches the book, runs `story` commands, and writes files. Every turn ends with a change summary and per-file diffs you can undo, or, in review mode, proposed changes you apply or skip file by file. A step inspector shows exactly what the model received.
+4. **Shape the agent.** Save custom agents — a continuity checker, a line editor — with their own instructions and skills, and tune the generation settings (temperature, top-p, a token cap, thinking) in Settings.
 
-1. **Bring canon in.** Paste text, or upload `.md`, `.txt`, PDF, HTML, or SillyTavern lorebook/character-card JSON. Everything is converted to Markdown you review and can fix _before_ it's saved — nothing enters your notebook as an opaque blob.
-2. **Select what grounds the generation.** Each chat message is sent with the exact sources you've selected, injected whole. The Prompt Inspector shows you, per exchange, precisely what the model received.
-3. **Generate with craft, not just vibes.** Attach **skills** — reusable craft instructions like _settlement design_, _belief systems_, _character naming_, or _story idea generation_ — and tune a **preset** (temperature, prompt modules, prefill, an optional thinking mode). A starter set of sixteen generative-first skills installs in one click.
-4. **Save what's good.** Any assistant response can be reviewed and saved as a new Markdown source, with provenance recording which chat and message it came from. Your setting bible grows out of your own generations.
-
-Because sources are plain `.md` files on disk (SQLite is just a rebuildable index — [ADR 0003](docs/decisions/0003-markdown-files-sqlite-index.md)), you can also edit, grep, sync, and version your world with any tool you already use.
+Because books are plain `.md` files on disk (SQLite is just a rebuildable index — [ADR 0003](docs/decisions/0003-markdown-files-sqlite-index.md)), you can also edit, grep, sync, and version them with any tool you already use.
 
 ## Choose your model
 
-The provider layer is ported from SillyTavern's battle-tested backends and supports **26 chat-completion providers** — OpenAI, Anthropic Claude, OpenRouter, NanoGPT, Google Gemini/Vertex, Mistral, Cohere, DeepSeek, Groq, xAI, Perplexity, Azure OpenAI, and more — plus any OpenAI-compatible endpoint (Ollama, LM Studio, llama.cpp, self-hosted). Keys are stored locally in `data/secrets.json`, never displayed unmasked, and never sent anywhere except the provider you picked. Provider and model are set per notebook and can be overridden per chat; switching models never requires rebuilding a project.
+The provider layer is ported from SillyTavern's battle-tested backends and supports **26 chat-completion providers** — OpenAI, Anthropic Claude, OpenRouter, NanoGPT, Google Gemini/Vertex, Mistral, Cohere, DeepSeek, Groq, xAI, Perplexity, Azure OpenAI, and more — plus any OpenAI-compatible endpoint (Ollama, LM Studio, llama.cpp, self-hosted). Keys are stored locally in `data/secrets.json`, never displayed unmasked, and never sent anywhere except the provider you picked. Provider and model are one global setting; switching models never requires rebuilding a book.
 
 ## What works today
 
-- Notebooks with paste and file-upload ingestion (`.md`, `.txt`, PDF, HTML, SillyTavern lorebook/character-card JSON), editable conversion previews, and post-save editing
-- Streaming chat (SSE) grounded in per-chat source selection, with stop/interrupt and regenerate-as-variants (swipe between takes on the same message)
-- Preset Studio: versioned presets with generation controls, ordered prompt modules, depth insertion, JSON import, one global default — see the [preset schema](docs/PRESET_SCHEMA.md)
-- Skills library with the generative starter set, attached per chat like sources
-- Per-exchange Prompt Inspector: the immutable record of what the model was actually sent
-- Save-response-as-source with chat/message provenance
+- Books as story-skills projects: a phone-first workspace (Write / Bible / Agent / Health / Project) with a Markdown editor, `story` checks, rename/remove, and history with undo
+- Ingestion into books (`.md`, `.txt`, PDF, HTML, SillyTavern lorebook/character-card JSON) with editable conversion previews; manuscripts via `story import`
+- The book agent: streaming tool-calling turns, change summaries with diffs and undo, review mode, a step inspector, stop
+- Skills library (the pinned story-skills set plus your own) and saved custom agents
 - Installable PWA, served single-origin by the server in production
 
-Not there yet (see the [roadmap](docs/ROADMAP.md)): fetching webpages by URL, categories/tags/full-text search across large notebooks, diff-reviewed updates to existing sources, and lorebook/setting-bible export.
+Upgrading from the notebook era? Notebooks, with their sources and chats, move into books automatically the first time the server starts ([ADR 0017](docs/decisions/0017-retire-notebooks-and-presets.md)); the original files are kept in `data/notebooks.migrated/`.
+
+Not there yet (see the [roadmap](docs/ROADMAP.md)): series and a series bible, `story build` exports (EPUB, DOCX, …) from the UI, and SillyTavern lorebook/character-card export.
 
 ## Requirements
 
@@ -53,7 +51,7 @@ pnpm build
 pnpm start               # http://127.0.0.1:3001
 ```
 
-Open http://127.0.0.1:3001, add a provider key under Settings, create a notebook, and add your first source. Your data lives under `./data` (change with `DATA_DIR=...`), and that directory is the only thing you need to back up.
+Open http://127.0.0.1:3001, add a provider key under Settings, and create your first book. Your data lives under `./data` (change with `DATA_DIR=...`), and that directory is the only thing you need to back up.
 
 **For development** — two processes with hot reload:
 
@@ -103,7 +101,7 @@ pnpm install
 pnpm build
 ```
 
-Then restart (`pnpm start`, or however you run it). Database migrations run automatically on startup; your Markdown sources are never touched by upgrades.
+Then restart (`pnpm start`, or however you run it). Database migrations run automatically on startup; your books are never touched by upgrades. (The one-time move from notebooks into books, ADR 0017, writes new books and renames the old folder rather than deleting anything.)
 
 ## Repository layout
 
@@ -121,7 +119,6 @@ docs/                Architecture, roadmap, deployment, and decision records
 - [Architecture](docs/ARCHITECTURE.md) — system design and data model
 - [Roadmap](docs/ROADMAP.md) — milestones and "done when" criteria
 - [Deployment](docs/DEPLOYMENT.md) — production build/run, environment variables, Docker, reverse proxy/HTTPS, backups
-- [Preset JSON schema](docs/PRESET_SCHEMA.md) — the portable preset format, limits, insertion semantics, and examples
 - [Decision records](docs/decisions/) — why the stack looks the way it does
 
 ## License & attribution

@@ -11,35 +11,23 @@ import { CustomAgentService } from './agent/custom-agents.js';
 import { StorySkillsInstaller } from './agent/story-skills-installer.js';
 import { AgentToolRegistry } from './agent/tools.js';
 import { openDatabase } from './db/database.js';
-import { resolveDataDir, resolveStarterSkillsDir, resolveWebDistDir } from './env.js';
+import { resolveDataDir, resolveWebDistDir } from './env.js';
 import { SkillFileStore } from './files/skill-files.js';
-import { SourceFileStore } from './files/source-files.js';
 import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { registerBookRoutes } from './routes/books.js';
-import { registerChatRoutes } from './routes/chats.js';
-import { registerMessageRoutes } from './routes/messages.js';
-import { registerNotebookRoutes } from './routes/notebooks.js';
 import { registerProviderRoutes } from './routes/providers.js';
-import { registerPresetRoutes } from './routes/presets.js';
 import { registerSecretRoutes } from './routes/secrets.js';
+import { registerSettingsRoutes } from './routes/settings.js';
 import { registerSkillRoutes } from './routes/skills.js';
-import { registerSourceRoutes } from './routes/sources.js';
 import { SecretStore } from './secrets/secret-store.js';
 import { BookService } from './services/books.js';
-import { ChatService } from './services/chats.js';
-import { GenerationService } from './services/generation.js';
 import { NotebookMigrationService } from './services/notebook-migration.js';
-import { NotebookService } from './services/notebooks.js';
-import { PromptAssembler } from './services/prompt-assembler.js';
 import { ProviderService } from './services/providers.js';
-import { PresetService } from './services/presets.js';
+import { SettingsService } from './services/settings.js';
 import { UPLOAD_LIMIT_BYTES } from './services/converters/limits.js';
 import { SkillService } from './services/skills.js';
-import { SourceOrganizationService } from './services/source-organization.js';
-import { SourceService } from './services/sources.js';
-import { StarterSkillService } from './services/starter-skills.js';
 import { BookFileStore } from './story/book-files.js';
 import { BookIndex } from './story/book-index.js';
 import { CheckpointService } from './story/checkpoints.js';
@@ -68,16 +56,10 @@ export interface AppServices {
   changesets: AgentChangesetService;
   storySkills: StorySkillsInstaller;
   notebookMigration: NotebookMigrationService;
-  notebooks: NotebookService;
-  sources: SourceService;
   skills: SkillService;
-  starterSkills: StarterSkillService;
   secrets: SecretStore;
   providers: ProviderService;
-  presets: PresetService;
-  chats: ChatService;
-  generation: GenerationService;
-  sourceOrganization: SourceOrganizationService;
+  settings: SettingsService;
 }
 
 declare module 'fastify' {
@@ -92,8 +74,6 @@ export interface BuildAppOptions {
   fetchImpl?: typeof fetch;
   /** Built web app to serve in production (ADR 0002); defaults via resolveWebDistDir. */
   webDistDir?: string;
-  /** Vendored starter skill catalog (ADR 0011); defaults via resolveStarterSkillsDir. */
-  starterSkillsDir?: string;
 }
 
 // Shared schemas cap JSON payloads by character count, but Fastify's body
@@ -111,28 +91,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
   const dataDir = resolveDataDir(options.dataDir);
   const db = openDatabase(dataDir);
-  const sourceFiles = new SourceFileStore(dataDir);
   const secrets = new SecretStore(dataDir);
   const providers = new ProviderService(
     secrets,
     new ProviderHttpClient(options.fetchImpl ?? globalThis.fetch),
   );
-  const chats = new ChatService(db);
-  const presets = new PresetService(db);
-  const notebooks = new NotebookService(db, sourceFiles);
-  const sources = new SourceService(db, sourceFiles);
-  const sourceOrganization = new SourceOrganizationService(
-    notebooks,
-    sources,
-    providers,
-    presets,
-    (error) => app.log.error(error),
-  );
-  // Backfill/self-heal the FTS index from the files on disk (ADR 0012):
-  // covers data dirs created before M3 and any divergence left behind.
-  sources.ensureSearchIndex((sourceId, error) => {
-    app.log.warn({ sourceId, err: error }, 'could not index source for search');
-  });
+  const settings = new SettingsService(db);
   const bookFiles = new BookFileStore(dataDir);
   const books = new BookService(
     bookFiles,
@@ -141,23 +105,19 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     new StoryCli(),
   );
   const skills = new SkillService(db, new SkillFileStore(dataDir));
-  const starterSkills = new StarterSkillService(
-    resolveStarterSkillsDir(options.starterSkillsDir),
-    skills,
-  );
-  const skillsRoot = join(resolveDataDir(options.dataDir), 'skills');
+  const skillsRoot = join(dataDir, 'skills');
   const customAgents = new CustomAgentService(db, skills);
   const changesets = new AgentChangesetService(db, books);
   const agent = new AgentService(
     db,
     books,
     skills,
-    presets,
+    settings,
     providers,
     new AgentToolRegistry(skills, skillsRoot),
     changesets,
     customAgents,
-    join(resolveDataDir(options.dataDir), 'staging'),
+    join(dataDir, 'staging'),
     (error) => app.log.error(error),
   );
   const storySkills = new StorySkillsInstaller(skills, skillsRoot);
@@ -165,13 +125,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     assertIdle: (book) => agent.assertBookIdle(book),
     removeForBook: (book) => agent.removeChatsForBook(book),
   });
-  const generation = new GenerationService(
-    chats,
-    presets,
-    new PromptAssembler(sources, skills),
-    providers,
-    (error) => app.log.error(error),
-  );
+  const notebookMigration = new NotebookMigrationService(db, books, agent, settings, dataDir);
 
   app.decorate('services', {
     books,
@@ -179,17 +133,26 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     customAgents,
     changesets,
     storySkills,
-    notebookMigration: new NotebookMigrationService(db, notebooks, sources, books),
-    notebooks,
-    sources,
+    notebookMigration,
     skills,
-    starterSkills,
     secrets,
     providers,
-    presets,
-    chats,
-    generation,
-    sourceOrganization,
+    settings,
+  });
+
+  // The notebook era ends at startup (ADR 0017): any notebooks left in an
+  // older data directory move into books once, before requests are served.
+  // A failure is logged rather than keeping the server down; the next start
+  // retries the notebooks that did not move.
+  app.addHook('onReady', async () => {
+    try {
+      const outcomes = await notebookMigration.run();
+      if (outcomes.length > 0) {
+        app.log.info({ outcomes }, 'moved notebooks into books');
+      }
+    } catch (error) {
+      app.log.error(error, 'notebook migration failed');
+    }
   });
 
   app.addHook('onClose', () => {
@@ -210,18 +173,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   registerBookRoutes(app);
   registerAgentRoutes(app);
-  registerNotebookRoutes(app);
-  registerSourceRoutes(app);
   registerSecretRoutes(app);
   registerProviderRoutes(app);
-  registerPresetRoutes(app);
+  registerSettingsRoutes(app);
   registerSkillRoutes(app);
-  registerChatRoutes(app);
-  registerMessageRoutes(app);
 
   // One process, one port in production (ADR 0002): serve the built web app
   // if it exists, with an SPA fallback so client-side routes (e.g.
-  // /notebooks/:id) resolve to index.html instead of 404ing. Skipped
+  // /books/:slug) resolve to index.html instead of 404ing. Skipped
   // whenever apps/web/dist hasn't been built (dev, most test runs) so
   // nothing here depends on a build step being present.
   const webDistDir = resolveWebDistDir(options.webDistDir);

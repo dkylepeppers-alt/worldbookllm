@@ -1,4 +1,10 @@
-import type { MaskedSecret, ProviderCatalogEntry, SecretState } from '@worldbookllm/shared';
+import {
+  DEFAULT_AGENT_GENERATION,
+  type AppSettings,
+  type MaskedSecret,
+  type ProviderCatalogEntry,
+  type SecretState,
+} from '@worldbookllm/shared';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -110,10 +116,10 @@ describe('Provider settings', () => {
 
   it('turns the agent review-mode default on', async () => {
     let reviewing = false;
-    const settings = () => ({
-      defaultPresetId: '10000000-0000-4000-8000-000000000001',
+    const settings = (): AppSettings => ({
       providerConfig: null,
       agentReviewMode: reviewing,
+      agentGeneration: DEFAULT_AGENT_GENERATION,
     });
     const updateAppSettings = vi.fn((input: { agentReviewMode?: boolean }) => {
       reviewing = input.agentReviewMode ?? reviewing;
@@ -127,25 +133,55 @@ describe('Provider settings', () => {
     await userEvent.click(toggle);
     expect(updateAppSettings).toHaveBeenCalledWith({ agentReviewMode: true });
     await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
-    expect(screen.getByRole('link', { name: 'Custom agents' }).getAttribute('href')).toBe(
-      '/agents',
+  });
+
+  it('saves the agent generation settings', async () => {
+    let generation = { ...DEFAULT_AGENT_GENERATION };
+    const settings = (): AppSettings => ({
+      providerConfig: null,
+      agentReviewMode: false,
+      agentGeneration: generation,
+    });
+    const updateAppSettings = vi.fn((input: { agentGeneration?: typeof generation }) => {
+      generation = input.agentGeneration ?? generation;
+      return Promise.resolve(settings());
+    });
+    renderSettings({ getAppSettings: () => Promise.resolve(settings()), updateAppSettings });
+    const user = userEvent.setup();
+
+    const temperature = await screen.findByLabelText('Temperature');
+    expect((temperature as HTMLInputElement).value).toBe('1');
+    await user.clear(temperature);
+    await user.type(temperature, '0.7');
+    await user.type(screen.getByLabelText('Max tokens per step'), '2048');
+    await user.click(screen.getByRole('checkbox', { name: /think before answering/ }));
+    await user.click(screen.getByRole('button', { name: 'Save generation settings' }));
+
+    await waitFor(() =>
+      expect(updateAppSettings).toHaveBeenCalledWith({
+        agentGeneration: { temperature: 0.7, topP: null, maxTokens: 2048, thinking: true },
+      }),
     );
+    expect(await screen.findByText('Saved.')).toBeDefined();
   });
 
   it('configures, updates, and clears the global provider', async () => {
     const updateAppSettings = vi.fn().mockResolvedValue({
-      defaultPresetId: '10000000-0000-4000-8000-000000000001',
       providerConfig: { source: 'nanogpt', model: 'nano-story' },
+      agentReviewMode: false,
+      agentGeneration: DEFAULT_AGENT_GENERATION,
     });
     const getAppSettings = vi
       .fn()
       .mockResolvedValueOnce({
-        defaultPresetId: '10000000-0000-4000-8000-000000000001',
         providerConfig: null,
+        agentReviewMode: false,
+        agentGeneration: DEFAULT_AGENT_GENERATION,
       })
       .mockResolvedValue({
-        defaultPresetId: '10000000-0000-4000-8000-000000000001',
         providerConfig: { source: 'nanogpt', model: 'nano-story' },
+        agentReviewMode: false,
+        agentGeneration: DEFAULT_AGENT_GENERATION,
       });
     renderSettings({ getAppSettings, updateAppSettings });
     const user = userEvent.setup();
@@ -164,8 +200,9 @@ describe('Provider settings', () => {
     expect(await screen.findByText('NanoGPT · nano-story')).toBeDefined();
 
     getAppSettings.mockResolvedValue({
-      defaultPresetId: '10000000-0000-4000-8000-000000000001',
       providerConfig: null,
+      agentReviewMode: false,
+      agentGeneration: DEFAULT_AGENT_GENERATION,
     });
     await user.click(screen.getByRole('button', { name: 'Configure provider' }));
     await user.click(await screen.findByRole('button', { name: 'Clear provider' }));

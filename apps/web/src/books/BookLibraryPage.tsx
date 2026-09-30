@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
+import { MigrationReport } from './MigrationReport.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 function countLabel(book: BookSummary): string {
@@ -66,6 +67,8 @@ export function BookLibraryPage() {
           and continuity, checked by the <code>story</code> tool.
         </p>
       </header>
+
+      <MigrationReport />
 
       <form className="book-create" onSubmit={(event) => void handleCreate(event)}>
         <label htmlFor="new-book-title">New book title</label>

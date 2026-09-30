@@ -1,6 +1,6 @@
 # ADR 0011 — Prompt-orchestrated creative skills library
 
-**Status:** accepted · 2026-07-16 · decisions 3, 6, and 7 superseded by ADR 0015
+**Status:** accepted · 2026-07-16 · decisions 3, 6, and 7 superseded by ADR 0015; decisions 2, 4, and 5 (per-chat attachment, preset placement, snapshots) retired with notebooks by ADR 0017
 
 ## Context
 

@@ -16,6 +16,8 @@ import { migrateToVersion7 } from './migrations/007-global-provider-settings.js'
 import { migrateToVersion8 } from './migrations/008-books.js';
 import { migrateToVersion9 } from './migrations/009-notebook-migrations.js';
 import { migrateToVersion10 } from './migrations/010-agent-chats.js';
+import { migrateToVersion11 } from './migrations/011-pending-checkpoints.js';
+import { migrateToVersion12 } from './migrations/012-custom-agents-review-mode.js';
 import { resolveDataDir } from '../env.js';
 
 const tempDirs: string[] = [];
@@ -42,7 +44,7 @@ describe('database startup', () => {
 
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
-    expect(db.pragma('user_version', { simple: true })).toBe(12);
+    expect(db.pragma('user_version', { simple: true })).toBe(13);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -166,7 +168,7 @@ describe('database startup', () => {
     openDatabase(dataDir).close();
 
     const reopened = openDatabase(dataDir);
-    expect(reopened.pragma('user_version', { simple: true })).toBe(12);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(13);
     expect(reopened.prepare('SELECT count(*) FROM notebooks').pluck().get()).toBe(0);
     reopened.close();
   });
@@ -197,7 +199,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(12);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(13);
     expect(
       migrated.prepare('SELECT id, pending FROM book_checkpoints WHERE id = ?').get('checkpoint'),
     ).toEqual({ id: 'checkpoint', pending: 0 });
@@ -235,7 +237,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(12);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(13);
     expect(
       migrated
         .prepare('SELECT origin_json, conversion_notes_json FROM sources WHERE id = ?')
@@ -291,7 +293,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(12);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(13);
     expect(migrated.prepare('SELECT id, name FROM notebooks').get()).toEqual({
       id: 'notebook',
       name: 'Atlas',
@@ -351,7 +353,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(12);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(13);
     // Seeded from the most-recently-updated notebook's configured provider.
     expect(
       migrated.prepare('SELECT provider_config_json FROM app_settings WHERE id = 1').pluck().get(),
@@ -516,17 +518,62 @@ describe('database startup', () => {
     db.close();
   });
 
+  it('seeds agent generation settings from the default preset when presets retire', () => {
+    const dataDir = makeTempDir();
+    const legacy = new Database(join(dataDir, 'worldbookllm.db'));
+    for (const migrate of [
+      migrateToVersion1,
+      migrateToVersion2,
+      migrateToVersion3,
+      migrateToVersion4,
+      migrateToVersion5,
+      migrateToVersion6,
+      migrateToVersion7,
+      migrateToVersion8,
+      migrateToVersion9,
+      migrateToVersion10,
+      migrateToVersion11,
+      migrateToVersion12,
+    ]) {
+      migrate(legacy);
+    }
+    const presetId = legacy.prepare('SELECT default_preset_id FROM app_settings').pluck().get();
+    legacy
+      .prepare(
+        'UPDATE presets SET definition_json = json_set(definition_json, ?, ?, ?, ?, ?, json(?)) WHERE id = ?',
+      )
+      .run(
+        '$.generation.temperature',
+        0.35,
+        '$.generation.maxTokens',
+        900,
+        '$.generation.thinking',
+        'true',
+        presetId,
+      );
+    legacy.pragma('user_version = 12');
+    legacy.close();
+
+    const migrated = openDatabase(dataDir);
+    expect(
+      JSON.parse(
+        migrated.prepare('SELECT agent_generation_json FROM app_settings').pluck().get() as string,
+      ),
+    ).toEqual({ temperature: 0.35, topP: null, maxTokens: 900, thinking: true });
+    migrated.close();
+  });
+
   it('rejects databases newer than this application without downgrading them', () => {
     const dataDir = makeTempDir();
     const file = join(dataDir, 'worldbookllm.db');
     const future = new Database(file);
-    future.pragma('user_version = 13');
+    future.pragma('user_version = 14');
     future.close();
 
-    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 13/u);
+    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 14/u);
 
     const unchanged = new Database(file);
-    expect(unchanged.pragma('user_version', { simple: true })).toBe(13);
+    expect(unchanged.pragma('user_version', { simple: true })).toBe(14);
     unchanged.close();
   });
 });

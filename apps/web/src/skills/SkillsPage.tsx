@@ -6,7 +6,6 @@ import { useApi } from '../api/useApi.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { StorySkillsInstall } from '../agent/StorySkillsInstall.js';
-import { StarterSkillsDialog } from './StarterSkillsDialog.js';
 
 type LoadState =
   { status: 'loading' } | { status: 'error' } | { status: 'ready'; skills: SkillMetadata[] };
@@ -50,7 +49,6 @@ export function SkillsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<SkillMetadata | null>(null);
-  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -144,9 +142,9 @@ export function SkillsPage() {
       <p className="coordinate-label">Craft library · {skills.length} skills</p>
       <h1>Skills</h1>
       <p className="page-intro">
-        Reusable craft instructions the model can be given per chat — worldbuilding frameworks,
-        character-voice guides, story diagnostics. Each skill is a Markdown file in your data
-        directory, yours to edit.
+        Craft instructions the book agent loads when a request calls for them: planning, drafting,
+        revision, continuity. Each skill is a Markdown file in your data directory, yours to edit,
+        and a custom agent can be limited to some of them.
       </p>
       <div className="preset-toolbar">
         <button
@@ -161,18 +159,13 @@ export function SkillsPage() {
           New skill
         </button>
         <StorySkillsInstall onInstalled={refresh} />
-        <button type="button" className="button-secondary" onClick={() => setInstalling(true)}>
-          Install starter skills
-        </button>
       </div>
       {error === null ? null : <p role="alert">{error}</p>}
       <div className="preset-studio-grid">
         <section className="preset-library" aria-label="Skill library">
           <h2>Library</h2>
           {skills.length === 0 ? (
-            <p className="empty-inline">
-              No skills yet — install the starter set or create your own.
-            </p>
+            <p className="empty-inline">No skills yet. Install Story Skills or create your own.</p>
           ) : (
             <ul>
               {skills.map((skill) => (
@@ -283,20 +276,11 @@ export function SkillsPage() {
           onConfirm={() => void confirmDelete()}
         >
           <p>
-            This removes the skill and its files from your data directory. Chats that attached it
-            will need a new selection.
+            This removes the skill and its files from your data directory. Custom agents that chose
+            it will no longer see it.
           </p>
         </ConfirmDialog>
       )}
-      {installing ? (
-        <StarterSkillsDialog
-          onClose={() => setInstalling(false)}
-          onInstalled={() => {
-            setInstalling(false);
-            refresh();
-          }}
-        />
-      ) : null}
     </div>
   );
 }

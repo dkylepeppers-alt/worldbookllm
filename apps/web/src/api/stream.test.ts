@@ -1,12 +1,12 @@
-import type { AgentMessage, AgentStreamEvent, Message, StreamEvent } from '@worldbookllm/shared';
+import type { AgentMessage, AgentStreamEvent } from '@worldbookllm/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiClientError } from './client.js';
-import { streamAgentMessage, streamChatMessage, streamRegenerate } from './stream.js';
+import { streamAgentMessage } from './stream.js';
 
 const chatId = '60a0bf0c-031d-497c-9c1a-2f68441936a6';
 
-const assistantMessage: Message = {
+const assistantMessage: AgentMessage = {
   id: '0c8f34e8-96b5-4c62-8f2e-27e6a9f14d55',
   chatId,
   seq: 1,
@@ -14,16 +14,14 @@ const assistantMessage: Message = {
   content: 'Hello there.',
   reasoning: null,
   status: 'complete',
-  context: {
-    sourceIds: [],
-    provider: 'nanogpt',
-    model: 'nano-story',
-    strictness: 'grounded',
-  },
+  note: null,
+  steps: [],
+  checkpointId: null,
   createdAt: '2026-07-14T12:00:00.000Z',
+  updatedAt: '2026-07-14T12:00:00.000Z',
 };
 
-function frame(event: StreamEvent | AgentStreamEvent): string {
+function frame(event: AgentStreamEvent): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
@@ -41,29 +39,7 @@ function sseResponse(chunks: string[]): Response {
   });
 }
 
-describe('streamRegenerate', () => {
-  it('posts to the regenerate endpoint with no request body', async () => {
-    const wire =
-      frame({ type: 'delta', text: 'Again' }) + frame({ type: 'done', message: assistantMessage });
-    const fetchImpl = vi.fn().mockResolvedValue(sseResponse([wire]));
-    const events: StreamEvent[] = [];
-
-    await streamRegenerate(chatId, { onEvent: (event) => events.push(event), fetchImpl });
-
-    expect(fetchImpl).toHaveBeenCalledWith(
-      `/api/chats/${chatId}/regenerate`,
-      expect.objectContaining({ method: 'POST' }),
-    );
-    const init = fetchImpl.mock.calls[0]?.[1] as RequestInit;
-    expect(init.body).toBeUndefined();
-    expect(events).toEqual([
-      { type: 'delta', text: 'Again' },
-      { type: 'done', message: assistantMessage },
-    ]);
-  });
-});
-
-describe('streamChatMessage', () => {
+describe('SSE stream reading', () => {
   it('posts the user message and emits events split across chunk boundaries', async () => {
     const first = frame({ type: 'delta', text: 'Hel' });
     const second = frame({ type: 'delta', text: 'lo' });
@@ -72,12 +48,12 @@ describe('streamChatMessage', () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(sseResponse([wire.slice(0, 10), wire.slice(10, 11), wire.slice(11)]));
-    const events: StreamEvent[] = [];
+    const events: AgentStreamEvent[] = [];
 
-    await streamChatMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
+    await streamAgentMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      `/api/chats/${chatId}/messages`,
+      `/api/agent-chats/${chatId}/messages`,
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ content: 'Hi' }) }),
     );
     expect(events).toEqual([
@@ -93,16 +69,16 @@ describe('streamChatMessage', () => {
       frame({ type: 'delta', text: 'b' }) +
       frame({ type: 'done', message: assistantMessage });
     const fetchImpl = vi.fn().mockResolvedValue(sseResponse([wire]));
-    const events: StreamEvent[] = [];
+    const events: AgentStreamEvent[] = [];
 
-    await streamChatMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
+    await streamAgentMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
 
     expect(events).toHaveLength(3);
     expect(events[0]).toEqual({ type: 'delta', text: 'a', reasoning: 'thinking' });
   });
 
   it('emits a validated error event with its persisted message state', async () => {
-    const errored: Message = { ...assistantMessage, content: 'partial', status: 'error' };
+    const errored: AgentMessage = { ...assistantMessage, content: 'partial', status: 'error' };
     const wire = frame({
       type: 'error',
       code: 'provider_error',
@@ -110,9 +86,9 @@ describe('streamChatMessage', () => {
       messageState: errored,
     });
     const fetchImpl = vi.fn().mockResolvedValue(sseResponse([wire]));
-    const events: StreamEvent[] = [];
+    const events: AgentStreamEvent[] = [];
 
-    await streamChatMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
+    await streamAgentMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
 
     expect(events).toEqual([
       {
@@ -129,9 +105,9 @@ describe('streamChatMessage', () => {
       `event: delta\r\ndata: {"type":"delta","text":"a"}\r\n\r\n` +
       `event: done\r\ndata: ${JSON.stringify({ type: 'done', message: assistantMessage })}\r\n\r\n`;
     const fetchImpl = vi.fn().mockResolvedValue(sseResponse([wire]));
-    const events: StreamEvent[] = [];
+    const events: AgentStreamEvent[] = [];
 
-    await streamChatMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
+    await streamAgentMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
 
     expect(events).toEqual([
       { type: 'delta', text: 'a' },
@@ -144,9 +120,9 @@ describe('streamChatMessage', () => {
       'event: delta\ndata: {"type":"delta","text":"a"}\n\n' +
       `event: done\ndata: ${JSON.stringify({ type: 'done', message: assistantMessage })}`;
     const fetchImpl = vi.fn().mockResolvedValue(sseResponse([wire]));
-    const events: StreamEvent[] = [];
+    const events: AgentStreamEvent[] = [];
 
-    await streamChatMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
+    await streamAgentMessage(chatId, 'Hi', { onEvent: (event) => events.push(event), fetchImpl });
 
     expect(events).toEqual([
       { type: 'delta', text: 'a' },
@@ -160,7 +136,7 @@ describe('streamChatMessage', () => {
       .mockResolvedValue(sseResponse(['event: delta\ndata: {"type":"delta","text":"a"}\n\n']));
 
     await expect(
-      streamChatMessage(chatId, 'Hi', { onEvent: () => undefined, fetchImpl }),
+      streamAgentMessage(chatId, 'Hi', { onEvent: () => undefined, fetchImpl }),
     ).rejects.toBeInstanceOf(ApiClientError);
   });
 
@@ -168,7 +144,7 @@ describe('streamChatMessage', () => {
     const fetchImpl = vi.fn().mockResolvedValue(sseResponse(['event: delta\ndata: {nope\n\n']));
 
     await expect(
-      streamChatMessage(chatId, 'Hi', { onEvent: () => undefined, fetchImpl }),
+      streamAgentMessage(chatId, 'Hi', { onEvent: () => undefined, fetchImpl }),
     ).rejects.toBeInstanceOf(ApiClientError);
   });
 
@@ -178,7 +154,7 @@ describe('streamChatMessage', () => {
       .mockResolvedValue(sseResponse(['event: delta\ndata: {"type":"delta"}\n\n']));
 
     await expect(
-      streamChatMessage(chatId, 'Hi', { onEvent: () => undefined, fetchImpl }),
+      streamAgentMessage(chatId, 'Hi', { onEvent: () => undefined, fetchImpl }),
     ).rejects.toBeInstanceOf(ApiClientError);
   });
 
@@ -193,7 +169,7 @@ describe('streamChatMessage', () => {
       ),
     );
 
-    const failure = await streamChatMessage(chatId, 'Hi', {
+    const failure = await streamAgentMessage(chatId, 'Hi', {
       onEvent: () => undefined,
       fetchImpl,
     }).then(
@@ -220,9 +196,9 @@ describe('streamChatMessage', () => {
       });
       return Promise.resolve(new Response(body, { status: 200 }));
     });
-    const events: StreamEvent[] = [];
+    const events: AgentStreamEvent[] = [];
 
-    const pending = streamChatMessage(chatId, 'Hi', {
+    const pending = streamAgentMessage(chatId, 'Hi', {
       signal: controller.signal,
       onEvent: (event) => {
         events.push(event);

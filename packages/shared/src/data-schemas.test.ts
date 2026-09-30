@@ -1,50 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  coalesceCanonicalMessages,
   apiErrorSchema,
-  createNotebookSchema,
+  connectionTestResponseSchema,
   createSecretSchema,
-  createSourceSchema,
-  notebookListSchema,
-  patchNotebookSchema,
-  patchSourceSchema,
-  patchMessageSchema,
+  modelListResponseSchema,
+  providerCatalogEntrySchema,
   providerConfigSchema,
+  providerConnectionSchema,
   providerSourceSchema,
   secretStateSchema,
-  sourceDetailSchema,
-  sourceMetadataListSchema,
   sourceOriginSchema,
 } from './index.js';
-import {
-  SOURCE_ORGANIZATION_MAX_CONTENT,
-  existingSourceOrganizationRequestSchema,
-  existingSourceOrganizationResponseSchema,
-  sourceOrganizationRequestSchema,
-  sourceOrganizationResponseSchema,
-} from './sources.js';
 
 describe('data API schemas', () => {
-  it('coalesces only adjacent canonical messages with the same role without mutating input', () => {
-    const input = [
-      { role: 'system' as const, content: 'System one' },
-      { role: 'system' as const, content: 'System two' },
-      { role: 'user' as const, content: 'User one' },
-      { role: 'assistant' as const, content: 'Assistant one' },
-      { role: 'assistant' as const, content: 'Assistant two' },
-      { role: 'system' as const, content: 'System three' },
-    ];
-
-    expect(coalesceCanonicalMessages(input)).toEqual([
-      { role: 'system', content: 'System one\n\nSystem two' },
-      { role: 'user', content: 'User one' },
-      { role: 'assistant', content: 'Assistant one\n\nAssistant two' },
-      { role: 'system', content: 'System three' },
-    ]);
-    expect(input[0]?.content).toBe('System one');
-  });
-
   it('pins every M1 provider source', () => {
     expect(providerSourceSchema.options).toEqual([
       'openai',
@@ -95,86 +64,6 @@ describe('data API schemas', () => {
     ).toThrow();
   });
 
-  it('trims notebook input and requires a name to rename', () => {
-    expect(createNotebookSchema.parse({ name: ' Atlas ' })).toEqual({ name: 'Atlas' });
-    expect(() => createNotebookSchema.parse({ name: '' })).toThrow();
-    expect(() => patchNotebookSchema.parse({})).toThrow();
-    expect(patchNotebookSchema.parse({ name: ' Revised ' })).toEqual({ name: 'Revised' });
-  });
-
-  it('validates pasted sources and source detail responses', () => {
-    expect(createSourceSchema.parse({ title: ' Lore ', content: '# Lore' })).toEqual({
-      title: 'Lore',
-      content: '# Lore',
-      origin: { type: 'paste' },
-      conversionNotes: [],
-      category: null,
-      tags: [],
-    });
-    expect(
-      createSourceSchema.parse({
-        title: 'Lore',
-        content: '# Lore',
-        category: 'factions',
-        tags: ['iron-compact'],
-      }),
-    ).toMatchObject({ category: 'factions', tags: ['iron-compact'] });
-    expect(() =>
-      createSourceSchema.parse({ title: 'Lore', content: '# Lore', category: 'weather' }),
-    ).toThrow();
-    expect(() =>
-      createSourceSchema.parse({ title: 'Lore', content: 'x'.repeat(10_485_761) }),
-    ).toThrow();
-
-    const detail = {
-      id: 'f9942d0a-eaca-41a8-a3d8-87987cc173fd',
-      notebookId: 'a0c7607c-b365-438b-a7e6-31b2308464b6',
-      title: 'Lore',
-      slug: 'lore',
-      filePath:
-        'notebooks/a0c7607c-b365-438b-a7e6-31b2308464b6/sources/f9942d0a-eaca-41a8-a3d8-87987cc173fd-lore.md',
-      origin: { type: 'paste' },
-      conversionNotes: [],
-      category: null,
-      tags: [],
-      wordCount: 2,
-      contentHash: 'a'.repeat(64),
-      createdAt: '2026-07-10T12:00:00.000Z',
-      updatedAt: '2026-07-10T12:00:00.000Z',
-      content: '# Lore',
-    };
-    expect(sourceDetailSchema.parse(detail)).toEqual(detail);
-  });
-
-  it('validates source edits and requires at least one field', () => {
-    expect(patchSourceSchema.parse({ title: ' Renamed ' })).toEqual({ title: 'Renamed' });
-    expect(patchSourceSchema.parse({ content: '# New body' })).toEqual({ content: '# New body' });
-    expect(patchSourceSchema.parse({ title: 'A', content: 'B' })).toEqual({
-      title: 'A',
-      content: 'B',
-    });
-    expect(patchSourceSchema.parse({ category: 'places' })).toEqual({ category: 'places' });
-    expect(patchSourceSchema.parse({ category: null })).toEqual({ category: null });
-    expect(patchSourceSchema.parse({ tags: [' Iron-Compact '] })).toEqual({
-      tags: ['Iron-Compact'],
-    });
-    expect(() => patchSourceSchema.parse({})).toThrow();
-    expect(() => patchSourceSchema.parse({ title: '' })).toThrow();
-    expect(() => patchSourceSchema.parse({ content: '' })).toThrow();
-    expect(() => patchSourceSchema.parse({ category: 'weather' })).toThrow();
-    expect(() => patchSourceSchema.parse({ tags: [''] })).toThrow();
-    expect(() => patchSourceSchema.parse({ tags: ['court, royal'] })).toThrow();
-    expect(() => patchSourceSchema.parse({ origin: { type: 'paste' } })).toThrow();
-  });
-
-  it('validates active-variant selection patches', () => {
-    expect(patchMessageSchema.parse({ activeVariant: 0 })).toEqual({ activeVariant: 0 });
-    expect(patchMessageSchema.parse({ activeVariant: 3 })).toEqual({ activeVariant: 3 });
-    expect(() => patchMessageSchema.parse({ activeVariant: -1 })).toThrow();
-    expect(() => patchMessageSchema.parse({ activeVariant: 1.5 })).toThrow();
-    expect(() => patchMessageSchema.parse({})).toThrow();
-  });
-
   it('accepts every documented source origin variant and rejects unsafe URLs', () => {
     expect(sourceOriginSchema.parse({ type: 'paste' })).toEqual({ type: 'paste' });
     expect(
@@ -202,31 +91,7 @@ describe('data API schemas', () => {
     expect(() => sourceOriginSchema.parse({ ...assistantOrigin, extra: true })).toThrow();
   });
 
-  it('validates collection responses and stable API errors', () => {
-    const notebook = {
-      id: 'a0c7607c-b365-438b-a7e6-31b2308464b6',
-      name: 'Atlas',
-      createdAt: '2026-07-10T12:00:00.000Z',
-      updatedAt: '2026-07-10T12:00:00.000Z',
-    };
-    const source = {
-      id: 'f9942d0a-eaca-41a8-a3d8-87987cc173fd',
-      notebookId: notebook.id,
-      title: 'Lore',
-      slug: 'lore',
-      filePath: `notebooks/${notebook.id}/sources/f9942d0a-eaca-41a8-a3d8-87987cc173fd-lore.md`,
-      origin: { type: 'paste' },
-      conversionNotes: [],
-      category: null,
-      tags: [],
-      wordCount: 2,
-      contentHash: 'a'.repeat(64),
-      createdAt: '2026-07-10T12:00:00.000Z',
-      updatedAt: '2026-07-10T12:00:00.000Z',
-    };
-
-    expect(notebookListSchema.parse([notebook])).toEqual([notebook]);
-    expect(sourceMetadataListSchema.parse([source])).toEqual([source]);
+  it('validates stable API errors', () => {
     expect(
       apiErrorSchema.parse({
         error: 'validation_error',
@@ -265,114 +130,39 @@ describe('data API schemas', () => {
     ).toBeTruthy();
     expect(() => createSecretSchema.parse({ key: '../bad', value: 'secret' })).toThrow();
   });
-});
 
-describe('source organization schemas', () => {
-  it('accepts indexed drafts and canonical suggestions', () => {
-    expect(
-      sourceOrganizationRequestSchema.parse({
-        drafts: [
-          { index: 0, title: 'Iron Compact', content: 'A trade league.' },
-          { index: 7, title: 'Glass Marsh', content: 'A tidal wetland.' },
-        ],
-      }),
-    ).toEqual({
-      drafts: [
-        { index: 0, title: 'Iron Compact', content: 'A trade league.' },
-        { index: 7, title: 'Glass Marsh', content: 'A tidal wetland.' },
-      ],
-    });
-
-    expect(
-      sourceOrganizationResponseSchema.parse({
-        suggestions: [{ index: 0, category: 'factions', tags: ['iron-compact', 'trade-league'] }],
-        warning: null,
-      }),
-    ).toEqual({
-      suggestions: [{ index: 0, category: 'factions', tags: ['iron-compact', 'trade-league'] }],
-      warning: null,
-    });
-  });
-
-  it('rejects duplicate indices, oversized batches, and oversized cumulative content', () => {
-    expect(() =>
-      sourceOrganizationRequestSchema.parse({
-        drafts: [
-          { index: 0, title: 'One', content: 'One' },
-          { index: 0, title: 'Two', content: 'Two' },
-        ],
-      }),
-    ).toThrow();
-    expect(() =>
-      sourceOrganizationRequestSchema.parse({
-        drafts: Array.from({ length: 101 }, (_, index) => ({
-          index,
-          title: `Source ${index}`,
-          content: 'Body',
-        })),
-      }),
-    ).toThrow();
-    expect(() =>
-      sourceOrganizationRequestSchema.parse({
-        drafts: [
-          { index: 0, title: 'Large', content: 'x'.repeat(SOURCE_ORGANIZATION_MAX_CONTENT + 1) },
-        ],
-      }),
-    ).toThrow();
-  });
-
-  it('rejects noncanonical categories and more than five suggested tags', () => {
-    expect(() =>
-      sourceOrganizationResponseSchema.parse({
-        suggestions: [{ index: 0, category: 'ships', tags: [] }],
-        warning: null,
-      }),
-    ).toThrow();
-    expect(() =>
-      sourceOrganizationResponseSchema.parse({
-        suggestions: [{ index: 0, category: null, tags: ['a', 'b', 'c', 'd', 'e', 'f'] }],
-        warning: null,
-      }),
-    ).toThrow();
-  });
-
-  it('accepts existing-source requests and id-keyed suggestions', () => {
-    const first = '0b3452a4-9a2e-4f3b-8f68-4a35f8e5d001';
-    const second = '0b3452a4-9a2e-4f3b-8f68-4a35f8e5d002';
-    expect(existingSourceOrganizationRequestSchema.parse({ sourceIds: [first, second] })).toEqual({
-      sourceIds: [first, second],
+  it('separates provider connection fields from complete config', () => {
+    expect(providerConnectionSchema.parse({ source: 'nanogpt' })).toEqual({
+      source: 'nanogpt',
     });
     expect(
-      existingSourceOrganizationResponseSchema.parse({
-        suggestions: [{ sourceId: first, category: 'factions', tags: ['iron-compact'] }],
-        warning: null,
+      providerConfigSchema.parse({
+        source: 'custom',
+        model: 'local',
+        baseUrl: 'http://localhost:8080',
       }),
-    ).toEqual({
-      suggestions: [{ sourceId: first, category: 'factions', tags: ['iron-compact'] }],
-      warning: null,
-    });
+    ).toEqual({ source: 'custom', model: 'local', baseUrl: 'http://localhost:8080' });
+    expect(() => providerConnectionSchema.parse({ source: 'nanogpt', model: 'nope' })).toThrow();
   });
 
-  it('rejects existing-source requests with duplicates, non-uuids, or too many ids', () => {
-    const id = '0b3452a4-9a2e-4f3b-8f68-4a35f8e5d001';
-    expect(() => existingSourceOrganizationRequestSchema.parse({ sourceIds: [] })).toThrow();
-    expect(() => existingSourceOrganizationRequestSchema.parse({ sourceIds: [id, id] })).toThrow();
-    expect(() =>
-      existingSourceOrganizationRequestSchema.parse({ sourceIds: ['not-a-uuid'] }),
-    ).toThrow();
-    expect(() =>
-      existingSourceOrganizationRequestSchema.parse({
-        sourceIds: Array.from(
-          { length: 101 },
-          (_, index) => `0b3452a4-9a2e-4f3b-8f68-4a35f8e5${String(index).padStart(4, '0')}`,
-        ),
+  it('validates provider catalog and operation responses', () => {
+    expect(
+      providerCatalogEntrySchema.parse({
+        source: 'workers_ai',
+        label: 'Cloudflare Workers AI',
+        family: 'openai-compat',
+        secretKey: 'api_key_workers_ai',
+        modelSource: 'live',
+        extraFields: [{ key: 'accountId', label: 'Account ID', required: true }],
+        hasSecret: false,
       }),
-    ).toThrow();
-    expect(() =>
-      existingSourceOrganizationResponseSchema.parse({
-        suggestions: [{ sourceId: id, category: 'ships', tags: [] }],
-        warning: null,
-      }),
-    ).toThrow();
+    ).toBeTruthy();
+    expect(modelListResponseSchema.parse({ models: [{ id: 'model', vendorField: 42 }] })).toEqual({
+      models: [{ id: 'model', vendorField: 42 }],
+    });
+    expect(connectionTestResponseSchema.parse({ ok: true, detail: 'reachable' })).toEqual({
+      ok: true,
+      detail: 'reachable',
+    });
   });
 });

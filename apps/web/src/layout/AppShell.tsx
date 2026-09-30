@@ -4,15 +4,12 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <Link className="wordmark" to="/">
+        <Link className="wordmark" to="/books">
           worldbookllm
         </Link>
         <nav className="site-nav" aria-label="Primary">
-          <NavLink to="/" end>
-            Notebooks
-          </NavLink>
           <NavLink to="/books">Books</NavLink>
-          <NavLink to="/presets">Presets</NavLink>
+          <NavLink to="/agents">Agents</NavLink>
           <NavLink to="/skills">Skills</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
