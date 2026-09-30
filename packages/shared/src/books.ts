@@ -116,6 +116,29 @@ export const createBookSchema = z.strictObject({
   synopsis: z.string().trim().min(1).max(2000).optional(),
 });
 
+/** A new series: its folder and series bible (ADR 0018). */
+export const createSeriesSchema = z.strictObject({
+  title: z.string().trim().min(1).max(300),
+});
+
+/** A new book inside a series, optionally linked after or before one of its books. */
+export const addSeriesBookSchema = z
+  .strictObject({
+    title: z.string().trim().min(1).max(300),
+    follows: bookSlugSchema.optional(),
+    precedes: bookSlugSchema.optional(),
+    bookNumber: z.number().int().positive().max(999).optional(),
+  })
+  .refine((input) => input.follows === undefined || input.precedes === undefined, {
+    message: 'A new book follows one book or precedes one, not both',
+  });
+
+/** Moves a standalone book into a series: an existing one, or a new one with this title. */
+export const moveBookToSeriesSchema = z.union([
+  z.strictObject({ seriesId: bookSlugSchema }),
+  z.strictObject({ newSeriesTitle: z.string().trim().min(1).max(300) }),
+]);
+
 export const BOOK_FILE_MAX_CHARS = 5_000_000;
 
 export const writeBookFileSchema = z.strictObject({
@@ -259,6 +282,9 @@ export type BookTree = z.infer<typeof bookTreeSchema>;
 export type CreateBookInput = z.infer<typeof createBookSchema>;
 export type WriteBookFileInput = z.infer<typeof writeBookFileSchema>;
 export type StoryOptions = z.infer<typeof storyOptionsSchema>;
+export type CreateSeriesInput = z.infer<typeof createSeriesSchema>;
+export type AddSeriesBookInput = z.infer<typeof addSeriesBookSchema>;
+export type MoveBookToSeriesInput = z.infer<typeof moveBookToSeriesSchema>;
 export type AddEntityInput = z.infer<typeof addEntitySchema>;
 export type RenameEntityInput = z.infer<typeof renameEntitySchema>;
 export type MoveEntityInput = z.infer<typeof moveEntitySchema>;

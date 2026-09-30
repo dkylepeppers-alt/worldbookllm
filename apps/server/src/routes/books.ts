@@ -1,5 +1,6 @@
 import {
   addEntitySchema,
+  addSeriesBookSchema,
   bookCheckParamsSchema,
   bookFilePathSchema,
   bookParamsSchema,
@@ -7,7 +8,9 @@ import {
   checkpointParamsSchema,
   createBookImportSchema,
   createBookSchema,
+  createSeriesSchema,
   entityParamsSchema,
+  moveBookToSeriesSchema,
   moveEntitySchema,
   renameEntitySchema,
   writeBookFileSchema,
@@ -64,6 +67,27 @@ export function registerBookRoutes(app: FastifyInstance): void {
   app.get('/api/books/:book', (request) => {
     const { book } = bookParamsSchema.parse(request.params);
     return books().get(book);
+  });
+
+  // Series (ADR 0018): a series bible is addressed like a book, by the series id.
+  app.post('/api/series', async (request, reply) =>
+    reply.status(201).send(await books().createSeries(createSeriesSchema.parse(request.body))),
+  );
+
+  app.post('/api/series/:book/books', async (request, reply) => {
+    const { book: seriesId } = bookParamsSchema.parse(request.params);
+    const input = addSeriesBookSchema.parse(request.body);
+    return reply.status(201).send(await books().addToSeries(seriesId, input));
+  });
+
+  app.post('/api/books/:book/series', async (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    const input = moveBookToSeriesSchema.parse(request.body);
+    const seriesId =
+      'seriesId' in input
+        ? input.seriesId
+        : (await books().createSeries({ title: input.newSeriesTitle })).slug;
+    return books().moveIntoSeries(book, seriesId);
   });
 
   app.delete('/api/books/:book', async (request, reply) => {

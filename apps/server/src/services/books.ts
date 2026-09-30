@@ -13,7 +13,9 @@ import {
   type BookTree,
   type Checkpoint,
   type CheckpointDetail,
+  type AddSeriesBookInput,
   type CreateBookInput,
+  type CreateSeriesInput,
   type CreateBookImportInput,
   type ManuscriptImportResult,
   type MoveEntityInput,
@@ -24,7 +26,7 @@ import {
   type WriteBookFileInput,
 } from '@worldbookllm/shared';
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -43,6 +45,7 @@ import {
 } from '../story/book-import.js';
 import { sha256 } from '../story/book-files.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
+import { setFrontmatterField } from '../story/frontmatter-edit.js';
 import type {
   CheckpointActor,
   CheckpointService,
@@ -60,7 +63,8 @@ const CREATE_LOCK = '\0create';
 
 /** Agent chats tied to a book. Attached after both services exist (they refer to each other). */
 export interface BookChatLifecycle {
-  assertIdle(book: string): void;
+  /** Refuses while one of the book's chats has a turn running; `action` ends the message. */
+  assertIdle(book: string, action?: string): void;
   removeForBook(book: string): void;
 }
 
@@ -137,6 +141,96 @@ export class BookService {
       this.checkCache.delete(slug);
       this.chatLifecycle?.removeForBook(slug);
     });
+  }
+
+  /** Creates a series (ADR 0018): its folder and its bible, addressed by the series id. */
+  async createSeries(input: CreateSeriesInput): Promise<BookSummary> {
+    const id = await this.locks.run(CREATE_LOCK, async () => {
+      const free = this.freeSlug(input.title);
+      const folder = join(this.files.seriesDir, free);
+      mkdirSync(folder, { recursive: true });
+      try {
+        await this.cli.runOrThrow({
+          command: 'init',
+          cwd: folder,
+          dir: 'series-bible',
+          args: [input.title],
+          options: { series: free },
+        });
+      } catch (error) {
+        rmSync(folder, { recursive: true, force: true });
+        throw error;
+      }
+      return free;
+    });
+    this.files.rescan();
+    return this.summary(id);
+  }
+
+  /**
+   * Starts a new book inside a series. Linking it after or before a sibling
+   * also rewrites that sibling's story.md, so the link is a checkpoint there.
+   */
+  async addToSeries(seriesId: string, input: AddSeriesBookInput): Promise<BookSummary> {
+    const bible = this.files.locate(seriesId);
+    if (bible.kind !== 'series-bible') throw new NotFoundError(`Series ${seriesId} was not found`);
+    const anchor = input.follows ?? input.precedes;
+    if (anchor !== undefined && this.files.locate(anchor).seriesId !== seriesId) {
+      throw new ConflictError('not_in_series', `${anchor} is not a book in ${seriesId}.`);
+    }
+    const folder = join(this.files.seriesDir, seriesId);
+    const slug = await this.locks.run(CREATE_LOCK, async () => {
+      const free = this.freeSlug(input.title);
+      const options: StoryOptions = { series: seriesId };
+      if (input.follows !== undefined) options.follows = [input.follows];
+      if (input.precedes !== undefined) options.precedes = [input.precedes];
+      if (input.bookNumber !== undefined) options['book-number'] = String(input.bookNumber);
+      const init = () =>
+        this.cli.runOrThrow({
+          command: 'init',
+          cwd: folder,
+          dir: free,
+          args: [input.title],
+          options,
+        });
+      if (anchor === undefined) {
+        await init();
+      } else {
+        await this.locks.run(anchor, async () => {
+          await this.checkpoints.record(anchor, `Link ${input.title}`, 'user', 'book', init);
+          this.index.reconcile(anchor);
+        });
+      }
+      return free;
+    });
+    this.files.rescan();
+    return this.summary(slug);
+  }
+
+  /** Moves a standalone book into an existing series and names the series in its story.md. */
+  async moveIntoSeries(slug: string, seriesId: string): Promise<BookSummary> {
+    const bible = this.files.locate(seriesId);
+    if (bible.kind !== 'series-bible') throw new NotFoundError(`Series ${seriesId} was not found`);
+    await this.locks.run(slug, async () => {
+      this.chatLifecycle?.assertIdle(slug, 'moving it into a series');
+      const location = this.files.locate(slug);
+      if (location.kind !== 'book' || location.seriesId !== null) {
+        throw new ConflictError('already_in_series', `${slug} is already part of a series.`);
+      }
+      const target = join(this.files.seriesDir, seriesId, slug);
+      if (existsSync(target)) {
+        throw new ConflictError('slug_taken', `${seriesId} already has a folder named ${slug}.`);
+      }
+      renameSync(location.root, target);
+      this.files.rescan();
+      this.checkCache.delete(slug);
+      const story = this.files.readBytes(slug, 'story.md')?.toString('utf8') ?? '';
+      await this.checkpoints.record(slug, `Join series ${seriesId}`, 'user', 'book', () =>
+        this.files.write(slug, 'story.md', setFrontmatterField(story, 'series', seriesId)),
+      );
+      this.index.reconcile(slug);
+    });
+    return this.summary(slug);
   }
 
   tree(slug: string): BookTree {

@@ -122,7 +122,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   );
   const storySkills = new StorySkillsInstaller(skills, skillsRoot);
   books.attachChatLifecycle({
-    assertIdle: (book) => agent.assertBookIdle(book),
+    assertIdle: (book, action) => agent.assertBookIdle(book, action),
     removeForBook: (book) => agent.removeChatsForBook(book),
   });
   const notebookMigration = new NotebookMigrationService(db, books, agent, settings, dataDir);
