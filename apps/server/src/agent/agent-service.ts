@@ -79,12 +79,109 @@ function toMessage(row: AgentMessageRow): AgentMessage {
   };
 }
 
-/** Caps a tool result at 24 KB, telling the model how much was left out. */
+function omissionNotice(omitted: number): string {
+  return `\n[truncated: ${omitted} bytes omitted]`;
+}
+
+/**
+ * Caps a tool result at 24 KB, including the omission notice, and never cuts
+ * inside a UTF-8 character.
+ */
 export function truncateResult(result: string): string {
-  const bytes = Buffer.byteLength(result, 'utf8');
-  if (bytes <= TOOL_RESULT_MAX_BYTES) return result;
-  const kept = Buffer.from(result, 'utf8').subarray(0, TOOL_RESULT_MAX_BYTES).toString('utf8');
-  return `${kept}\n[truncated: ${bytes - Buffer.byteLength(kept, 'utf8')} bytes omitted]`;
+  const buf = Buffer.from(result, 'utf8');
+  if (buf.length <= TOOL_RESULT_MAX_BYTES) return result;
+
+  // A continuation byte is 10xxxxxx. Walk back to the start of the character.
+  const boundary = (index: number): number => {
+    let end = index;
+    while (end > 0 && (buf[end]! & 0xc0) === 0x80) end -= 1;
+    return end;
+  };
+
+  let kept = boundary(
+    Math.max(0, TOOL_RESULT_MAX_BYTES - Buffer.byteLength(omissionNotice(buf.length), 'utf8')),
+  );
+  let notice = omissionNotice(buf.length - kept);
+  while (kept > 0 && kept + Buffer.byteLength(notice, 'utf8') > TOOL_RESULT_MAX_BYTES) {
+    kept = boundary(kept - 1);
+    notice = omissionNotice(buf.length - kept);
+  }
+  return `${buf.subarray(0, kept).toString('utf8')}${notice}`;
+}
+
+/**
+ * Arguments sent back to the provider. A malformed JSON string would make
+ * Claude's next request fail to build (`JSON.parse` in convertClaudeMessages),
+ * so the provider sees an empty object and the tool result carries the error.
+ * The recorded step keeps the raw string.
+ */
+export function providerToolArguments(raw: string): string {
+  try {
+    JSON.parse(raw);
+    return raw;
+  } catch {
+    return '{}';
+  }
+}
+
+/** Rebuilds the provider conversation, including tool calls stored on each step. */
+export function historyMessages(history: AgentMessage[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  for (const message of history) {
+    if (message.role === 'user') {
+      if (message.content.trim() !== '') messages.push({ role: 'user', content: message.content });
+      continue;
+    }
+    if (message.steps.length === 0) {
+      if (message.content.trim() !== '') {
+        messages.push({ role: 'assistant', content: message.content });
+      }
+      continue;
+    }
+    for (const step of message.steps) {
+      if (step.toolCalls.length > 0) {
+        messages.push({
+          role: 'assistant',
+          content: step.text === '' ? null : step.text,
+          tool_calls: step.toolCalls.map((call) => ({
+            id: call.id,
+            type: 'function' as const,
+            function: { name: call.name, arguments: providerToolArguments(call.arguments) },
+          })),
+        });
+        for (const call of step.toolCalls) {
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: call.ok ? call.result : `Error: ${call.result}`,
+          });
+        }
+      } else if (step.text.trim() !== '') {
+        messages.push({ role: 'assistant', content: step.text });
+      }
+    }
+    const fromSteps = message.steps
+      .map((step) => step.text)
+      .filter((text) => text.trim() !== '')
+      .join('\n\n');
+    const extra =
+      message.content === fromSteps
+        ? ''
+        : fromSteps.length === 0
+          ? message.content
+          : message.content.startsWith(`${fromSteps}\n\n`)
+            ? message.content.slice(fromSteps.length + 2)
+            : '';
+    if (extra.trim() !== '') messages.push({ role: 'assistant', content: extra });
+  }
+  return messages;
+}
+
+/** Gemma 3 on Google sources is sent no tools (see buildGoogleRequest). */
+function googleModelWithoutTools(config: ProviderConfig): boolean {
+  return (
+    (config.source === 'makersuite' || config.source === 'vertexai') && /gemma-3/.test(config.model)
+  );
 }
 
 function summarize(result: string): string {
@@ -164,7 +261,32 @@ export class AgentService {
 
   deleteChat(id: string): void {
     this.chatRow(id);
+    if (this.active.has(id)) {
+      throw new ConflictError(
+        'generation_in_progress',
+        'This chat has a turn running. Wait for it to finish before deleting it.',
+      );
+    }
     this.db.prepare('DELETE FROM agent_chats WHERE id = ?').run(id);
+  }
+
+  /** Refuses trash while one of the book's chats has a turn running. */
+  assertBookIdle(book: string): void {
+    const ids = this.db
+      .prepare('SELECT id FROM agent_chats WHERE book = ?')
+      .pluck()
+      .all(book) as string[];
+    if (ids.some((id) => this.active.has(id))) {
+      throw new ConflictError(
+        'generation_in_progress',
+        'An agent turn is running in this book. Wait for it to finish before trashing it.',
+      );
+    }
+  }
+
+  /** Removes the book's agent chats. Caller must have checked assertBookIdle. */
+  removeChatsForBook(book: string): void {
+    this.db.prepare('DELETE FROM agent_chats WHERE book = ?').run(book);
   }
 
   /** Validates the turn can run and records the user message and a streaming assistant message. */
@@ -181,6 +303,11 @@ export class AgentService {
     if (!supportsTools(config.source)) {
       throw new ConfigurationError(
         'The configured provider does not support tool calling, which the agent needs.',
+      );
+    }
+    if (googleModelWithoutTools(config)) {
+      throw new ConfigurationError(
+        'Gemma 3 models on Google sources do not support tool calling, which the agent needs.',
       );
     }
     this.active.add(chatId);
@@ -227,23 +354,11 @@ export class AgentService {
     emit: (event: AgentStreamEvent) => void,
   ): Promise<void> {
     const { chat, config } = prepared;
-    const controls = this.presets.resolve(null).generation;
-    const session: CheckpointSession = this.books.startSession(
-      chat.book,
-      `Agent: ${prepared.userContent.slice(0, 60)}`,
-      'agent',
-    );
-    const messages: ChatMessage[] = [
-      { role: 'system', content: this.systemPrompt(chat.book) },
-      ...prepared.history
-        .filter((message) => message.content.trim() !== '')
-        .map((message) => ({ role: message.role, content: message.content })),
-      { role: 'user', content: prepared.userContent },
-    ];
     const steps: AgentStep[] = [];
     const texts: string[] = [];
     let reasoning = '';
     let limited = false;
+    let session: CheckpointSession | undefined;
 
     const persist = (status: AgentMessage['status'], checkpointId: string | null = null) => {
       const content = [...texts, ...(limited ? [`(Stopped after ${AGENT_MAX_STEPS} steps.)`] : [])]
@@ -264,13 +379,33 @@ export class AgentService {
         );
       return this.message(prepared.assistant.id);
     };
-    const finishCheckpoint = () => {
-      const checkpoint = this.books.commitSession(session);
+    let checkpointSettled = false;
+    let checkpointId: string | null = null;
+    const finishCheckpoint = async (): Promise<string | null> => {
+      if (checkpointSettled) return checkpointId;
+      checkpointSettled = true;
+      if (!session) return null;
+      const checkpoint = await this.books.commitSession(session);
       if (checkpoint) emit({ type: 'checkpoint', checkpoint });
-      return checkpoint?.id ?? null;
+      checkpointId = checkpoint?.id ?? null;
+      return checkpointId;
     };
 
     try {
+      // Setup stays inside the try: a failure after prepare() has already
+      // stored a streaming message must be recorded, not left hanging.
+      const controls = this.presets.resolve(null).generation;
+      session = this.books.startSession(
+        chat.book,
+        `Agent: ${prepared.userContent.slice(0, 60)}`,
+        'agent',
+      );
+      const messages: ChatMessage[] = [
+        { role: 'system', content: this.systemPrompt(chat.book) },
+        ...historyMessages(prepared.history),
+        { role: 'user', content: prepared.userContent },
+      ];
+
       for (let index = 0; ; index += 1) {
         if (index === AGENT_MAX_STEPS) {
           limited = true;
@@ -293,6 +428,7 @@ export class AgentService {
         texts.push('');
 
         const accumulator = new ToolCallAccumulator();
+        let sawCompletion = false;
         const stream = await this.providers.openChatStream(config.source, request, signal);
         for await (const event of parseSseStream(stream)) {
           if (event.data === '[DONE]') break;
@@ -305,6 +441,7 @@ export class AgentService {
           accumulator.push(payload);
           const delta = normalizeStreamChunk(config.source, payload);
           if (!delta) continue;
+          sawCompletion = true;
           step.text += delta.text;
           texts[texts.length - 1] = step.text;
           reasoning += delta.reasoning ?? '';
@@ -316,18 +453,27 @@ export class AgentService {
         }
 
         const calls = accumulator.toolCalls();
-        if (calls.length === 0) break;
+        if (calls.length === 0) {
+          // The ordinary generation path treats a stream with no completion
+          // data as a provider error. A tool call counts as data; a blank
+          // step does not.
+          if (!sawCompletion) {
+            throw new ProviderError('Provider stream contained no completion data.', config.source);
+          }
+          break;
+        }
         messages.push({
           role: 'assistant',
           content: step.text === '' ? null : step.text,
           tool_calls: calls.map((call) => ({
             id: call.id,
             type: 'function',
-            function: { name: call.name, arguments: call.arguments },
+            function: { name: call.name, arguments: providerToolArguments(call.arguments) },
             ...(call.signature ? { signature: call.signature } : {}),
           })),
         });
         for (const call of calls) {
+          if (signal.aborted) break;
           emit({
             type: 'tool_call',
             stepIndex: index,
@@ -367,18 +513,23 @@ export class AgentService {
       }
 
       if (signal.aborted) {
-        persist('interrupted', finishCheckpoint());
+        persist('interrupted', await finishCheckpoint());
         return;
       }
-      emit({ type: 'done', message: persist('complete', finishCheckpoint()) });
+      emit({ type: 'done', message: persist('complete', await finishCheckpoint()) });
     } catch (error) {
-      const checkpointId = finishCheckpoint();
+      let savedCheckpoint: string | null = null;
+      try {
+        savedCheckpoint = await finishCheckpoint();
+      } catch (commitError) {
+        this.logError(commitError);
+      }
       if (signal.aborted) {
-        persist('interrupted', checkpointId);
+        persist('interrupted', savedCheckpoint);
         return;
       }
       this.logError(error);
-      const messageState = persist('error', checkpointId);
+      const messageState = persist('error', savedCheckpoint);
       if (error instanceof ProviderError) {
         emit({
           type: 'error',

@@ -44,7 +44,12 @@ function text(content: string) {
 }
 
 /** Boots the app with a scripted model: each provider request gets the next response. */
-async function boot(script: Array<() => Response>, source = 'custom') {
+async function boot(
+  script: Array<() => Response>,
+  source = 'custom',
+  model = 'local',
+  onFetch?: () => Promise<void>,
+) {
   dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-agent-'));
   const requests: Array<Record<string, unknown>> = [];
   let turn = 0;
@@ -52,6 +57,7 @@ async function boot(script: Array<() => Response>, source = 'custom') {
     dataDir,
     logger: false,
     fetchImpl: async (_input, init) => {
+      if (onFetch) await onFetch();
       requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       const next = script[Math.min(turn, script.length - 1)];
       turn += 1;
@@ -62,7 +68,7 @@ async function boot(script: Array<() => Response>, source = 'custom') {
     method: 'PATCH',
     url: '/api/app-settings',
     payload: {
-      providerConfig: { source, model: 'local', baseUrl: 'http://provider.test/v1' },
+      providerConfig: { source, model, baseUrl: 'http://provider.test/v1' },
     },
   });
   const book = (
@@ -220,6 +226,221 @@ describe('agent turns', () => {
     });
     expect(response.statusCode).toBe(409);
     expect(response.json<{ message: string }>().message).toMatch(/tool calling/u);
+  });
+
+  it('rebuilds earlier tool calls into the next turn', async () => {
+    const { app, chat, requests } = await boot([
+      () => sse(toolCall('call_1', 'list_files', { dir: 'characters' })),
+      () => sse(text('Listed the cast.')),
+      () => sse(text('Noted.')),
+    ]);
+    await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'List the characters.' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'What did you find?' },
+    });
+    const followup = requests[2]?.messages as Array<Record<string, unknown>>;
+    expect(followup.some((message) => message.role === 'tool')).toBe(true);
+    expect(
+      followup.some((message) => message.role === 'assistant' && Array.isArray(message.tool_calls)),
+    ).toBe(true);
+    expect(
+      followup.some(
+        (message) => message.role === 'assistant' && message.content === 'Listed the cast.',
+      ),
+    ).toBe(true);
+    const tool = followup.find((message) => message.role === 'tool');
+    expect(tool?.content).toBe('No files.');
+    expect(JSON.stringify(followup)).toContain('list_files');
+    expect(JSON.stringify(followup)).toContain('characters');
+  });
+
+  it('refuses Gemma 3 on Google sources before recording a turn', async () => {
+    const { app, chat } = await boot([() => sse(text('unused'))], 'makersuite', 'gemma-3-27b-it');
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Hello' },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ message: string }>().message).toMatch(/Gemma 3/u);
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>();
+    expect(detail.messages).toHaveLength(0);
+  });
+
+  it('records an empty provider stream as an error instead of a blank reply', async () => {
+    const { app, chat } = await boot([() => sse()]);
+    const stream = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Hello' },
+    });
+    expect(stream.body).toContain('event: error');
+    expect(stream.body).toContain('provider_error');
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>();
+    expect(detail.messages[1]?.status).toBe('error');
+    expect(detail.messages[1]?.content).toBe('');
+  });
+
+  it('sends a placeholder for malformed Claude tool arguments and keeps the raw string', async () => {
+    const { app, chat, requests } = await boot(
+      [
+        () =>
+          sse(
+            {
+              type: 'content_block_start',
+              index: 0,
+              content_block: { type: 'tool_use', id: 'toolu_1', name: 'list_files' },
+            },
+            {
+              type: 'content_block_delta',
+              index: 0,
+              delta: { type: 'input_json_delta', partial_json: '{"dir":' },
+            },
+            { type: 'content_block_stop', index: 0 },
+          ),
+        () =>
+          sse({
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'text_delta', text: 'Fixed.' },
+          }),
+      ],
+      'claude',
+      'claude-3-5-haiku-latest',
+    );
+    const secret = await app.inject({
+      method: 'POST',
+      url: '/api/secrets',
+      payload: { key: 'api_key_claude', value: 'sk-test-key' },
+    });
+    expect(secret.statusCode).toBe(201);
+    const stream = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'List files.' },
+    });
+    expect(stream.body).toContain('event: done');
+    expect(stream.body).not.toContain('internal_error');
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>();
+    expect(detail.messages[1]?.steps[0]?.toolCalls[0]?.arguments).toBe('{"dir":');
+    expect(detail.messages[1]?.steps[0]?.toolCalls[0]?.ok).toBe(false);
+    const messages = requests[1]?.messages as Array<{ role: string; content: unknown }>;
+    const assistant = messages.find((message) => message.role === 'assistant');
+    expect(assistant?.content).toEqual([
+      expect.objectContaining({
+        type: 'tool_use',
+        id: 'toolu_1',
+        name: 'list_files',
+        input: {},
+      }),
+    ]);
+  });
+
+  it('refuses to delete a chat while its turn is running', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let markReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve;
+    });
+    const { app, chat } = await boot([() => sse(text('Hi.'))], 'custom', 'local', async () => {
+      markReady();
+      await gate;
+    });
+    const pending = app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Hello' },
+    });
+    await ready;
+    const deleted = await app.inject({ method: 'DELETE', url: `/api/agent-chats/${chat.id}` });
+    expect(deleted.statusCode).toBe(409);
+    expect(deleted.json<{ error: string }>().error).toBe('generation_in_progress');
+    release();
+    const stream = await pending;
+    expect(stream.body).toContain('event: done');
+    const after = await app.inject({ method: 'DELETE', url: `/api/agent-chats/${chat.id}` });
+    expect(after.statusCode).toBe(204);
+  });
+
+  it('records a failed turn when setup cannot open the book', async () => {
+    const { app, book, chat } = await boot([() => sse(text('unused'))]);
+    rmSync(join(dataDir, 'projects', book.slug), { recursive: true, force: true });
+    const stream = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Hello' },
+    });
+    expect(stream.body).toContain('event: error');
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>();
+    expect(detail.messages[1]?.status).toBe('error');
+  });
+});
+
+describe('trashing a book with agent chats', () => {
+  it('removes the chats and refuses while a turn is running', async () => {
+    const removed = await boot([() => sse(text('x'))]);
+    const removedDir = dataDir;
+    const trashed = await removed.app.inject({
+      method: 'DELETE',
+      url: `/api/books/${removed.book.slug}`,
+    });
+    expect(trashed.statusCode).toBe(204);
+    const missing = await removed.app.inject({
+      method: 'GET',
+      url: `/api/agent-chats/${removed.chat.id}`,
+    });
+    expect(missing.statusCode).toBe(404);
+    await removed.app.close();
+    rmSync(removedDir, { recursive: true, force: true });
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let markReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve;
+    });
+    const running = await boot([() => sse(text('Hi.'))], 'custom', 'local', async () => {
+      markReady();
+      await gate;
+    });
+    const pending = running.app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${running.chat.id}/messages`,
+      payload: { content: 'Hello' },
+    });
+    await ready;
+    const refused = await running.app.inject({
+      method: 'DELETE',
+      url: `/api/books/${running.book.slug}`,
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json<{ error: string }>().error).toBe('generation_in_progress');
+    release();
+    await pending;
+    const stillThere = await running.app.inject({
+      method: 'GET',
+      url: `/api/agent-chats/${running.chat.id}`,
+    });
+    expect(stillThere.statusCode).toBe(200);
   });
 });
 

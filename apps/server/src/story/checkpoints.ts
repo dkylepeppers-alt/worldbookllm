@@ -31,6 +31,11 @@ interface CheckpointFileRow {
   after_hash: string | null;
 }
 
+function sameBytes(left: Buffer | null, right: Buffer | null): boolean {
+  if (left === null || right === null) return left === right;
+  return left.equals(right);
+}
+
 function changeOf(file: Pick<CheckpointFileRow, 'before_hash' | 'after_hash'>) {
   if (file.before_hash === null) return 'created' as const;
   if (file.after_hash === null) return 'deleted' as const;
@@ -264,7 +269,11 @@ export class CheckpointService {
  * (typically each under the book lock): an agent turn that writes files
  * and runs story commands becomes a single undoable entry, without holding
  * the book lock for the whole turn. A path keeps the "before" bytes from the
- * first change that touched it and the "after" bytes from the last.
+ * first change that touched it and the "after" bytes from the last, unless
+ * someone else wrote that path in between: then the session keeps only the
+ * agent's change from the other writer's version, and does not fold their
+ * edit into this checkpoint. Commit re-checks the disk under the book lock
+ * and drops any path that has moved since it was captured.
  */
 export class CheckpointSession {
   private readonly before = new Map<string, Buffer | null>();
@@ -286,8 +295,15 @@ export class CheckpointSession {
       for (const path of new Set([...before.keys(), ...after.keys()])) {
         const previous = before.get(path) ?? null;
         const next = after.get(path) ?? null;
-        if (previous !== null && next !== null && previous.equals(next)) continue;
-        if (!this.before.has(path)) this.before.set(path, previous);
+        if (sameBytes(previous, next)) continue;
+        const expected = this.after.get(path) ?? null;
+        if (!this.before.has(path)) {
+          this.before.set(path, previous);
+        } else if (!sameBytes(previous, expected)) {
+          // Another writer changed this path since the session last captured
+          // it. Do not span their edit: this checkpoint starts at their version.
+          this.before.set(path, previous);
+        }
         this.after.set(path, next);
       }
     }
@@ -295,6 +311,19 @@ export class CheckpointSession {
 
   get changedPaths(): string[] {
     return [...this.after.keys()].sort();
+  }
+
+  /**
+   * Drops paths whose current bytes are not the session's last image, so a
+   * write that landed after the last capture is not recorded as the agent's.
+   */
+  omitStale(read: (path: string) => Buffer | null): void {
+    for (const path of [...this.after.keys()]) {
+      if (!sameBytes(read(path), this.after.get(path) ?? null)) {
+        this.before.delete(path);
+        this.after.delete(path);
+      }
+    }
   }
 
   /** Stores the gathered changes as one checkpoint; null when nothing changed overall. */

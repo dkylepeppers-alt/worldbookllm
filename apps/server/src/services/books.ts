@@ -64,6 +64,12 @@ import { convertUpload } from './converters/index.js';
 /** Lock key for book creation; the NUL byte keeps it apart from every book slug. */
 const CREATE_LOCK = '\0create';
 
+/** Agent chats tied to a book. Attached after both services exist (they refer to each other). */
+export interface BookChatLifecycle {
+  assertIdle(book: string): void;
+  removeForBook(book: string): void;
+}
+
 /**
  * File kinds whose edits change what `story reindex` writes into the
  * registries (entity titles and fields, the story title), so a direct edit
@@ -90,6 +96,7 @@ function numberField(frontmatter: Record<string, unknown> | null, key: string): 
 export class BookService {
   private readonly locks = new KeyedMutex();
   private readonly checkCache = new Map<string, { revision: number; result: BookCheckResult }>();
+  private chatLifecycle: BookChatLifecycle | null = null;
 
   constructor(
     private readonly files: BookFileStore,
@@ -129,12 +136,19 @@ export class BookService {
     return this.summary(slug);
   }
 
+  /** Wires agent-chat cleanup so trashing a book retires its chats. */
+  attachChatLifecycle(lifecycle: BookChatLifecycle): void {
+    this.chatLifecycle = lifecycle;
+  }
+
   async trash(slug: string): Promise<void> {
     await this.locks.run(slug, () => {
+      this.chatLifecycle?.assertIdle(slug);
       this.files.trash(slug);
       this.index.removeBook(slug);
       this.checkpoints.removeBook(slug);
       this.checkCache.delete(slug);
+      this.chatLifecycle?.removeForBook(slug);
     });
   }
 
@@ -459,22 +473,62 @@ export class BookService {
   async writeInSession(session: CheckpointSession, path: string, content: string): Promise<void> {
     assertWritablePath(path);
     const slug = session.book;
+    await this.locks.run(slug, () => this.writeCaptured(session, path, content));
+  }
+
+  /**
+   * Replaces one exact passage. The read, the uniqueness check, and the write
+   * share the book lock so a user edit cannot land between them.
+   */
+  async editInSession(
+    session: CheckpointSession,
+    path: string,
+    find: string,
+    replace: string,
+  ): Promise<void> {
+    assertWritablePath(path);
+    const slug = session.book;
+    await this.locks.run(slug, () => {
+      const bytes = this.files.readBytes(slug, path);
+      if (bytes === null) throw new NotFoundError(`${path} was not found in ${slug}`);
+      const current = bytes.toString('utf8');
+      const occurrences = current.split(find).length - 1;
+      if (occurrences !== 1) {
+        throw new Error(
+          occurrences === 0
+            ? `The passage to replace was not found in ${path}.`
+            : `The passage occurs ${occurrences} times in ${path}; include more context so it is unique.`,
+        );
+      }
+      return this.writeCaptured(
+        session,
+        path,
+        current.replace(find, () => replace),
+      );
+    });
+  }
+
+  /** Writes under a lock the caller already holds, capturing the change in the session. */
+  private async writeCaptured(
+    session: CheckpointSession,
+    path: string,
+    content: string,
+  ): Promise<void> {
+    const slug = session.book;
     const root = this.files.root(slug);
     const reindex = REINDEXED_KINDS.has(classifyBookPath(path).kind);
-    await this.locks.run(slug, async () => {
-      await session.capture(reindex ? 'book' : { paths: [path] }, async () => {
-        this.files.write(slug, path, content);
-        if (reindex) await this.cli.runOrThrow({ command: 'reindex', root });
-      });
-      this.index.reconcile(slug);
+    await session.capture(reindex ? 'book' : { paths: [path] }, async () => {
+      this.files.write(slug, path, content);
+      if (reindex) await this.cli.runOrThrow({ command: 'reindex', root });
     });
+    this.index.reconcile(slug);
   }
 
   /**
    * Runs a story command for the agent. Read-only commands run directly;
    * commands that write run under the book lock inside the session, so the
    * files they change join the turn's checkpoint. Exit codes are returned as
-   * data: a failed check or a refused write is information for the model.
+   * data: the tool decides which of them are failures.
    */
   async runStoryForAgent(
     session: CheckpointSession,
@@ -500,11 +554,17 @@ export class BookService {
     return this.checkpoints.session(slug, label, actor);
   }
 
-  /** Stores a session's changes as one checkpoint and refreshes the index. */
-  commitSession(session: CheckpointSession): Checkpoint | null {
-    const checkpoint = session.commit();
-    this.index.reconcile(session.book);
-    return checkpoint;
+  /**
+   * Stores a session's changes as one checkpoint under the book lock, after
+   * dropping any path someone else changed since it was captured.
+   */
+  commitSession(session: CheckpointSession): Promise<Checkpoint | null> {
+    return this.locks.run(session.book, () => {
+      session.omitStale((path) => this.files.readBytes(session.book, path));
+      const checkpoint = session.commit();
+      this.index.reconcile(session.book);
+      return checkpoint;
+    });
   }
 
   private async runEntityCommand(

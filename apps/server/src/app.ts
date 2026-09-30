@@ -152,6 +152,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     (error) => app.log.error(error),
   );
   const storySkills = new StorySkillsInstaller(skills, skillsRoot);
+  books.attachChatLifecycle({
+    assertIdle: (book) => agent.assertBookIdle(book),
+    removeForBook: (book) => agent.removeChatsForBook(book),
+  });
   const generation = new GenerationService(
     chats,
     presets,

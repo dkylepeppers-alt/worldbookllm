@@ -167,7 +167,10 @@ export class AgentToolRegistry {
           required: ['path', 'find', 'replace'],
         },
         z.object({ path: bookFilePathSchema, find: z.string().min(1), replace: z.string() }),
-        ({ path, find, replace }, context) => this.editFile(context, path, find, replace),
+        ({ path, find, replace }, context) =>
+          this.books
+            .editInSession(context.session, path, find, replace)
+            .then(() => `Edited ${path}.`),
       ),
       tool(
         'run_story',
@@ -274,29 +277,6 @@ export class AgentToolRegistry {
     return results.map((hit) => `${hit.path} (${hit.title}): ${hit.excerpt}`).join('\n');
   }
 
-  private async editFile(
-    context: ToolContext,
-    path: string,
-    find: string,
-    replace: string,
-  ): Promise<string> {
-    const current = this.books.readFile(context.book, path).content;
-    const occurrences = current.split(find).length - 1;
-    if (occurrences !== 1) {
-      throw new Error(
-        occurrences === 0
-          ? `The passage to replace was not found in ${path}.`
-          : `The passage occurs ${occurrences} times in ${path}; include more context so it is unique.`,
-      );
-    }
-    await this.books.writeInSession(
-      context.session,
-      path,
-      current.replace(find, () => replace),
-    );
-    return `Edited ${path}.`;
-  }
-
   private async runStory(
     context: ToolContext,
     command: string,
@@ -310,6 +290,12 @@ export class AgentToolRegistry {
     const output = result.envelope
       ? JSON.stringify(result.envelope)
       : [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n');
-    return `exit code ${result.exitCode}\n${output}`;
+    const rendered = `exit code ${result.exitCode}\n${output}`;
+    // 0 is success. 1 is check findings and stays informational. 2 usage,
+    // 3 unusable project, and 4 write refused are failures: nothing was applied.
+    if (result.exitCode === 2 || result.exitCode === 3 || result.exitCode === 4) {
+      throw new Error(rendered);
+    }
+    return rendered;
   }
 }
