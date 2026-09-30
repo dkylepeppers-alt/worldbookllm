@@ -49,9 +49,10 @@ test('M7 story workspace on a phone', async ({ page }) => {
     await editor.fill(content.replace('## Appearance', '## Appearance\n\nSalt-grey eyes.'));
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Salt-grey eyes.')).toBeVisible();
-    await expect(readFile(join(bookDir, 'characters/mara-quill.md'), 'utf8')).resolves.toContain(
-      'Salt-grey eyes.',
-    );
+    // The page can show the edit before the save's write lands; poll the disk.
+    await expect
+      .poll(() => readFile(join(bookDir, 'characters/mara-quill.md'), 'utf8'))
+      .toContain('Salt-grey eyes.');
   });
 
   await test.step('see the story checks', async () => {
