@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+import {
+  conversionNotesSchema,
+  sourceOriginSchema,
+  sourcePreviewFormatSchema,
+  sourceTitleSchema,
+} from './sources.js';
+
 /**
  * Story-skills books (ADR 0014). A book is a story-skills schema v2 project on
  * disk; its identity is the folder slug, and every file inside it is
@@ -259,3 +266,77 @@ export type StoryCommandOutcome = z.infer<typeof storyCommandOutcomeSchema>;
 export type Checkpoint = z.infer<typeof checkpointSchema>;
 export type CheckpointDetail = z.infer<typeof checkpointDetailSchema>;
 export type BookSearchResult = z.infer<typeof bookSearchResultSchema>;
+
+/**
+ * Book ingestion (ADR 0014 decision 5). Previews reuse the source converters;
+ * each entry carries the entity kind it should become, suggested from its
+ * frontmatter or format and changeable at review. Chapters and scenes come in
+ * through manuscript import, not here.
+ */
+export const BOOK_IMPORT_KINDS = [
+  'research',
+  'character',
+  'location',
+  'system',
+  'faction',
+  'artifact',
+  'arc',
+  'question',
+  'promise',
+  'clue',
+  'term',
+  'matter',
+] as const;
+
+export const bookImportKindSchema = z.enum(BOOK_IMPORT_KINDS);
+
+export const bookImportPreviewSchema = z.strictObject({
+  format: sourcePreviewFormatSchema,
+  origin: sourceOriginSchema,
+  conversionNotes: conversionNotesSchema,
+  entries: z
+    .array(
+      z.strictObject({
+        title: sourceTitleSchema,
+        markdown: z.string().min(1).max(10_485_760),
+        suggestedKind: bookImportKindSchema,
+        /** The entry is already a story-skills entity file and keeps its own frontmatter. */
+        entityFile: z.boolean(),
+      }),
+    )
+    .min(1)
+    .max(1_000),
+});
+
+export const createBookImportSchema = z.strictObject({
+  origin: sourceOriginSchema,
+  conversionNotes: conversionNotesSchema.default([]),
+  entries: z
+    .array(
+      z.strictObject({
+        title: sourceTitleSchema,
+        markdown: z.string().min(1).max(10_485_760),
+        kind: bookImportKindSchema,
+      }),
+    )
+    .min(1)
+    .max(1_000),
+});
+
+export const bookImportResultSchema = z.strictObject({
+  files: z.array(bookFilePathSchema),
+  checkpointId: z.uuid().nullable(),
+  validation: storyEnvelopeSchema.nullable(),
+});
+
+export const manuscriptImportResultSchema = z.strictObject({
+  book: bookSummarySchema,
+  /** The CLI's import report: chapter and word counts, plus entity candidates to review. */
+  output: z.string(),
+});
+
+export type BookImportKind = z.infer<typeof bookImportKindSchema>;
+export type BookImportPreview = z.infer<typeof bookImportPreviewSchema>;
+export type CreateBookImportInput = z.infer<typeof createBookImportSchema>;
+export type BookImportResult = z.infer<typeof bookImportResultSchema>;
+export type ManuscriptImportResult = z.infer<typeof manuscriptImportResultSchema>;

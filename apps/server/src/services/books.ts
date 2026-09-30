@@ -1,6 +1,9 @@
 import {
   BOOK_ENTITY_KINDS,
   type AddEntityInput,
+  type BookImportKind,
+  type BookImportPreview,
+  type BookImportResult,
   type BookCheckCommand,
   type BookCheckResult,
   type BookEntityKind,
@@ -12,6 +15,8 @@ import {
   type Checkpoint,
   type CheckpointDetail,
   type CreateBookInput,
+  type CreateBookImportInput,
+  type ManuscriptImportResult,
   type MoveEntityInput,
   type RenameEntityInput,
   type StoryCommandOutcome,
@@ -20,21 +25,37 @@ import {
   type WriteBookFileInput,
 } from '@worldbookllm/shared';
 
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import {
   ConflictError,
+  InvalidImportError,
   NotFoundError,
   ReadOnlyBookPathError,
   StoryCommandError,
 } from '../errors.js';
 import type { BookFileStore } from '../story/book-files.js';
+import {
+  IMPORT_KIND_DIRECTORIES,
+  entityFileTitle,
+  fillCreatedEntity,
+  importedBody,
+  kebabId,
+  provenanceLines,
+  renderEntityFile,
+  renderResearchNote,
+  suggestImportKind,
+} from '../story/book-import.js';
 import { sha256 } from '../story/book-files.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { classifyBookPath } from '../story/book-paths.js';
 import type { CheckpointActor, CheckpointService } from '../story/checkpoints.js';
 import { KeyedMutex } from '../story/keyed-mutex.js';
 import type { StoryCli } from '../story/story-cli.js';
+import { convertUpload } from './converters/index.js';
 
-const MAX_SLUG_LENGTH = 80;
 /** Lock key for book creation; the NUL byte keeps it apart from every book slug. */
 const CREATE_LOCK = '\0create';
 
@@ -44,17 +65,6 @@ const CREATE_LOCK = '\0create';
  * reindexes in the same checkpoint.
  */
 const REINDEXED_KINDS = new Set<string>([...BOOK_ENTITY_KINDS, 'story']);
-
-/** Kebab-case folder name for a title, as story-skills derives ids; '' when nothing is left. */
-function kebab(title: string): string {
-  return title
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, '-')
-    .slice(0, MAX_SLUG_LENGTH)
-    .replace(/^-+|-+$/gu, '');
-}
 
 function stringField(frontmatter: Record<string, unknown> | null, key: string): string | null {
   const value = frontmatter?.[key];
@@ -269,6 +279,161 @@ export class BookService {
     });
   }
 
+  /** Converts an upload for review, suggesting the entity kind each entry should become. */
+  async previewImport(slug: string, bytes: Buffer, fileName: string): Promise<BookImportPreview> {
+    this.files.root(slug);
+    const preview = await convertUpload(bytes, fileName);
+    return {
+      format: preview.format,
+      origin: preview.origin,
+      conversionNotes: preview.conversionNotes,
+      entries: preview.entries.map((entry) => ({
+        ...entry,
+        ...suggestImportKind(entry.markdown, preview.format),
+      })),
+    };
+  }
+
+  /**
+   * Saves reviewed entries into a book as one checkpoint (ADR 0014 decision
+   * 5): research notes are written from the `story add research` template,
+   * entity files keep their own frontmatter, and other kinds are created with
+   * `story add` and given the imported text. Every file carries flat
+   * provenance keys. If validation then reports an error in any imported
+   * file, the whole import is undone and the diagnostics are returned as the
+   * error.
+   */
+  async importEntries(slug: string, input: CreateBookImportInput): Promise<BookImportResult> {
+    const provenance = provenanceLines(
+      input.origin,
+      input.conversionNotes,
+      new Date().toISOString(),
+    );
+    const label =
+      input.entries.length === 1
+        ? `Import ${input.entries[0]?.title ?? ''}`
+        : `Import ${input.entries.length} entries`;
+    return this.writeImports(
+      slug,
+      label,
+      input.entries.map((entry) => ({ ...entry, provenance })),
+    );
+  }
+
+  /**
+   * Writes prepared import entries as one checkpoint, then reindexes and
+   * validates, undoing everything when validation rejects an imported file.
+   * Each entry brings its own provenance lines, so callers with mixed origins
+   * (the notebook migration) share this path.
+   */
+  async writeImports(
+    slug: string,
+    label: string,
+    entries: readonly ImportEntry[],
+  ): Promise<BookImportResult> {
+    const root = this.files.root(slug);
+    return this.locks.run(slug, async () => {
+      this.index.reconcile(slug);
+      const taken = new Set(this.index.list(slug).map((file) => file.path));
+      const written: string[] = [];
+
+      const { checkpoint } = await this.checkpoints.record(
+        slug,
+        label,
+        'user',
+        'book',
+        async () => {
+          for (const entry of entries) {
+            const { suggestedKind, entityFile } = suggestImportKind(entry.markdown, 'markdown');
+            const keepAsEntity = entityFile && suggestedKind === entry.kind;
+            const title = (keepAsEntity ? entityFileTitle(entry.markdown) : null) ?? entry.title;
+            const directory = IMPORT_KIND_DIRECTORIES[entry.kind];
+            const id = uniqueId(kebabId(title) || entry.kind, directory, taken);
+            const path = `${directory}/${id}.md`;
+            taken.add(path);
+
+            if (keepAsEntity) {
+              this.files.write(slug, path, renderEntityFile(entry.markdown, entry.provenance));
+            } else if (entry.kind === 'research') {
+              const body = importedBody(entry.markdown, entry.title, false);
+              this.files.write(slug, path, renderResearchNote(entry.title, body, entry.provenance));
+            } else {
+              await this.cli.runOrThrow({
+                command: 'add',
+                root,
+                args: [entry.kind, entry.title],
+                options: { id },
+              });
+              const created = this.files.readBytes(slug, path)?.toString('utf8');
+              if (created === undefined) {
+                throw new StoryCommandError(1, `story add did not create ${path}`);
+              }
+              const body = importedBody(entry.markdown, entry.title, false);
+              this.files.write(slug, path, fillCreatedEntity(created, body, entry.provenance));
+            }
+            written.push(path);
+          }
+          await this.cli.runOrThrow({ command: 'reindex', root });
+        },
+      );
+
+      const validation = await this.cli.run({ command: 'validate', root, json: true });
+      const imported = new Set(written);
+      const errors = (validation.envelope?.diagnostics ?? []).filter(
+        (diagnostic) =>
+          diagnostic.severity === 'error' &&
+          typeof diagnostic.file === 'string' &&
+          imported.has(diagnostic.file),
+      );
+      if (errors.length > 0 && checkpoint) {
+        this.checkpoints.undo(slug, checkpoint.id);
+        this.index.reconcile(slug);
+        throw new InvalidImportError(
+          `The import was undone because story validate rejected it: ${errors
+            .map((error) => error.message)
+            .join('; ')}`,
+        );
+      }
+      this.index.reconcile(slug);
+      return {
+        files: written,
+        checkpointId: checkpoint?.id ?? null,
+        validation: validation.envelope,
+      };
+    });
+  }
+
+  /**
+   * Creates a new book from a manuscript with `story import`, which splits it
+   * into chapters. The upload is written to an operation-specific temporary
+   * directory that is removed afterwards, whatever happens.
+   */
+  async importManuscript(bytes: Buffer, fileName: string): Promise<ManuscriptImportResult> {
+    const extension = /\.(md|markdown|txt)$/iu.exec(fileName)?.[1]?.toLowerCase();
+    if (!extension) throw new InvalidImportError('Upload the manuscript as a .md or .txt file.');
+    if (bytes.byteLength === 0) throw new InvalidImportError('The uploaded file is empty.');
+    const title = fileName.replace(/\.[^.]+$/u, '').trim() || 'Imported manuscript';
+    const workDir = mkdtempSync(join(tmpdir(), 'worldbookllm-import-'));
+    try {
+      const source = join(workDir, `manuscript.${extension === 'txt' ? 'txt' : 'md'}`);
+      writeFileSync(source, bytes, { mode: 0o600 });
+      const { slug, output } = await this.locks.run(CREATE_LOCK, async () => {
+        const free = this.freeSlug(title);
+        const result = await this.cli.runOrThrow({
+          command: 'import',
+          cwd: this.files.projectsDir,
+          dir: free,
+          args: [source],
+          options: { title },
+        });
+        return { slug: free, output: result.stdout.replaceAll(source, fileName).trim() };
+      });
+      return { book: this.summary(slug), output };
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  }
+
   private async runEntityCommand(
     slug: string,
     label: string,
@@ -316,13 +481,30 @@ export class BookService {
 
   /** A folder name for a new book: the title's slug, suffixed until unused. */
   private freeSlug(title: string): string {
-    const stem = kebab(title) || 'book';
+    const stem = kebabId(title) || 'book';
     let candidate = stem;
     for (let suffix = 2; this.files.exists(candidate); suffix += 1) {
       candidate = `${stem}-${suffix}`;
     }
     return candidate;
   }
+}
+
+/** One entry to write into a book: its content, target kind, and provenance lines. */
+export interface ImportEntry {
+  title: string;
+  markdown: string;
+  kind: BookImportKind;
+  provenance: readonly string[];
+}
+
+/** The first free `<base>`, `<base>-2`, … id in a directory, given paths already taken. */
+function uniqueId(base: string, directory: string, taken: ReadonlySet<string>): string {
+  let candidate = base;
+  for (let suffix = 2; taken.has(`${directory}/${candidate}.md`); suffix += 1) {
+    candidate = `${base}-${suffix}`;
+  }
+  return candidate;
 }
 
 /**
