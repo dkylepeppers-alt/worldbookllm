@@ -24,6 +24,7 @@ const book: BookSummary = {
   title: 'The Salt Road',
   genre: 'fantasy',
   status: 'planning',
+  kind: 'book',
   seriesId: null,
   bookNumber: null,
   counts: { chapter: 1, character: 1 },

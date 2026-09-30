@@ -32,6 +32,7 @@ const book: BookSummary = {
   title: 'The Salt Road',
   genre: null,
   status: null,
+  kind: 'book',
   seriesId: null,
   bookNumber: null,
   counts: { character: 1 },

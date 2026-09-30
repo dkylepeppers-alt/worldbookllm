@@ -88,6 +88,9 @@ export const bookSummarySchema = z.strictObject({
   title: z.string(),
   genre: z.string().nullable(),
   status: z.string().nullable(),
+  /** A series bible is addressed like a book, by its series id (ADR 0018). */
+  kind: z.enum(['book', 'series-bible']),
+  /** The series folder holding the book, else the `series` its story.md names. */
   seriesId: z.string().nullable(),
   bookNumber: z.number().nullable(),
   counts: z.record(z.string(), z.number().int().nonnegative()),

@@ -652,7 +652,7 @@ export class BookService {
   }
 
   private summary(slug: string): BookSummary {
-    this.files.root(slug);
+    const location = this.files.locate(slug);
     this.index.reconcile(slug);
     const story = this.index.frontmatter(slug, 'story.md');
     const latest = this.index.latestMtime(slug);
@@ -661,7 +661,8 @@ export class BookService {
       title: stringField(story, 'title') ?? slug,
       genre: stringField(story, 'genre'),
       status: stringField(story, 'status'),
-      seriesId: stringField(story, 'series'),
+      kind: location.kind,
+      seriesId: location.seriesId ?? stringField(story, 'series'),
       bookNumber: numberField(story, 'book-number'),
       counts: this.index.counts(slug),
       updatedAt: new Date(latest ?? Date.now()).toISOString(),
