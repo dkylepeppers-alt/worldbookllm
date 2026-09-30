@@ -31,45 +31,138 @@ export interface BookFileStat {
   mtimeMs: number;
 }
 
+/** Where a book lives on disk (ADR 0018). */
+export interface BookLocation {
+  slug: string;
+  root: string;
+  /** The series whose folder holds the book, or null for a standalone book. */
+  seriesId: string | null;
+  /** A series bible is addressed as the book whose slug is the series id. */
+  kind: 'book' | 'series-bible';
+}
+
+const SERIES_BIBLE_DIR = 'series-bible';
+
+function holdsBook(dir: string): boolean {
+  try {
+    return lstatSync(dir).isDirectory() && existsSync(join(dir, 'story.md'));
+  } catch {
+    return false;
+  }
+}
+
+function slugDirs(parent: string): string[] {
+  try {
+    return readdirSync(parent, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && bookSlugSchema.safeParse(entry.name).success)
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
 /**
- * Filesystem access to story-skills books under `data/projects/` (ADR 0014).
- * The files are the source of truth; everything here reads and writes them
- * directly, confined to one book's folder, with atomic writes.
+ * Filesystem access to story-skills books (ADR 0014): standalone books under
+ * `data/projects/<slug>/`, and series under `data/series/<id>/` with their
+ * books beside a `series-bible/` project (ADR 0018). A slug names one book
+ * wherever it lives, so the store finds it by scanning. The files are the
+ * source of truth; everything here reads and writes them directly, confined
+ * to one book's folder, with atomic writes.
  */
 export class BookFileStore {
   readonly projectsDir: string;
+  readonly seriesDir: string;
   readonly trashDir: string;
+  private locations = new Map<string, BookLocation>();
+  private duplicates: BookLocation[] = [];
 
   constructor(dataDir: string) {
     this.projectsDir = resolve(dataDir, 'projects');
+    this.seriesDir = resolve(dataDir, 'series');
     this.trashDir = resolve(dataDir, 'trash');
     mkdirSync(this.projectsDir, { recursive: true });
+    mkdirSync(this.seriesDir, { recursive: true });
+    this.rescan();
   }
 
-  /** Slugs of every folder under projects/ that holds a story.md. */
+  /**
+   * Finds every book: standalone books first, then each series (bible, then
+   * books), all in name order. When two folders claim one slug, the first
+   * found keeps it and the others are set aside as duplicates.
+   */
+  rescan(): void {
+    const found: BookLocation[] = [];
+    for (const slug of slugDirs(this.projectsDir)) {
+      found.push({ slug, root: join(this.projectsDir, slug), seriesId: null, kind: 'book' });
+    }
+    for (const seriesId of slugDirs(this.seriesDir)) {
+      const folder = join(this.seriesDir, seriesId);
+      found.push({
+        slug: seriesId,
+        root: join(folder, SERIES_BIBLE_DIR),
+        seriesId,
+        kind: 'series-bible',
+      });
+      for (const slug of slugDirs(folder)) {
+        if (slug === SERIES_BIBLE_DIR) continue;
+        found.push({ slug, root: join(folder, slug), seriesId, kind: 'book' });
+      }
+    }
+    const locations = new Map<string, BookLocation>();
+    const duplicates: BookLocation[] = [];
+    for (const location of found) {
+      if (!holdsBook(location.root)) continue;
+      if (locations.has(location.slug)) duplicates.push(location);
+      else locations.set(location.slug, location);
+    }
+    this.locations = locations;
+    this.duplicates = duplicates;
+  }
+
+  /** Every book, in scan order. */
+  listLocations(): BookLocation[] {
+    this.rescan();
+    return [...this.locations.values()];
+  }
+
+  /** Folders whose slug another book already holds; the library reports them. */
+  listDuplicates(): BookLocation[] {
+    return [...this.duplicates];
+  }
+
+  /** Slugs of every book, standalone or in a series, including series bibles. */
   listBooks(): string[] {
-    return readdirSync(this.projectsDir, { withFileTypes: true })
-      .filter(
-        (entry) =>
-          entry.isDirectory() &&
-          bookSlugSchema.safeParse(entry.name).success &&
-          existsSync(join(this.projectsDir, entry.name, 'story.md')),
-      )
-      .map((entry) => entry.name)
-      .sort();
+    return this.listLocations().map((location) => location.slug);
   }
 
+  /** Whether a slug is taken by any book, series, or leftover folder of that name. */
   exists(slug: string): boolean {
-    return existsSync(join(this.projectsDir, slug));
+    if (slug === SERIES_BIBLE_DIR) return true;
+    if (existsSync(join(this.projectsDir, slug)) || existsSync(join(this.seriesDir, slug))) {
+      return true;
+    }
+    return slugDirs(this.seriesDir).some((seriesId) =>
+      existsSync(join(this.seriesDir, seriesId, slug)),
+    );
+  }
+
+  /** Where an existing book lives. */
+  locate(slug: string): BookLocation {
+    bookSlugSchema.parse(slug);
+    let location = this.locations.get(slug);
+    if (location === undefined || !holdsBook(location.root)) {
+      this.rescan();
+      location = this.locations.get(slug);
+    }
+    if (location === undefined) throw new NotFoundError(`Book ${slug} was not found`);
+    return location;
   }
 
   /** The absolute root of an existing book. */
   root(slug: string): string {
-    const root = confine(this.projectsDir, bookSlugSchema.parse(slug));
-    if (!existsSync(join(root, 'story.md')) || !lstatSync(root).isDirectory()) {
-      throw new NotFoundError(`Book ${slug} was not found`);
-    }
-    return root;
+    return this.locate(slug).root;
   }
 
   listFiles(slug: string): BookFileStat[] {
