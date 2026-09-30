@@ -102,3 +102,49 @@ jobs:
             apps/e2e/playwright-report/
             apps/e2e/test-results/
           retention-days: 7
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: worldbookllm:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the container
+        run: |
+          docker run -d --name wb -p 3001:3001 worldbookllm:ci
+
+          # Wait for Docker's own HEALTHCHECK, so the check itself is covered.
+          for _ in $(seq 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' wb)
+            [ "$status" = healthy ] && break
+            [ "$(docker inspect -f '{{.State.Running}}' wb)" = true ] || break
+            sleep 2
+          done
+          docker logs wb
+          [ "$status" = healthy ] || { echo "container is $status"; exit 1; }
+
+          test "$(docker exec wb id -un)" = node
+          curl -fsS http://127.0.0.1:3001/api/health
+          curl -fsS -o /dev/null http://127.0.0.1:3001/
+          # Creating a book runs the story CLI and writes to /data as node.
+          curl -fsS -X POST http://127.0.0.1:3001/api/books \
+            -H 'content-type: application/json' -d '{"title":"CI smoke"}'
+
+          # SIGTERM should close the server at once, not after the 10 s kill.
+          start=$(date +%s)
+          docker stop wb
+          elapsed=$(( $(date +%s) - start ))
+          exit_code=$(docker inspect -f '{{.State.ExitCode}}' wb)
+          echo "stopped in ${elapsed}s with exit code ${exit_code}"
+          [ "$exit_code" = 0 ] && [ "$elapsed" -lt 5 ]
