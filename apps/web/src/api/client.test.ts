@@ -52,6 +52,17 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 }
 
 describe('API client', () => {
+  it('stops a chat’s running turn with an empty 204 response', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const chatId = '99999999-9999-4999-8999-999999999999';
+
+    await expect(createApiClient(fetchImpl).stopAgentChat(chatId)).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `/api/agent-chats/${chatId}/stop`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   it('parses book collection responses', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse([book]));
 

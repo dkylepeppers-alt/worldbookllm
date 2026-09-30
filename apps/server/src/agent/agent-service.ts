@@ -58,6 +58,7 @@ interface AgentMessageRow {
   reasoning: string | null;
   status: AgentMessage['status'];
   note: string | null;
+  pinned_paths_json: string;
   steps_json: string;
   checkpoint_id: string | null;
   created_at: string;
@@ -86,6 +87,7 @@ function toMessage(row: AgentMessageRow): AgentMessage {
     reasoning: row.reasoning,
     status: row.status,
     note: row.note,
+    pinnedPaths: JSON.parse(row.pinned_paths_json) as string[],
     steps: JSON.parse(row.steps_json) as AgentStep[],
     checkpointId: row.checkpoint_id,
     createdAt: row.created_at,
@@ -244,6 +246,8 @@ export interface PreparedAgentTurn {
   /** Review mode: stage the turn's changes for the writer instead of applying them. */
   reviewMode: boolean;
   assistant: AgentMessage;
+  /** Aborted when the turn is stopped from outside its own stream (`stop`). */
+  signal: AbortSignal;
   release(): void;
 }
 
@@ -259,6 +263,8 @@ export interface PreparedAgentTurn {
  */
 export class AgentService {
   private readonly active = new Set<string>();
+  /** Stops the running turn per chat, for a writer watching from another tab or device. */
+  private readonly stops = new Map<string, AbortController>();
 
   constructor(
     private readonly db: Database.Database,
@@ -425,8 +431,31 @@ export class AgentService {
     return toChat(this.chatRow(chatId));
   }
 
+  /**
+   * The pinned files' current contents, as the note the model reads before the
+   * writer's message. Each file is capped like a tool result.
+   */
+  private pinnedNote(book: string, paths: readonly string[]): string | null {
+    if (paths.length === 0) return null;
+    const files = paths.map((path) => {
+      const { content } = this.books.readFile(book, path);
+      return `<file path=${JSON.stringify(path)}>\n${truncateResult(content)}\n</file>`;
+    });
+    return `The writer pinned ${paths.length === 1 ? 'this file' : 'these files'} to the message below. Current contents:\n\n${files.join('\n\n')}`;
+  }
+
+  /** Stops the chat's running turn; it is recorded as interrupted, as if its stream closed. */
+  stop(chatId: string): void {
+    this.chatRow(chatId);
+    const stopper = this.stops.get(chatId);
+    if (stopper === undefined) {
+      throw new ConflictError('not_running', 'The agent is not working in this chat.');
+    }
+    stopper.abort();
+  }
+
   /** Validates the turn can run and records the user message and a streaming assistant message. */
-  prepare(chatId: string, content: string): PreparedAgentTurn {
+  prepare(chatId: string, content: string, pinnedPaths: readonly string[] = []): PreparedAgentTurn {
     if (this.active.has(chatId)) {
       throw new ConflictError(
         'generation_in_progress',
@@ -447,12 +476,16 @@ export class AgentService {
         'Gemma 3 models on Google sources do not support tool calling, which the agent needs.',
       );
     }
+    const pinned = this.pinnedNote(detail.book, pinnedPaths);
     this.active.add(chatId);
+    const stopper = new AbortController();
+    this.stops.set(chatId, stopper);
     let released = false;
     const release = () => {
       if (!released) {
         released = true;
         this.active.delete(chatId);
+        this.stops.delete(chatId);
       }
     };
     try {
@@ -460,17 +493,42 @@ export class AgentService {
       const seq = detail.messages.length;
       const agent = detail.agentId === null ? null : this.agents.get(detail.agentId);
       const insert = this.db.prepare(
-        `INSERT INTO agent_messages (id, chat_id, seq, role, content, reasoning, status, note, steps_json, checkpoint_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, '[]', NULL, ?, ?)`,
+        `INSERT INTO agent_messages (id, chat_id, seq, role, content, reasoning, status, note, pinned_paths_json, steps_json, checkpoint_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, '[]', NULL, ?, ?)`,
       );
       const assistantId = randomUUID();
       let note: string | null = null;
       this.db.transaction(() => {
         // Reporting a review outcome marks it told; the transaction keeps
         // that from happening unless the message that carries it is stored.
-        note = this.changesets.outcomeNote(chatId);
-        insert.run(randomUUID(), chatId, seq, 'user', content, 'complete', note, now, now);
-        insert.run(assistantId, chatId, seq + 1, 'assistant', '', 'streaming', null, now, now);
+        const parts = [this.changesets.outcomeNote(chatId), pinned].filter(
+          (part): part is string => part !== null,
+        );
+        note = parts.length === 0 ? null : parts.join('\n\n');
+        insert.run(
+          randomUUID(),
+          chatId,
+          seq,
+          'user',
+          content,
+          'complete',
+          note,
+          JSON.stringify(pinnedPaths),
+          now,
+          now,
+        );
+        insert.run(
+          assistantId,
+          chatId,
+          seq + 1,
+          'assistant',
+          '',
+          'streaming',
+          null,
+          '[]',
+          now,
+          now,
+        );
         const title = detail.messages.length === 0 ? content.slice(0, 80) : detail.title;
         this.db
           .prepare('UPDATE agent_chats SET title = ?, updated_at = ? WHERE id = ?')
@@ -485,6 +543,7 @@ export class AgentService {
         agent,
         reviewMode: detail.reviewMode ?? settings.agentReviewMode,
         assistant: this.message(assistantId),
+        signal: stopper.signal,
         release,
       };
     } catch (error) {
@@ -495,9 +554,11 @@ export class AgentService {
 
   async run(
     prepared: PreparedAgentTurn,
-    signal: AbortSignal,
+    streamSignal: AbortSignal,
     emit: (event: AgentStreamEvent) => void,
   ): Promise<void> {
+    // The turn stops when its own stream closes or when `stop` is called.
+    const signal = AbortSignal.any([streamSignal, prepared.signal]);
     const { chat, config } = prepared;
     const steps: AgentStep[] = [];
     const texts: string[] = [];

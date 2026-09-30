@@ -81,6 +81,81 @@ async function boot(
 }
 
 describe('agent turns', () => {
+  it('sends pinned files with the message and keeps them in later turns', async () => {
+    const { app, book, chat, requests } = await boot([() => sse(text('Noted.'))]);
+    const written = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${book.slug}/files/notes/pier.md`,
+      payload: { content: 'The pier floods at spring tide.\n', expectedHash: null },
+    });
+    expect(written.statusCode).toBe(200);
+
+    const first = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Is the pier safe?', pinnedPaths: ['notes/pier.md'] },
+    });
+    expect(first.statusCode).toBe(200);
+    const userMessage = (request: Record<string, unknown> | undefined) =>
+      (request?.messages as Array<{ role: string; content: unknown }>)
+        .filter((message) => message.role === 'user')
+        .map((message) => String(message.content));
+    const [sent] = userMessage(requests[0]);
+    expect(sent).toContain('<file path="notes/pier.md">\nThe pier floods at spring tide.\n');
+    expect(sent?.endsWith('Is the pier safe?')).toBe(true);
+
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>();
+    expect(detail.messages[0]).toMatchObject({ role: 'user', pinnedPaths: ['notes/pier.md'] });
+    expect(detail.messages[1]?.pinnedPaths).toEqual([]);
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'And at neap tide?' },
+    });
+    const replayed = userMessage(requests[1]);
+    expect(replayed[0]).toContain('The pier floods at spring tide.');
+    expect(replayed[1]).toBe('And at neap tide?');
+  });
+
+  it('refuses a missing or repeated pinned file before recording the turn', async () => {
+    const { app, chat, requests } = await boot([() => sse(text('…'))]);
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Read this.', pinnedPaths: ['notes/nowhere.md'] },
+    });
+    expect(missing.statusCode).toBe(404);
+    const repeated = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Read this.', pinnedPaths: ['book.md', 'book.md'] },
+    });
+    expect(repeated.statusCode).toBe(400);
+    const escaping = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Read this.', pinnedPaths: ['../secrets.json'] },
+    });
+    // Pins resolve through the book's own index, so a path outside it is not found.
+    expect(escaping.statusCode).toBe(404);
+
+    expect(requests).toHaveLength(0);
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>();
+    expect(detail.messages).toHaveLength(0);
+    // The refused turns left the chat free for the next one.
+    const next = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Hello.' },
+    });
+    expect(next.statusCode).toBe(200);
+  });
+
   it('runs tools, streams events, records every step, and lands one undoable checkpoint', async () => {
     const { app, book, chat, requests } = await boot([
       () =>
@@ -375,6 +450,48 @@ describe('agent turns', () => {
     expect(stream.body).toContain('event: done');
     const after = await app.inject({ method: 'DELETE', url: `/api/agent-chats/${chat.id}` });
     expect(after.statusCode).toBe(204);
+  });
+
+  it('stops a running turn from another request and records it as interrupted', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let markReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve;
+    });
+    const { app, chat } = await boot([() => sse(text('Hi.'))], 'custom', 'local', async () => {
+      markReady();
+      await gate;
+    });
+
+    const idle = await app.inject({ method: 'POST', url: `/api/agent-chats/${chat.id}/stop` });
+    expect(idle.statusCode).toBe(409);
+    expect(idle.json<{ error: string }>().error).toBe('not_running');
+
+    const pending = app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Hello' },
+    });
+    await ready;
+    const stopped = await app.inject({ method: 'POST', url: `/api/agent-chats/${chat.id}/stop` });
+    expect(stopped.statusCode).toBe(204);
+    release();
+    await pending;
+
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>();
+    expect(detail.messages[1]?.status).toBe('interrupted');
+    const again = await app.inject({ method: 'POST', url: `/api/agent-chats/${chat.id}/stop` });
+    expect(again.statusCode).toBe(409);
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/api/agent-chats/00000000-0000-4000-8000-000000000000/stop',
+    });
+    expect(missing.statusCode).toBe(404);
   });
 
   it('records a failed turn when setup cannot open the book', async () => {

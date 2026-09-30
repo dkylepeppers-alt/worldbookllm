@@ -112,6 +112,16 @@ const STATUS_BADGES: Partial<Record<AgentMessage['status'], string>> = {
  * step by step, with the tool calls as collapsed chips, and ends with a
  * summary of the files it changed, or in review mode the changes it proposes.
  */
+/** The files a message pinned: their contents went to the model with it. */
+function PinnedFiles({ paths }: { paths: readonly string[] }) {
+  if (paths.length === 0) return null;
+  return (
+    <p className="coordinate-label pinned-files">
+      Pinned {paths.length === 1 ? 'file' : 'files'}: {paths.join(', ')}
+    </p>
+  );
+}
+
 export function AgentMessages({
   messages,
   pending,
@@ -156,6 +166,7 @@ export function AgentMessages({
           return (
             <li key={message.id} className="chat-message chat-message-user">
               <p className="coordinate-label">You</p>
+              <PinnedFiles paths={message.pinnedPaths} />
               <p className="chat-message-text">{message.content}</p>
             </li>
           );
@@ -190,6 +201,7 @@ export function AgentMessages({
         <>
           <li className="chat-message chat-message-user">
             <p className="coordinate-label">You</p>
+            <PinnedFiles paths={pending.pinnedPaths} />
             <p className="chat-message-text">{pending.userContent}</p>
           </li>
           <li className="chat-message chat-message-assistant" aria-busy="true">

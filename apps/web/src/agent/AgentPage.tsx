@@ -40,7 +40,8 @@ function SkillsNotice() {
 
 /**
  * The Agent tab: start a chat with the agent about this book, or reopen one.
- * `?about=<path>` (from a file's "Ask the agent") names that file in the draft.
+ * `?about=<path>` (from a file's "Ask the agent") pins that file: its current
+ * contents go to the model with the first message.
  */
 export function AgentPage() {
   const api = useApi();
@@ -49,6 +50,8 @@ export function AgentPage() {
   const { slug } = useBook();
   const [params] = useSearchParams();
   const about = params.get('about');
+  const [unpinned, setUnpinned] = useState<string | null>(null);
+  const pinned = about !== null && unpinned !== about ? [about] : [];
   const chats = useLoad((signal) => api.listAgentChats(slug, signal), slug);
   const agents = useLoad((signal) => api.listCustomAgents(signal), 'agents');
   const settings = useLoad((signal) => api.getAppSettings(signal), 'app-settings');
@@ -70,7 +73,7 @@ export function AgentPage() {
         ...(agentId === '' ? {} : { agentId }),
         ...(review === null ? {} : { reviewMode: review }),
       });
-      void runner.send(chat.id, content);
+      void runner.send(chat.id, content, pinned);
       await navigate(`/books/${encodeURIComponent(slug)}/agent/${chat.id}`);
       return 'accepted';
     } catch (caught) {
@@ -119,10 +122,17 @@ export function AgentPage() {
           <span>Review changes before they apply</span>
         </label>
       </div>
+      {pinned.length === 0 ? null : (
+        <p className="pinned-files">
+          <span className="coordinate-label">Pinned file: {pinned.join(', ')}</span>{' '}
+          <button type="button" className="text-button" onClick={() => setUnpinned(about)}>
+            Unpin
+          </button>
+        </p>
+      )}
       <AgentComposer
         id="agent-new-chat-input"
-        label={about === null ? 'New chat' : `New chat about ${about}`}
-        initialDraft={about === null ? '' : `About ${about}: `}
+        label={pinned.length === 0 ? 'New chat' : `New chat about ${pinned.join(', ')}`}
         submitLabel="Start chat"
         running={running}
         busy={creating}

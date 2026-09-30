@@ -95,6 +95,8 @@ export const agentMessageSchema = z.strictObject({
    * the writer reviewed the previous turn's proposed changes.
    */
   note: z.string().nullable(),
+  /** On a user message: the book files pinned to it, whose contents are in `note`. */
+  pinnedPaths: z.array(z.string()),
   steps: z.array(agentStepSchema),
   checkpointId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
@@ -168,8 +170,17 @@ export const patchAgentChatSchema = z
     message: 'At least one field is required',
   });
 
+/** How many files one message can pin for the model to read up front. */
+export const AGENT_MAX_PINNED_PATHS = 5;
+
 export const sendAgentMessageSchema = z.strictObject({
   content: z.string().trim().min(1).max(100_000),
+  /** Book files whose current contents go to the model with this message. */
+  pinnedPaths: z
+    .array(bookFilePathSchema)
+    .max(AGENT_MAX_PINNED_PATHS)
+    .refine((paths) => new Set(paths).size === paths.length, { message: 'Pinned paths repeat' })
+    .optional(),
 });
 
 export const agentChatParamsSchema = z.strictObject({ id: z.uuid() });

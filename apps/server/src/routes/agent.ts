@@ -46,8 +46,8 @@ export function registerAgentRoutes(app: FastifyInstance): void {
 
   app.post('/api/agent-chats/:id/messages', async (request, reply) => {
     const { id } = agentChatParamsSchema.parse(request.params);
-    const { content } = sendAgentMessageSchema.parse(request.body);
-    const prepared = agent().prepare(id, content);
+    const { content, pinnedPaths } = sendAgentMessageSchema.parse(request.body);
+    const prepared = agent().prepare(id, content, pinnedPaths);
     const controller = new AbortController();
     const onClose = () => controller.abort();
     reply.hijack();
@@ -67,6 +67,13 @@ export function registerAgentRoutes(app: FastifyInstance): void {
       prepared.release();
       if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end();
     }
+  });
+
+  // Stops a running turn from any tab or device, not only the one streaming it.
+  app.post('/api/agent-chats/:id/stop', async (request, reply) => {
+    const { id } = agentChatParamsSchema.parse(request.params);
+    agent().stop(id);
+    return reply.status(204).send();
   });
 
   // Review mode: a turn's proposed changes, applied or skipped per file (ADR 0016).

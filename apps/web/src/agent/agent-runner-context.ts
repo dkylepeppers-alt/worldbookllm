@@ -26,7 +26,11 @@ export interface AgentRunnerValue {
   checkpoint: Checkpoint | null;
   error: AgentRunError | null;
   /** Resolves 'rejected' when the server never accepted the message, so the draft is restored. */
-  send(chatId: string, content: string): Promise<'accepted' | 'rejected'>;
+  send(
+    chatId: string,
+    content: string,
+    pinnedPaths?: readonly string[],
+  ): Promise<'accepted' | 'rejected'>;
   stop(): void;
 }
 

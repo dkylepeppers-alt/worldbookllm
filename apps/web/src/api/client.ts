@@ -154,6 +154,8 @@ export interface ApiClient {
   ): Promise<CustomAgent>;
   deleteCustomAgent(id: string, signal?: AbortSignal): Promise<void>;
   deleteAgentChat(id: string, signal?: AbortSignal): Promise<void>;
+  /** Stops the chat's running turn, whichever tab or device is streaming it. */
+  stopAgentChat(id: string, signal?: AbortSignal): Promise<void>;
   streamAgentMessage(
     chatId: string,
     content: string,
@@ -181,6 +183,8 @@ export interface ApiClient {
 interface StreamAgentMessageOptions {
   onEvent: (event: AgentStreamEvent) => void;
   signal?: AbortSignal;
+  /** Book files whose contents go to the model with this message. */
+  pinnedPaths?: readonly string[];
 }
 
 type CreateSecretInput = z.input<typeof createSecretSchema>;
@@ -375,6 +379,8 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: agentChatDetailSchema,
         signal,
       }),
+    stopAgentChat: (id, signal) =>
+      request(`/api/agent-chats/${encodeURIComponent(id)}/stop`, { method: 'POST', signal }),
     deleteAgentChat: (id, signal) =>
       request(`/api/agent-chats/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
     streamAgentMessage: (chatId, content, options) =>

@@ -23,6 +23,7 @@ export interface StepView {
 /** A turn in flight, built up from the agent's stream events. */
 export interface PendingTurn {
   userContent: string;
+  pinnedPaths: readonly string[];
   steps: StepView[];
   reasoning: string;
   checkpoint: Checkpoint | null;
@@ -31,9 +32,10 @@ export interface PendingTurn {
   stopping: boolean;
 }
 
-export function startTurn(userContent: string): PendingTurn {
+export function startTurn(userContent: string, pinnedPaths: readonly string[] = []): PendingTurn {
   return {
     userContent,
+    pinnedPaths,
     steps: [],
     reasoning: '',
     checkpoint: null,

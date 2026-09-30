@@ -92,6 +92,7 @@ function userMessage(seq: number, content: string): AgentMessage {
     reasoning: null,
     status: 'complete',
     note: null,
+    pinnedPaths: [],
     steps: [],
     checkpointId: null,
     createdAt: NOW,
@@ -109,6 +110,7 @@ function assistantMessage(seq: number, overrides: Partial<AgentMessage> = {}): A
     reasoning: null,
     status: 'complete',
     note: null,
+    pinnedPaths: [],
     steps: [
       {
         index: 0,
@@ -374,7 +376,8 @@ describe('agent tab', () => {
     );
   });
 
-  it('opens from a file with the file named in the draft', async () => {
+  it('opens from a file with that file pinned to the first message', async () => {
+    const streamAgentMessage = vi.fn(() => new Promise<void>(() => undefined));
     renderAt('/books/the-salt-road/files/characters/mara-quill.md', {
       readBookFile: () =>
         Promise.resolve({
@@ -382,12 +385,85 @@ describe('agent tab', () => {
           content: '# Mara Quill\n',
           frontmatter: null,
         }),
+      createAgentChat: () => Promise.resolve(chat),
+      getAgentChat: () => Promise.resolve({ ...chat, changesets: [], messages: [] }),
+      streamAgentMessage,
     });
     await userEvent.click(
       await screen.findByRole('link', { name: 'Ask the agent about this file' }),
     );
     const input = await screen.findByLabelText('New chat about characters/mara-quill.md');
-    expect((input as HTMLTextAreaElement).value).toBe('About characters/mara-quill.md: ');
+    expect((input as HTMLTextAreaElement).value).toBe('');
+    expect(screen.getByText('Pinned file: characters/mara-quill.md')).toBeTruthy();
+
+    await userEvent.type(input, 'Does her scar fit the timeline?');
+    await userEvent.click(screen.getByRole('button', { name: 'Start chat' }));
+    await waitFor(() =>
+      expect(streamAgentMessage).toHaveBeenCalledWith(
+        CHAT_ID,
+        'Does her scar fit the timeline?',
+        expect.objectContaining({ pinnedPaths: ['characters/mara-quill.md'] }),
+      ),
+    );
+    expect(await screen.findByText('Pinned file: characters/mara-quill.md')).toBeTruthy();
+  });
+
+  it('lets the writer unpin the file before starting the chat', async () => {
+    const streamAgentMessage = vi.fn(() => new Promise<void>(() => undefined));
+    renderAt('/books/the-salt-road/agent?about=characters%2Fmara-quill.md', {
+      createAgentChat: () => Promise.resolve(chat),
+      getAgentChat: () => Promise.resolve({ ...chat, changesets: [], messages: [] }),
+      streamAgentMessage,
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Unpin' }));
+    expect(screen.queryByText(/Pinned file/u)).toBeNull();
+    await userEvent.type(screen.getByLabelText('New chat'), 'Hello');
+    await userEvent.click(screen.getByRole('button', { name: 'Start chat' }));
+    await waitFor(() =>
+      expect(streamAgentMessage).toHaveBeenCalledWith(
+        CHAT_ID,
+        'Hello',
+        expect.objectContaining({ pinnedPaths: [] }),
+      ),
+    );
+  });
+
+  it('stops a turn running in another tab from the chat it is watching', async () => {
+    let saved: AgentChatDetail = {
+      ...chat,
+      changesets: [],
+      messages: [
+        userMessage(0, 'Draft the storm'),
+        assistantMessage(1, { status: 'streaming', content: '', steps: [], checkpointId: null }),
+      ],
+    };
+    const stopAgentChat = vi.fn(() => {
+      saved = {
+        ...saved,
+        messages: [saved.messages[0]!, { ...saved.messages[1]!, status: 'interrupted' }],
+      };
+      return Promise.resolve();
+    });
+    renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+      getAgentChat: () => Promise.resolve(saved),
+      listCheckpoints: () => Promise.resolve([]),
+      stopAgentChat,
+    });
+
+    expect(
+      await screen.findByText(
+        'The agent is working on this chat in another tab or on another device.',
+      ),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(stopAgentChat).toHaveBeenCalledWith(CHAT_ID);
+    await waitFor(() =>
+      expect(
+        screen.queryByText(
+          'The agent is working on this chat in another tab or on another device.',
+        ),
+      ).toBeNull(),
+    );
   });
 
   it('offers to install Story Skills when none are installed', async () => {
