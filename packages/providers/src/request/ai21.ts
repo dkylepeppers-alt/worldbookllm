@@ -3,13 +3,14 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:765.
- * Not ported in M1: tools, JSON schema, or reverse proxies.
+ * Not ported in M1: JSON schema or reverse proxies.
  */
 
 import { convertAI21Messages } from '../convert/prompt-converters.js';
 import { API_URLS } from '../sources.js';
 import { makePromptNames, type GenerationParams, type ProviderChatRequest } from '../types.js';
 import { compactObject, requireApiKey } from './provider-helpers.js';
+import { ai21ToolFields } from './tools.js';
 
 export function buildAi21Request(params: GenerationParams): ProviderChatRequest {
   const apiKey = requireApiKey('ai21', params.apiKey);
@@ -22,6 +23,7 @@ export function buildAi21Request(params: GenerationParams): ProviderChatRequest 
       Authorization: `Bearer ${apiKey}`,
     },
     body: compactObject({
+      ...ai21ToolFields(params),
       messages: convertAI21Messages(
         structuredClone(params.messages),
         params.names ?? makePromptNames(),

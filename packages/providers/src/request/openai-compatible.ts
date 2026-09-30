@@ -3,10 +3,11 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js.
- * Not ported here: tools, JSON schema, logprobs, prompt caching, media, or
+ * Not ported here: JSON schema, logprobs, prompt caching, media, or
  * SillyTavern's reverse-proxy credential handling.
  */
 
+import { openAiToolFields } from './tools.js';
 import {
   addAssistantPrefix,
   postProcessPrompt,
@@ -262,6 +263,7 @@ export function assembleOpenAiCompatBody(
       seed: params.seed,
     }),
     ...getProviderBody(source, params),
+    ...openAiToolFields(params),
   };
 }
 

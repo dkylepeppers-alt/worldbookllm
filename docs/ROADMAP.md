@@ -135,7 +135,7 @@ See ADR 0014, ADR 0015, and `docs/superpowers/specs/2026-09-30-story-workspace-d
 
 This supersedes the unfinished notebook-era scope: M2's remaining re-ingestion work and M5. Ingestion now files material into books (research notes by default; `.md` entity files, manuscripts, and project zips import directly). Exports become `story build` formats plus SillyTavern lorebook and character-card exports.
 
-**Status (2026-09-30):** phase 1 server work is in: the story core (books API, sandboxed CLI runner, index, checkpoints), book ingestion, and the notebook-to-book migration service. Phase 2a adds the mobile book workspace (library, Write / Bible / Health / Project tabs, file reader and editor, rename/remove, history with undo) beside notebooks; phase 2b runs the migration, rebinds chats to books, and retires the notebook UI.
+**Status (2026-09-30):** phase 1 server work is in: the story core (books API, sandboxed CLI runner, index, checkpoints), book ingestion, and the notebook-to-book migration service. Phase 2a adds the mobile book workspace (library, Write / Bible / Health / Project tabs, file reader and editor, rename/remove, history with undo) beside notebooks. Phase 3 (native tool calling in `packages/providers`) is in. Chats move to books as part of phase 4, which rebuilds chat around the agent anyway; the migration run and retiring the notebook UI follow once book chats exist.
 
 **Scope (in build order):**
 

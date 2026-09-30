@@ -3,7 +3,7 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:1036.
- * Not ported in M1: tools, JSON schema, logprobs, or reverse proxies.
+ * Not ported in M1: JSON schema, logprobs, or reverse proxies.
  */
 
 import {
@@ -14,6 +14,7 @@ import {
 import { API_URLS } from '../sources.js';
 import { makePromptNames, type GenerationParams, type ProviderChatRequest } from '../types.js';
 import { chatCompletionsUrl, compactObject, requireApiKey } from './provider-helpers.js';
+import { openAiToolFields } from './tools.js';
 
 export function buildDeepSeekRequest(params: GenerationParams): ProviderChatRequest {
   const apiKey = requireApiKey('deepseek', params.apiKey);
@@ -34,6 +35,7 @@ export function buildDeepSeekRequest(params: GenerationParams): ProviderChatRequ
       Authorization: `Bearer ${apiKey}`,
     },
     body: compactObject({
+      ...openAiToolFields(params),
       messages,
       model: params.model,
       temperature: params.temperature,

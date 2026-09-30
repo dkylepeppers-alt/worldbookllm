@@ -3,7 +3,7 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:846.
- * Not ported in M1: tools, JSON schema, or reverse proxies.
+ * Not ported in M1: JSON schema or reverse proxies.
  */
 
 import { convertMistralMessages } from '../convert/prompt-converters.js';
@@ -15,6 +15,7 @@ import {
   extraBoolean,
   requireApiKey,
 } from './provider-helpers.js';
+import { openAiToolFields } from './tools.js';
 
 export function buildMistralRequest(params: GenerationParams): ProviderChatRequest {
   const apiKey = requireApiKey('mistralai', params.apiKey);
@@ -26,6 +27,7 @@ export function buildMistralRequest(params: GenerationParams): ProviderChatReque
       Authorization: `Bearer ${apiKey}`,
     },
     body: compactObject({
+      ...openAiToolFields(params),
       model: params.model,
       messages: convertMistralMessages(
         structuredClone(params.messages),

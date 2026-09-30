@@ -3,7 +3,7 @@
  *
  * Portions derived from SillyTavern (https://github.com/SillyTavern/SillyTavern),
  * AGPL-3.0, commit 29e0df488, src/endpoints/backends/chat-completions.js:215.
- * Not ported in M1: tools, JSON schema, web search, prompt caching, media,
+ * Not ported in M1: JSON schema, web search, prompt caching, media,
  * verbosity, or reverse-proxy credential handling.
  */
 
@@ -14,6 +14,7 @@ import {
 import { API_URLS } from '../sources.js';
 import { makePromptNames, type GenerationParams, type ProviderChatRequest } from '../types.js';
 import { compactObject, requireApiKey } from './provider-helpers.js';
+import { claudeToolFields } from './tools.js';
 
 const DEFAULT_BETA_HEADERS = ['output-128k-2025-02-19', 'context-1m-2025-08-07'];
 
@@ -24,11 +25,12 @@ function messagesUrl(baseUrl: string): string {
 
 export function buildClaudeRequest(params: GenerationParams): ProviderChatRequest {
   const apiKey = requireApiKey('claude', params.apiKey);
+  const useTools = Array.isArray(params.tools) && params.tools.length > 0;
   const converted = convertClaudeMessages(
     structuredClone(params.messages),
     params.assistantPrefill ?? '',
     true,
-    false,
+    useTools,
     params.names ?? makePromptNames(),
   );
 
@@ -54,6 +56,7 @@ export function buildClaudeRequest(params: GenerationParams): ProviderChatReques
     top_p: params.topP,
     top_k: params.topK,
     stream: params.stream,
+    ...claudeToolFields(params),
   });
 
   if (isLimitedSampling) {
@@ -112,7 +115,9 @@ export function buildClaudeRequest(params: GenerationParams): ProviderChatReques
     headers: {
       'Content-Type': 'application/json',
       'anthropic-version': '2023-06-01',
-      'anthropic-beta': DEFAULT_BETA_HEADERS.join(','),
+      'anthropic-beta': [...DEFAULT_BETA_HEADERS, ...(useTools ? ['tools-2024-05-16'] : [])].join(
+        ',',
+      ),
       'x-api-key': apiKey,
     },
     body,
