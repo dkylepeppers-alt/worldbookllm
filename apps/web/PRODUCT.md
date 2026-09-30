@@ -14,7 +14,7 @@ Novelists, serial and short-fiction writers, worldbuilders, and game masters bui
 
 ## Product Purpose
 
-worldbookllm is a local-first, model-agnostic workspace for [story-skills](https://github.com/danjdewhurst/story-skills) projects. A book is a directory of plain Markdown with one file per character, place, arc, chapter, scene, and continuity thread. The `story` CLI keeps that structure valid and checks continuity. An agent runs the story-skills craft skills against the project: it plans, drafts, revises, and checks, and every change it proposes is shown as a diff the writer applies or rejects. Research and lore come in through the ingestion pipeline as research notes. Success is the writer trusting both the canon and the tool: every file stays readable and editable, and nothing changes without their say.
+worldbookllm is a local-first, model-agnostic workspace for [story-skills](https://github.com/danjdewhurst/story-skills) projects. A book is a directory of plain Markdown with one file per character, place, arc, chapter, scene, and continuity thread. The `story` CLI keeps that structure valid and checks continuity. An agent runs the story-skills craft skills against the project: it plans, drafts, revises, and checks, and every change it makes is shown as a diff the writer can undo. Research and lore come in through the ingestion pipeline as research notes. Series share a series bible so canon stays consistent from book to book. Success is the writer trusting both the canon and the tool: every file stays readable and editable, and every change can be seen and reversed.
 
 ## Positioning
 
@@ -31,7 +31,7 @@ Not a generic SaaS dashboard — no cream/sand card grids, gradient text, or her
 ## Design Principles
 
 - Files stay visible and inspectable — never let a UI pattern make the underlying Markdown feel hidden or secondary to the agent.
-- Nothing changes without the writer — the agent proposes, the writer applies; every model-made change is reviewable as a diff and undoable.
+- Every change is visible and reversible — the agent does real work, and each turn's edits land as a change summary with diffs and one-tap undo; writers who want to approve first can turn on review mode.
 - Thumb-first — every primary flow works one-handed on a phone; larger screens add panes, never features.
 - Precision over decoration — the cartographic motifs (coordinates, indices, spines, grid) earn their place by organizing real information; add new ones only when they label something true, not for atmosphere alone.
 - Model-agnostic, not model-flavored — the UI belongs to worldbookllm, not to the look of any single AI provider's chat product.

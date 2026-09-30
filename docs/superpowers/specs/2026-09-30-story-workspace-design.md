@@ -1,4 +1,4 @@
-# Story workspace: story-skills projects, agent, and mobile UI
+# Story workspace: story-skills projects, series, agent, and mobile UI
 
 **Date:** 2026-09-30
 
@@ -9,11 +9,15 @@
 ## Purpose
 
 This spec turns worldbookllm into a complete, mobile-first workspace for
-[story-skills](https://github.com/danjdewhurst/story-skills) projects. The project format is the
-data model. The `story` CLI does every structural operation. The story-skills skills run as they
-were written, by an agent that loads them on demand and proposes changes for the user to review.
-The app keeps its model-agnostic provider layer, its presets and Prompt Inspector, its ingestion
-converters, and its local-first promise that everything is plain Markdown the user owns.
+[story-skills](https://github.com/danjdewhurst/story-skills) books and series.
+
+- The story-skills project format is the data model, and the `story` CLI does every structural
+  operation.
+- A series gets a series bible that holds shared canon.
+- The story-skills skills run as they were written, by an agent that reads, writes, and runs the
+  CLI. Every write is recorded in a checkpoint with a diff and undo.
+- The app keeps its model-agnostic provider layer, presets, Prompt Inspector, and ingestion
+  converters, and its local-first promise that everything is plain Markdown the user owns.
 
 ## Pinned upstream: story-skills 0.18.0
 
@@ -27,52 +31,135 @@ converters, and its local-first promise that everything is plain Markdown the us
   `scene`, `question`, `promise`, `clue`, `term`, `matter`, and `research`.
 - **Singletons.** `story.md`, `style-sheet.md`, `plot/timeline.md`, `continuity/state.md`,
   `continuity/exemptions.md`, and `progress.md`.
+- **Series.**
+  - Books are sibling folders linked by `series`, `book-number`, `follows`, and `precedes` in
+    `story.md`. `story init --follows`/`--precedes` writes both link directions.
+  - Shared entities are copied per book with identical ids.
+  - Cross-book knowledge matches on `fact` ids in `continuity/state.md`.
+  - `story series` orders the books chronologically and checks shared canon: deaths, relearned
+    facts, name drift, and destroyed artifacts.
 - **CLI.** It has about 35 commands. The check and analysis commands support `--json`, which prints
   `{ apiVersion, command, ok, data, diagnostics, writes }`. Exit codes: 0 means ok, 1 findings,
   2 usage error, 3 unusable project, 4 write refused.
 - **Skills.** 23 `SKILL.md` files with `references/`, about 590 KB in total. Descriptions carry
   trigger phrases and "NOT for" redirects.
 
+## Data layout
+
+```
+data/
+├── projects/<book-slug>/            standalone book (story-skills project)
+├── series/<series-id>/              a series (upstream's "sibling folders" rule)
+│   ├── series-bible/                series bible: a story-skills project, no chapters
+│   ├── <book-one>/                  books, linked via follows/precedes
+│   └── <book-two>/
+├── skills/<name>/SKILL.md + references/
+├── trash/
+└── worldbookllm.db                  index, chats, presets, checkpoints, settings
+```
+
+## Series and the series bible
+
+The series bible is an app convention layered on upstream. We checked it against the 0.18.0 CLI:
+
+- A `series-bible/` project with `series: <id>` and no links validates on its own.
+- `story series` run from a book ignores the bible.
+- Entities copied from the bible pass `validate`, `links`, and `series` in each book.
+- `story names … --path ../series-bible` catches clashes against the bible.
+
+**What the bible holds.** The bible is the canonical home for:
+
+- Shared characters, locations, systems, factions, artifacts, and glossary terms.
+- The series `fact` registry. The facts are listed in the bible's `continuity/state.md`
+  `knowledge-state`, with the book and chapter where each is first learned recorded in the body
+  table.
+- A series timeline: `plot/timeline.md`, with events across books in story-time order.
+- `## Series Notes` in the bible's `story.md`, covering premise, chronology, and canon rules.
+
+**Identity and state fields.** Each entity field is either identity, owned by the bible, or
+book-local state, owned by each book. The split is kept in a versioned field map derived from
+`story.schema.json` (0.18.0 field names). A field the map does not list is treated as book-local:
+
+| Kind      | Identity (synced from the bible)                                                                                                                                                      | Book-local (never overwritten)                                                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| character | `name`, `aliases`, `pronunciation`, `voice-words`, `voice-avoid`, `tags`, `## Appearance`, `## Personality & Traits`, `## Backstory`, `## Voice & Speech Patterns`, `## Series Canon` | `role`, `status`, `died-in`, `revived-in`, `relationships`, `locations`, `progressions`, `arc`, `arc-type`, `lie`, `truth`, `ghost-wound`, `## Motivations & Goals`, `## Character Arc`, `## Timeline` |
+| location  | `name`, `pronunciation`, `type`, `region`, `setting`, `tags`, descriptive body sections, `## Series Canon`                                                                            | `status`, `population`, `controlled-by`, `notable-characters`, `routes`, `progressions`                                                                                                                |
+| system    | `name`, `pronunciation`, `type`, `prevalence`, the body                                                                                                                               | none                                                                                                                                                                                                   |
+| faction   | `name`, `pronunciation`, `type`, `tags`, descriptive body sections, `## Series Canon`                                                                                                 | `status`, `members`, `locations`, `progressions`                                                                                                                                                       |
+| artifact  | `name`, `pronunciation`, `type`, `tags`, descriptive body sections, `## Series Canon`                                                                                                 | `status`, `owner`, `location`                                                                                                                                                                          |
+| term      | the whole file (`term`, `category`, `aliases`, `pronunciation`, the body)                                                                                                             | none                                                                                                                                                                                                   |
+
+**Sync.** `SeriesService` compares each book's copy against the bible using the identity fields
+only. The Series screen shows drift per entity and per book, for example "sera-voss: aliases
+differ in Book Two".
+
+- **Push from the bible.** Writes the identity fields into chosen books, leaving everything
+  else in place, then runs `reindex` and `validate`.
+- **Pull into the bible.** Adopts a book's version of the identity fields.
+- **Carry into a book.** Copies a bible entity into a book that does not have it yet, stripping
+  book-local references the way upstream's "Carrying canon between books" rules require.
+
+Every sync is a checkpoint with diffs and undo, whether the user or the agent runs it.
+
+**Operations.**
+
+- **Create a series.** Makes the folder and runs `story init` for the bible.
+- **Convert a standalone book into a series.** Moves the book into a new series folder with an
+  empty bible, then offers "seed the bible from this book", which copies the characters, world
+  entities, and terms, with identity fields only.
+- **Add a book.** Runs `story init --follows|--precedes <book>` or `--series` for a companion,
+  inside the series folder, then carries the entities the user picks.
+- **Series checks.** `story series --json` runs from any book, and `story links` runs on every
+  book. The results appear in the Series Health view together with bible drift.
+
 ## Information architecture
 
 ```
-Projects (atlas of books)
-└── Project
-    ├── Write     manuscript: chapters → scenes, reader/editor, targets, progress
-    ├── Bible     Cast · World (locations/systems/factions/artifacts) · Plot (arcs, timeline)
-    │             · Threads (questions/promises/clues, state) · Glossary · Research · Matter
-    ├── Agent     chats with the story-skills agent; tool transcript; changesets
-    ├── Health    report · next · doctor · continuity · timeline · pacing · clues · voices · diagrams
-    └── Project   story.md metadata · style sheet · passes · import · build/export · presets
-Settings (global): providers & keys, model, skills library, agent limits
+Library
+├── Standalone books
+└── Series → Series home: Bible · Books (chronology + publication order) · Series Health
+Book
+├── Write     manuscript: chapters → scenes, reader/editor, targets, progress
+├── Bible     Cast · World · Plot (arcs, timeline) · Threads (questions/promises/clues, state)
+│             · Glossary · Research · Matter   (series books show a "from series bible" badge + drift)
+├── Agent     chats with the story-skills agent; tool transcript; change summaries
+├── Health    report · next · doctor · continuity · timeline · pacing · clues · voices · diagrams
+└── Project   story.md metadata · style sheet · passes · import · build/export · presets
+Settings (global): providers & keys, model, skills library, agent limits, review mode
 ```
+
+The series bible opens with the same Bible screens, scoped to the bible project, plus a Sync view.
 
 ### Mobile layout (default, < 800px)
 
-- **Bottom tab bar** with the five project tabs: Write, Bible, Agent, Health, Project. Icons carry
-  mono labels. The bar respects `env(safe-area-inset-bottom)`, and every target is at least 44px.
-  The project switcher sits in the top bar.
+- **Bottom tab bar** with Write, Bible, Agent, Health, and Project. Icons carry mono labels. The
+  bar respects `env(safe-area-inset-bottom)`, and every target is at least 44px. The top bar
+  holds the book switcher; within a series, it also switches to sibling books and the bible.
 - **List to detail navigation.** A list is one screen. An entity or chapter opens full-screen with
-  back navigation. Swiping between siblings (next or previous chapter or scene) follows
-  reading order.
+  back navigation. Swiping between siblings (next or previous chapter or scene) follows reading
+  order.
 - **Editor.**
   - Frontmatter shows as a collapsible "Fields" card of schema-driven controls: enums become
     selects, id lists become chip pickers that autocomplete from the index, and dates and
-    numbers get native inputs.
+    numbers get native inputs. In series books, identity fields show a bible badge and a drift
+    marker.
   - The body is a Markdown editor with a toolbar that docks above the keyboard (headings,
     emphasis, and a wiki-style reference picker).
   - Autosave is debounced. A conflict banner appears when the file changed on disk.
-- **Agent tab.** The message list is full-screen with the composer pinned to the bottom.
-  - Tool steps render as collapsed chips inside the assistant message, for example "Loaded
-    skill · worldbuilding", "Ran story names · no clashes", and "Read characters/sera-voss.md".
-  - When a turn proposes changes, a changeset bar slides up. It opens a bottom sheet with one
-    diff per file, swipeable, with Apply, Skip, and Apply-all actions.
+- **Agent tab.**
+  - The message list is full-screen with the composer pinned to the bottom. Tool steps render as
+    collapsed chips inside the assistant message, for example "Loaded skill · worldbuilding",
+    "Ran story names · no clashes", and "Edited characters/sera-voss.md".
+  - Each turn that wrote files ends in a change summary card (for example "3 files · 2 edited · 1
+    created"). The card opens a swipeable diff sheet with Undo turn.
+  - In review mode, the same sheet shows Apply, Skip, and Apply-all instead.
   - Every entity screen has an "Ask the agent" action that opens the Agent tab with that file
     pinned.
 - **Health tab.** A summary shows error, warning, and dismissed counts from
-  `story report --json`, followed by the `story next` recommendations. Every diagnostic links
-  to its file (and chapter, when known). Views are one tap deep: timeline, pacing, clue grid,
-  voices, and diagrams (Mermaid source from `story diagram`, rendered client-side).
+  `story report --json`, followed by the `story next` recommendations. Every diagnostic links to
+  its file (and chapter, when known). Views are one tap deep: timeline, pacing, clue grid, voices,
+  and diagrams (Mermaid source from `story diagram`, rendered client-side). Series books add a
+  Series card.
 - **Offline.** The existing PWA shell (ADR 0010) caches the app. Viewing and editing need the
   local server, which is the same machine or the LAN.
 
@@ -88,49 +175,81 @@ Keep the Field Atlas system (`apps/web/DESIGN.md`): paper and ink, blueprint for
 primary actions, vermilion for danger and active state, Archivo for chrome, and Source Serif 4
 for the user's words. Changes:
 
-- The "atlas" voice moves from notebooks to books: "charting" and "plotted territories" still fit.
+- The "atlas" voice moves from notebooks to books and series.
 - Manuscript reading gets a dedicated reading measure: serif at 18–19px on mobile and 68ch on
   desktop.
 - Diffs use the two-accent rule: blueprint for additions and vermilion for removals, plus
   `+`/`−` gutters so color is never the only signal.
 
-`PRODUCT.md` is updated with the new positioning: a local-first, model-agnostic story workspace
-built on story-skills.
-
 ## Server
 
 ### Modules
 
-| Module                                             | Responsibility                                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `StoryCli`                                         | The only runner of `story-skills/bin/story.js`. Uses `execFile(process.execPath, …)`, `cwd` set to the project root, `--path` forced, `--json` where supported, a 20 s timeout (120 s for `build`), a 1 MB output cap, and a scrubbed env (`PATH`, a temporary `HOME`, `NO_COLOR=1`). Returns `{ exitCode, envelope?, stdout, stderr }`. Rejects any command or flag outside the per-caller allowlist. |
-| `ProjectService`                                   | Create (`story init`), import (`story import`), list, rename title, and delete (moves to `data/trash/`). Owns the per-project write lock.                                                                                                                                                                                                                                                              |
-| `ProjectIndex`                                     | Scans files into `project_files` (project, path, kind, entity id, title, hash, mtime, frontmatter JSON) and `project_search` (FTS5), reconciling on access by comparing mtime and hash. Maps CLI `writes` arrays to targeted re-index calls.                                                                                                                                                           |
-| `ProjectFiles`                                     | Reads and writes a file by relative path through a single `confine(root, rel)` helper, which rejects `..`, absolute paths, symlinks leaving the root, and dot-directories. Writes are atomic (temp file, then rename) and carry an expected-hash precondition.                                                                                                                                         |
-| `EntityService`                                    | Add, rename, move, and remove through `StoryCli`. After each, it runs `reindex` and targeted `validate`.                                                                                                                                                                                                                                                                                               |
-| `ChecksService`                                    | Runs and caches (keyed by project revision) `report`, `next`, `doctor`, `validate`, `links`, `continuity`, `timeline`, `pacing`, `clues`, `voices`, `diagram`, `knowledge`, and `context`.                                                                                                                                                                                                             |
-| `BuildService`                                     | Runs `export`, `build --format …`, and `synopsis`. Outputs land in `dist/` and are served for download.                                                                                                                                                                                                                                                                                                |
-| `IngestionService`                                 | Keeps the existing converters. On save, creates a `research` entity (or a user-chosen kind) with flat provenance keys, then fills the body.                                                                                                                                                                                                                                                            |
-| `AgentService`, `ToolRegistry`, `ChangesetService` | See Agent below.                                                                                                                                                                                                                                                                                                                                                                                       |
+| Module                         | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StoryCli`                     | The only runner of `story-skills/bin/story.js`. Uses `execFile(process.execPath, …)`, `cwd` set to the book root (the series folder for `init` with links), `--path` forced, `--json` where supported, a 20 s timeout (120 s for `build`), a 1 MB output cap, and a scrubbed env (`PATH`, a temporary `HOME`, `NO_COLOR=1`). Returns `{ exitCode, envelope?, stdout, stderr }`. Rejects any command or flag outside the per-caller allowlist. |
+| `ProjectService`               | Create (`story init`), import (`story import`, or an unzipped story-skills project), list, rename title, move a book into a series, and delete (moves to `data/trash/`). Owns a write lock per book, and a series lock for cross-book operations.                                                                                                                                                                                             |
+| `SeriesService`                | Create a series and its bible, convert a standalone book, add linked books, run the identity/state field map, compute drift, push/pull/carry sync, and run the series checks.                                                                                                                                                                                                                                                                 |
+| `ProjectIndex`                 | Scans files into `project_files` (workspace, book, path, kind, entity id, title, hash, mtime, frontmatter JSON) and `project_search` (FTS5), reconciling on access by comparing mtime and hash. Maps CLI `writes` arrays to targeted re-index calls.                                                                                                                                                                                          |
+| `ProjectFiles`                 | Reads and writes a file by relative path through a single `confine(root, rel)` helper, which rejects `..`, absolute paths, symlinks leaving the root, and dot-directories. Writes are atomic (temp file, then rename) and carry an expected-hash precondition.                                                                                                                                                                                |
+| `CheckpointService`            | Snapshots the prior contents of every file a write touches, including files changed by CLI commands (detected by hashing the book before and after, and cross-checked against the `writes` envelope). Groups the snapshots per user action or agent turn, serves diffs, and undoes.                                                                                                                                                           |
+| `EntityService`                | Add, rename, move, and remove through `StoryCli`, inside a checkpoint. After each, it runs `reindex` and targeted `validate`.                                                                                                                                                                                                                                                                                                                 |
+| `ChecksService`                | Runs and caches (keyed by book revision) `report`, `next`, `doctor`, `validate`, `links`, `continuity`, `timeline`, `pacing`, `clues`, `voices`, `diagram`, `knowledge`, `context`, and `series`.                                                                                                                                                                                                                                             |
+| `BuildService`                 | Runs `export`, `build --format …`, and `synopsis`. Also produces the SillyTavern exports. Outputs land in `dist/` and are served for download.                                                                                                                                                                                                                                                                                                |
+| `IngestionService`             | Keeps the existing converters. See Ingestion below.                                                                                                                                                                                                                                                                                                                                                                                           |
+| `AgentService`, `ToolRegistry` | See Agent below.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+### Ingestion
+
+Every input still gets the transient, editable preview. At review, the user picks the target:
+the book (or the series bible), and an entity kind, with research as the default.
+
+| Input                            | Handling                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Paste, `.txt`                    | Converted to Markdown, then created as a research note (or the chosen kind) with flat provenance keys `origin-type`, `origin-file`/`origin-url`, and `imported-at`.                                                                                                                                                                    |
+| `.md`                            | Read as Markdown. Existing flat frontmatter keys are kept. If the frontmatter matches a story-skills entity kind (for example it has `role` and `status` like a character), that kind is preselected. The file is validated in a scratch copy before it is written. Nested frontmatter is flattened at review, or moved into the body. |
+| `.md`/`.txt` manuscript          | The "Import as manuscript" option runs `story import`, which splits it into chapters in a new book or into the current empty book.                                                                                                                                                                                                     |
+| PDF, HTML                        | Existing converters, then the same path as paste.                                                                                                                                                                                                                                                                                      |
+| SillyTavern lorebook JSON        | One entry per World Info entry. Each entry's kind is suggested from its keys and content (character, location, faction, term, or research).                                                                                                                                                                                            |
+| SillyTavern character card JSON  | A `character` entity. The description and personality fill the matching body sections.                                                                                                                                                                                                                                                 |
+| `.zip` of a story-skills project | Imported as a new book (or a series, if it contains several linked books), then validated.                                                                                                                                                                                                                                             |
+
+### Exports
+
+| Export                 | Source                                                                                                                | Output                                                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manuscript formats     | `story export` / `story build`                                                                                        | Markdown, EPUB, DOCX, Shunn, HTML, print, narration, metadata, Fountain, Twine                                                                    |
+| Synopsis               | `story synopsis`                                                                                                      | Markdown                                                                                                                                          |
+| SillyTavern World Info | Bible entities of a book or of the series bible (characters, locations, systems, factions, artifacts, glossary terms) | Lorebook JSON. Each entry's keys are the name plus aliases, its content is the entity body without app metadata, and entries are grouped by kind. |
+| SillyTavern character  | One character entity                                                                                                  | Character card v2 JSON                                                                                                                            |
+| Project archive        | The book or the whole series folder                                                                                   | `.zip`                                                                                                                                            |
 
 ### API (replaces `/api/notebooks` and `/api/sources`)
 
 ```
-GET/POST   /api/projects                         list · create {title, genre?, pov?, tense?}
-POST       /api/projects/import                  manuscript upload → story import
-GET/PATCH/DELETE /api/projects/:p                metadata (story.md fields) · trash
-GET        /api/projects/:p/tree                 index grouped by kind, with registry order
-GET/PUT    /api/projects/:p/files/*path          read · write {content, expectedHash}
-POST       /api/projects/:p/entities             add {kind, name, fields}
-POST       /api/projects/:p/entities/:kind/:id/rename|move    ·  DELETE …/:kind/:id
-GET        /api/projects/:p/search?q=
-GET        /api/projects/:p/checks/:command      cached JSON envelope
-POST       /api/projects/:p/builds               {format, options} → dist file
-POST       /api/projects/:p/ingest/*             existing preview endpoints, project-scoped
-/api/projects/:p/chats …                         chats move under projects
+GET        /api/library                           books + series
+POST       /api/books                             create {title, genre?, pov?, tense?}
+POST       /api/books/import                      manuscript or project zip
+GET/PATCH/DELETE /api/books/:b                    metadata (story.md fields) · trash
+POST       /api/books/:b/move-to-series           {seriesId | newSeries}
+GET        /api/books/:b/tree                     index grouped by kind, registry order
+GET/PUT    /api/books/:b/files/*path              read · write {content, expectedHash}
+POST       /api/books/:b/entities                 add {kind, name, fields}
+POST       /api/books/:b/entities/:kind/:id/rename|move    ·  DELETE …/:kind/:id
+GET        /api/books/:b/search?q=
+GET        /api/books/:b/checks/:command          cached JSON envelope
+POST       /api/books/:b/builds                   {format, options} → dist file
+POST       /api/books/:b/ingest/*                 preview endpoints, book-scoped
+GET/POST   /api/books/:b/checkpoints · POST …/:c/undo
+POST       /api/series                            create {title, id}
+GET        /api/series/:s                         bible, books (chronology + publication order)
+POST       /api/series/:s/books                   add {title, follows? | precedes? | companion}
+GET        /api/series/:s/drift                   identity-field drift per entity per book
+POST       /api/series/:s/sync                    {direction: push|pull|carry, entity, books[]}
+/api/books/:b/chats …                             chats live under books (and the series bible)
 ```
 
-`:p` is the project slug (its directory name).
+The series bible is addressed as a book too (`:b` = `<series-id>/series-bible`).
 
 ### Migration from notebooks (one-time, versioned)
 
@@ -141,69 +260,87 @@ For each notebook:
    `origin-type`, `origin-url` or `origin-file`, `imported-at`, `legacy-category`, and `tags`.
    Its body is the source content under `## Findings`.
 3. Run `reindex`, then `validate`, and record the result.
-4. Rebind chats to the project. Map each chat's `sourceIds` to pinned file paths.
+4. Rebind chats to the book. Map each chat's `sourceIds` to pinned file paths.
 5. Rename `data/notebooks/` to `data/notebooks.migrated/`.
 
 The migration is idempotent and logs a report the UI shows once. Snapshots are not rewritten.
+Grouping migrated books into a series is a manual step afterwards (Move to series).
 
 ## Agent (ADR 0015)
 
 ### Loop
 
-- A turn is capped at `agent.maxSteps` steps (default 12). Text streams as today.
+- A turn is capped at `agent.maxSteps` steps (default 24). Text streams as today.
 - Tool calls within a step run sequentially.
 - Tool results are truncated at 24 KB and marked `[truncated: N bytes omitted]`.
-- A stop request aborts both the model call and the running tool.
+- A stop request aborts both the model call and the running tool. Writes that already happened
+  stay in the turn's checkpoint.
 - The one-generation-per-chat lock covers the whole turn.
 - A chat uses the agent when the configured source supports tools. Otherwise it falls back to
   plain chat with pinned files and pinned skills injected.
 
+### Scope
+
+The agent works on the chat's book. For a book in a series, it can also read and write the
+sibling books and the series bible: each file tool takes an optional `book` (a sibling slug, or
+`series-bible`). All paths are confined to the series folder, or to the book folder for a
+standalone book.
+
 ### System prompt
 
-1. A runtime preamble telling the model that:
-   - the project root is the working directory;
-   - the `story` CLI is available only through `run_story`, never through `bun`, `node`, or
+1. A runtime preamble telling the model:
+   - the workspace layout: this book, the sibling books and bible when the book is in a series,
+     and how to address each through `book`;
+   - that the `story` CLI is available only through `run_story`, never through `bun`, `node`, or
      `npx`;
-   - every file change is a proposal the user reviews;
-   - it must ask before inventing canon.
+   - to ask before inventing canon, and to keep series identity fields in the bible.
 2. The skill catalog: name and description of each installed skill.
 3. Pinned skill bodies.
 4. Pinned files.
-5. Project facts: title, genre, form, status, chapter and scene counts, and `story next` top
-   items.
+5. Book facts: title, genre, form, status, chapter and scene counts, and the top `story next`
+   items. For series books, the series order and any drift summary.
 
 Presets still apply generation controls and custom modules. The preset's protected Sources
 module position is where pinned files are emitted.
 
 ### Tools (JSON Schema to the model, validated with zod on the server)
 
-| Tool                                              | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `activate_skill {name}`                           | Returns the `SKILL.md` body and the list of reference files.                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `read_skill_file {name, path}`                    | Returns a `.md` file of up to 64 KB, confined to that skill's folder.                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `list_files {dir?}`                               | Returns project-relative paths with kind, id, and title.                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `read_file {path}`                                | Returns file content, confined to the project root.                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `search {query, limit?}`                          | Runs an FTS5 search over the project and returns paths and snippets.                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `run_story {command, args[]}`                     | Runs a read-only command from the allowlist: `validate`, `links`, `continuity`, `knowledge`, `context`, `compare`, `similarity`, `progress`, `timeline`, `prose`, `series`, `report`, `next`, `doctor`, `pacing`, `clues`, `voices`, `names`, plus `diagram`, `passes`, `wordcount`, and `synopsis` without their writing flags. Arguments are checked against a per-command option table, and `--path`/`--out` are always rejected. A non-zero exit is data, not a server error. |
-| `propose_write {path, content, reason}`           | Stages a full-file create or replace in the chat's open changeset.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `propose_story_command {command, args[], reason}` | Stages a write command (`add`, `rename`, `move`, `remove`, `reindex`, `wordcount --write`, `progress --log`, `passes --init/--start/--done`, `export`, `build`, `synopsis --out`, `diagram --out`). It is previewed on a scratch copy of the project, and the resulting diff is what the user reviews.                                                                                                                                                                            |
+| Tool                                       | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `activate_skill {name}`                    | Returns the `SKILL.md` body and the list of reference files.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `read_skill_file {name, path}`             | Returns a `.md` file of up to 64 KB, confined to that skill's folder.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `list_files {book?, dir?}`                 | Returns relative paths with kind, id, and title.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `read_file {book?, path}`                  | Returns file content.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `search {query, book?, limit?}`            | Runs an FTS5 search over one book, or over the whole series when `book` is `*`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `write_file {book?, path, content}`        | Creates or replaces a file. Edits to `_index.md` registries are refused, because those come from `story reindex`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `edit_file {book?, path, find, replace}`   | Replaces text exactly once, failing when there are zero or several matches. This is cheaper than rewriting a whole chapter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `delete_file {book?, path}`                | Deletes an entity file. The agent is told to prefer `story remove`, which scrubs references.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `run_story {book?, command, args[]}`       | Runs any allowlisted `story` command, read or write: `validate`, `links`, `continuity`, `knowledge`, `context`, `compare`, `similarity`, `progress`, `timeline`, `prose`, `series`, `report`, `next`, `doctor`, `pacing`, `clues`, `voices`, `names`, `diagram`, `passes`, `wordcount`, `synopsis`, `add`, `rename`, `move`, `remove`, `reindex`, `export`, `build`, and `init` with `--follows`/`--precedes`/`--series` inside the series folder only. Arguments are checked against a per-command option table built from upstream `docs/cli-reference.md`. `--path` and `--out` are set by the server, never by the model. A non-zero exit is data, not a server error. |
+| `sync_series {entity, direction, books[]}` | Push, pull, or carry identity fields between the bible and books, the same operation as the Series screen.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-### Changesets
+Every write the agent makes (file tools, write commands, and sync) goes through
+`CheckpointService` under the book or series lock, with an expected-hash check.
 
-- **Recording.** A changeset records each file's base hash at staging.
-- **Applying.** Apply checks each base hash, and a file that changed since staging is a conflict
-  the user resolves. It then writes atomically under the project lock and saves a checkpoint of
-  the prior contents to `project_checkpoints`, then runs `reindex` and `validate`. The latest
-  applied changeset per project can be undone.
-- **Next turn.** The outcome (applied, partial, or rejected, with an optional note) reaches the
-  model as a system message at the start of the next turn.
+### Checkpoints, change summaries, and review mode
+
+- **Default.** Writes apply immediately. At the end of the turn, the agent's checkpoint becomes a
+  change summary: files created, edited, and deleted, each with a diff. The latest checkpoints
+  per book can be undone one by one. The undo is refused with a conflict notice if a file has
+  changed since, by the user or a later turn.
+- **Review mode.** This is a global setting with a per-chat override, off by default. Writes are
+  staged instead of applied. `read_file` returns the staged version, so the agent sees its own
+  work. Write commands run on a scratch copy of the book, and their file effects are staged. The
+  user applies or skips per file, or applies everything. The outcome reaches the model at the
+  start of the next turn.
 
 ### Snapshot and events
 
 - **Snapshot.** `contextVersion: 3` adds `steps[]`. Each step records the messages sent, the
   secret-free request body, the assistant text, the tool calls, and each result, duration, and
-  exit code. Versions 1 and 2 still validate.
-- **SSE events.** These are added: `step`, `tool_call`, `tool_result`, and `changeset`.
+  exit code. It also adds the checkpoint id for the turn's writes. Versions 1 and 2 still
+  validate.
+- **SSE events.** These are added: `step`, `tool_call`, `tool_result`, and `checkpoint` (a file
+  list with counts).
 - **Inspector.** The Prompt Inspector gains a step selector.
 
 ### Skills library
@@ -215,8 +352,9 @@ module position is where pinned files are emitted.
 - **UI.** The Skills page groups skills by origin, shows references read-only, and flags local
   edits to upstream skills.
 - **Removals.** Delete `apps/server/skills-starter/`, its attribution and contract test, and the
-  `metadata.mode` handling. `skill-creator` and `game-facilitator` stay only if kept as local
-  extras (see the open questions).
+  `metadata.mode` handling. The two worldbookllm-original skills, `skill-creator` and
+  `game-facilitator`, are not shipped in M7. They remain in git history and are listed under
+  "Later" for integration.
 
 ## Build order (roadmap M7)
 
@@ -224,50 +362,49 @@ Each phase merges green and leaves the app usable.
 
 1. **Story core (server).**
    - Add the pinned dependency and build `StoryCli`, `ProjectService`, `ProjectIndex`,
-     `ProjectFiles`, `EntityService`, and `ChecksService`.
-   - Build the projects API and the notebook migration.
-   - Chat keeps working, scoped to projects, with pinned files standing in for selected sources.
-2. **Mobile shell.**
-   - Build the project list, the five-tab layout, Write and Bible lists and editors with
-     schema-driven fields, the Health tab, and the Project tab (metadata, import, build).
-   - Retire the notebook and source UI.
+     `ProjectFiles`, `CheckpointService`, `EntityService`, and `ChecksService`.
+   - Build the books API, ingestion into books (including `.md` and project zips), and the
+     notebook migration.
+   - Chat keeps working, scoped to books, with pinned files standing in for selected sources.
+2. **Mobile shell.** Build the library, the five-tab layout, Write and Bible lists and editors with
+   schema-driven fields, the Health tab, the Project tab (metadata, import, build, and exports
+   including SillyTavern), and the checkpoint history with undo. Retire the notebook and source UI.
 3. **Tool calling (providers).** Port from SillyTavern `29e0df488` with per-source fixtures and a
    NanoGPT smoke round trip.
-4. **Read-only agent.**
-   - Build `AgentService`, the read tools, skill activation, the v3 snapshots, and the Agent tab
-     transcript.
+4. **Agent.**
+   - Build `AgentService` with the full read/write tool set, skill activation, checkpoints and
+     change summaries, review mode, the v3 snapshots, and the Agent tab.
    - Install story-skills as the skill set and remove the jwynia starter set.
-5. **Changesets.** Build the proposal tools, the scratch-copy preview, the review sheet,
-   apply/undo, and checkpoints.
+5. **Series.** Build `SeriesService`, the series bible, identity/state sync, the Series screens
+   and Health, series-aware agent scope, and `sync_series`.
 6. **Polish.** Add diagrams, the knowledge and "what does X know at chapter N" views, `context`
-   previews for drafting, series linking, and PWA install prompts tuned for phones.
+   previews for drafting, and PWA install prompts tuned for phones.
 
 ## Testing
 
 - **Server.**
-  - `StoryCli` against fixture projects copied from upstream `examples/`: the allowlist, rejected
-    flags, timeout, output cap, and env scrubbing.
+  - `StoryCli` against fixture projects copied from upstream `examples/` (including the Ember
+    Cycle series): the allowlist, rejected flags, timeout, output cap, and env scrubbing.
   - `confine` against `..`, absolute paths, symlinks, and dot-directories.
+  - `CheckpointService` captures CLI-made writes and refuses a conflicted undo.
+  - Series drift, push, pull, and carry against the field map.
+  - Ingestion of `.md` with entity frontmatter, nested frontmatter, and project zips.
+  - The SillyTavern exports round-trip through the existing lorebook and card importers.
   - Migration from a fixture notebook data directory.
-  - Index reconciliation after out-of-band edits.
-  - Agent loop tests with a scripted stub provider: the step limit, stop, and the snapshot shape.
-  - Changeset tests: the preview, hash conflict, apply, and undo.
+  - Agent loop tests with a scripted stub provider: the step limit, stop, writes in both modes,
+    and the snapshot shape.
 - **Providers.** Per-source tool request and stream fixtures.
 - **Web.** Tests use vitest and testing-library, run at mobile viewport widths.
 - **e2e.** Playwright runs with a mobile device profile (e.g. Pixel 7) and a desktop profile.
-  1. Create a project and add a character through the form.
-  2. Ask the agent to add a location, and see the `activate_skill` and `names` chips.
-  3. Apply the changeset, and see Health update.
-  4. Undo.
-  5. Build EPUB and download it.
+  1. Create a book and add a character through the form.
+  2. Ask the agent to build a location. See the `activate_skill`, `names`, and edit chips, then
+     the change summary, then undo the turn.
+  3. Convert the book into a series, seed the bible, add a sequel, and edit a character's alias
+     in the bible.
+  4. See drift, then push the change.
+  5. Build EPUB and export a SillyTavern lorebook.
 
 ## Open questions
 
-1. **Series.** Should the app support multi-book series now (story-skills `series`, with shared
-   canon across sibling projects), or later in Phase 6 as planned?
-2. **Original skills.** Should `skill-creator` and `game-facilitator` be kept as local extras
-   beside story-skills?
-3. **Auto-apply.** Is a per-chat option to apply the agent's changes without review wanted, or
-   should review always be required?
-4. **Legacy exports.** Should SillyTavern lorebook export (old M5) survive as a Build format
-   generated from Bible entities?
+1. **Review mode default.** The agent's writes apply immediately with undo, and review mode is
+   opt-in. Is that the right default?

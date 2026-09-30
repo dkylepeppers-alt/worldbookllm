@@ -125,21 +125,34 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 ## M7 — Story workspace (proposed)
 
-**Goal:** make worldbookllm a complete, mobile-first workspace for [story-skills](https://github.com/danjdewhurst/story-skills) projects. Story projects replace notebooks, the pinned `story` CLI performs every structural operation, and a tool-calling agent runs the story-skills skills with every change it proposes reviewed by the user. See ADR 0014, ADR 0015, and `docs/superpowers/specs/2026-09-30-story-workspace-design.md`.
+**Goal:** make worldbookllm a complete, mobile-first workspace for [story-skills](https://github.com/danjdewhurst/story-skills) books and series.
 
-This supersedes the unfinished notebook-era scope: M2's remaining re-ingestion work and M5. Ingestion now files material into projects as research notes, and exports become `story build` formats.
+- Story projects replace notebooks, and the pinned `story` CLI performs every structural operation.
+- A series bible holds shared canon.
+- A tool-calling agent runs the story-skills skills. It reads, writes, and runs the CLI, and every change is shown as a diff that can be undone.
+
+See ADR 0014, ADR 0015, and `docs/superpowers/specs/2026-09-30-story-workspace-design.md`.
+
+This supersedes the unfinished notebook-era scope: M2's remaining re-ingestion work and M5. Ingestion now files material into books (research notes by default; `.md` entity files, manuscripts, and project zips import directly). Exports become `story build` formats plus SillyTavern lorebook and character-card exports.
 
 **Scope (in build order):**
 
-1. Story core: pinned `story-skills`, a sandboxed CLI runner, the project index and API, and a one-time notebook-to-project migration
-2. Mobile shell: projects plus Write / Bible / Agent / Health / Project tabs, with schema-driven entity editors and CLI-backed actions
+1. Story core: pinned `story-skills`, a sandboxed CLI runner, the book index and API, checkpoints, ingestion into books, and a one-time notebook-to-book migration
+2. Mobile shell: a library plus Write / Bible / Agent / Health / Project tabs, with schema-driven entity editors, CLI-backed actions, builds and SillyTavern exports, and undo history
 3. Native tool calling in `packages/providers`, ported from SillyTavern `29e0df488`
-4. Read-only agent: skill activation, file reads and search, allowlisted `story` checks, and multi-step snapshots; story-skills replaces the jwynia starter set
-5. Changesets: model-proposed writes and commands previewed as diffs, then applied with checkpoint undo
-6. Polish: diagrams, knowledge views, drafting-context previews, and series
+4. Agent: full read/write tools including write commands, skill activation, per-turn change summaries with undo, and opt-in review mode; story-skills replaces the jwynia starter set
+5. Series: a series bible (itself a story-skills project), linked books, identity/state sync with drift, series checks, and a series-aware agent
+6. Polish: diagrams, knowledge views, drafting-context previews, and phone PWA install
 
-**Done when:** on a phone, a user migrates or creates a book, adds a character, asks the agent to build a location, watches it load the skill and run `story names`, applies the proposed files, sees Health report a valid project, and builds an EPUB — with every model request visible in the Prompt Inspector.
+**Done when:** on a phone, a user does all of the following, with every model request visible in the Prompt Inspector:
+
+- migrates or creates a book and adds a character;
+- asks the agent to build a location and sees it load the skill, run `story names`, and write the files;
+- reviews the change summary (and can undo it);
+- turns the book into a series with a bible and adds a sequel;
+- pushes a bible edit to both books;
+- builds an EPUB and exports a SillyTavern lorebook.
 
 ## Later / unscheduled
 
-Ideas that are real but not yet committed to a milestone: retrieval smarter than FTS (embeddings), contradiction detection sweeps, timeline visualization, multi-notebook cross-referencing, alternate-canon branches, collaborative/multi-user mode, desktop packaging (Tauri), SillyTavern legacy text-completion backends if ever needed.
+Ideas that are real but not yet committed to a milestone: integrating the worldbookllm-original `skill-creator` and `game-facilitator` skills (parked in git history by ADR 0015), retrieval smarter than FTS (embeddings), contradiction detection sweeps, timeline visualization, multi-notebook cross-referencing, alternate-canon branches, collaborative/multi-user mode, desktop packaging (Tauri), SillyTavern legacy text-completion backends if ever needed.
