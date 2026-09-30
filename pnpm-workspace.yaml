@@ -2,6 +2,20 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
+# Versions shared by several workspace packages; reference them as
+# "catalog:" in package.json so every package moves together.
+catalog:
+  '@types/node': ^24.19.0
+  '@vitest/coverage-v8': ^4.1.10
+  typescript: ^6.0.3
+  vitest: ^4.1.10
+  zod: ^4.6.5
+
+# Keep every copy of the Node types on the runtime's major (.nvmrc), including
+# ones pulled in transitively or as optional peers (@types/better-sqlite3, vite).
+overrides:
+  '@types/node': 'catalog:'
+
 # Dependencies allowed to run install scripts; pnpm blocks all others, and
 # strictDepBuilds makes a new unapproved one fail the install instead of
 # being skipped with a warning. better-sqlite3 fetches or compiles its native
