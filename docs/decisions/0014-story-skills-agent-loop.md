@@ -1,0 +1,35 @@
+# ADR 0014 — Tool-calling agent loop running story-skills over a story project
+
+**Status:** proposed · 2026-09-30 · supersedes ADR 0011 decisions 3, 6, and 7
+
+## Context
+
+ADR 0011 made skills prompt-injected instruction text: attached skills are pasted into a `## Skills` system message, the model has no tools, and a bundled starter set adapted from jwynia/agent-skills was rewritten to emit source-ready Markdown. It deferred a model-driven activation loop (phase 2) and native tool calling (phase 3).
+
+The skills collection we now want to use, [story-skills](https://github.com/danjdewhurst/story-skills) (MIT, npm `story-skills`, Node ≥ 18), is written for an agent that can act. Its 23 skills read and write a defined Markdown project layout (`story.md`, `characters/`, `worldbuilding/`, `plot/`, `chapters/`, `scenes/`, `continuity/`, `glossary/`, each entity one file with YAML frontmatter), and they hand mechanical work to a companion `story` CLI: validation, registry rebuilds, continuity and knowledge queries, spoiler-free drafting context (`story context`), name-clash checks, entity add/rename/move/remove, and manuscript builds. Its skill descriptions route requests to one another, and its `references/` folders are meant to be loaded on demand. Injected as plain text into a tool-less chat, these skills would instruct the model to do things it cannot do, and even as text they are too large to attach wholesale: about 250 KB of `SKILL.md` plus about 340 KB of references.
+
+ADR 0011 rejected tool calling because `packages/providers` did not port it. That premise no longer holds: SillyTavern at the port's baseline commit `29e0df488` already builds `tools`/`tool_choice` requests and normalizes tool-call deltas for nearly all ported sources (OpenAI, Claude, Google, Mistral, OpenRouter, DeepSeek, Groq, xAI, NanoGPT, custom OpenAI-compatible, and others). Tool calling can be ported under ADR 0005's rules instead of invented.
+
+## Decision
+
+1. **Port native tool calling into `packages/providers` from SillyTavern `29e0df488`.** Request building accepts provider-neutral tool definitions and a tool choice. The stream normalizer surfaces tool-call deltas and the canonical message model gains assistant tool calls and `tool` result messages. The package stays pure and follows the port rules (attribution headers, upstream-first fixes, tests per behavior). Each source advertises whether it supports tools, mirroring upstream `isToolCallingSupported`.
+2. **The server runs a bounded agent loop.** A turn repeats the cycle of calling the model, executing the tool calls it returns, appending the results, and calling the model again. It stops when the model answers with no tool call, when the user stops it, or when it reaches a step limit. All tools execute server-side. Every model call, tool call, and tool result is appended to the exchange's immutable snapshot (`contextVersion` 3) and streamed to the browser, so the Prompt Inspector shows the whole run, not just the first request.
+3. **Skills use progressive disclosure through tools.** The system prompt carries only the skill catalog: names and descriptions. The model loads a skill body with `activate_skill` and a reference file with `read_skill_file`. The model chooses skills itself. Attaching a skill to a chat becomes an optional pin that preloads it.
+4. **A notebook can hold a story project.** An opted-in notebook has a story-skills project at `data/notebooks/<id>/story/`, created by `story init`. Its files are user-visible Markdown, indexed like sources and editable in the app and on disk. Existing sources stay as reference material that the agent can list, search, and read. Sources are not converted into story entities.
+5. **The `story` CLI runs as an exact-pinned dependency behind an allowlist.** The server invokes `story-skills/bin/story.js` with `execFile(process.execPath, …)`, never a shell. It forces `--path` to the notebook's project root and adds `--json` where supported. Each call has a timeout, an output cap, and a scrubbed environment. Commands that only read (for example `validate`, `links`, `continuity`, `knowledge`, `context`, `names`, `pacing`, `clues`, `timeline`, `report`, `next`) run freely.
+6. **Every write needs the user's approval.** The model changes files only by proposing edits (`propose_write`) or by requesting a CLI command that writes (`add`, `rename`, `move`, `remove`, `reindex`, `export`, `build`, `synopsis --out`, …). Proposals collect into a changeset shown as per-file diffs, and nothing touches disk until the user applies it. Applying a changeset records a checkpoint of the prior file contents so the user can undo it.
+7. **story-skills replaces the jwynia starter set.** "Install starter skills" installs the pinned story-skills skills, `references/` included, into `data/skills/` with `origin: story-skills@<version>`. A short runtime preamble maps the skills' CLI instructions to the `run_story` tool. The skill text itself stays upstream-verbatim. The adapted jwynia skills, their attribution, and the kind-specific content contract are removed from the repository. Skills already installed in a user's data directory are left alone.
+8. **Plain chat remains.** Providers or models without tool support, and notebooks with no story project, keep today's single-request chat, with `## Skills` injection for pinned skills.
+
+## Rationale
+
+Porting SillyTavern's tool calling keeps the project inside its established provider boundary and gets all 26 providers a single code path, where a text-sentinel protocol would be fragile across models and would need replacing later anyway. Running story-skills as written, rather than rewriting its instructions for a tool-less chat as we did with jwynia's, keeps us on an actively released upstream and preserves its real value: the deterministic CLI checks and its spoiler-free context packing. Keeping the story project as plain Markdown in the notebook directory satisfies the transparency rule (ADR 0003), and the user can open the same project in any editor, in git, or with the standalone CLI. Gating every write behind a reviewable changeset extends M5's diff-review principle to an agent that would otherwise edit canon unsupervised.
+
+## Consequences
+
+- Agent turns cost several model calls and more tokens than a single-request chat. The step limit and the snapshot make that cost bounded and visible.
+- `packages/providers` grows a tool-calling surface that must track upstream fixes, and its tests gain per-provider tool fixtures. The e2e stub provider must speak tool calls.
+- The server takes on process execution, so the CLI allowlist, argument validation, and path confinement become security-relevant code.
+- A story-skills upgrade becomes a reviewed, deliberate change, since skill text and CLI behavior move together at one pinned version.
+- ADR 0011's snapshot guarantee, "the inspector shows exactly what the model received", now covers a sequence of requests rather than one request.
+- Users with the old starter skills installed keep their copies as ordinary user skills, and those copies still appear in the catalog.

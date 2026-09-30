@@ -123,6 +123,20 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Done when:** a user installs the starter set, attaches a skill to a chat, sends a message, and the Prompt Inspector shows the exact skill text the model received — with the skill visible and editable as Markdown on disk.
 
+## M7 — Story-skills agent (proposed)
+
+**Goal:** replace the prompt-injected starter skills with [story-skills](https://github.com/danjdewhurst/story-skills), run by a tool-calling agent that loads skills on demand, works on a Markdown story project in the notebook, and uses the `story` CLI for checks — with every write reviewed by the user. See ADR 0014 and `docs/superpowers/specs/2026-09-30-story-skills-agent-design.md`.
+
+**Scope (in build order):**
+
+1. Native tool calling in `packages/providers`, ported from SillyTavern `29e0df488`
+2. Server agent loop with read-only tools (skill activation, source/project reads, allowlisted `story` commands) and multi-step exchange snapshots
+3. Opt-in story projects in notebooks (`story init`/`import`), a Story tab, and a Health panel
+4. Reviewable changesets for model-proposed file edits and write commands, with checkpoint undo
+5. story-skills installed as the starter set; the jwynia-adapted set removed
+
+**Done when:** a user opens a story project, asks the agent to create a character, sees it load the skill and run `story names`, reviews and applies the proposed file, and sees `story validate` pass — all visible in the Prompt Inspector.
+
 ## Later / unscheduled
 
-Ideas that are real but not yet committed to a milestone: retrieval smarter than FTS (embeddings), a model-driven skill activation loop (progressive disclosure over the M6 library, then orchestrator skills, then native tool calling — ADR 0011 phases 2–3), contradiction detection sweeps, timeline visualization, multi-notebook cross-referencing, alternate-canon branches, collaborative/multi-user mode, desktop packaging (Tauri), SillyTavern legacy text-completion backends if ever needed.
+Ideas that are real but not yet committed to a milestone: retrieval smarter than FTS (embeddings), contradiction detection sweeps, timeline visualization, multi-notebook cross-referencing, alternate-canon branches, collaborative/multi-user mode, desktop packaging (Tauri), SillyTavern legacy text-completion backends if ever needed.
