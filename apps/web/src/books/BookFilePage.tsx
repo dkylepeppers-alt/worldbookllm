@@ -2,7 +2,7 @@ import type { BookEntityKind, BookFileDetail } from '@worldbookllm/shared';
 import { BOOK_ENTITY_KINDS } from '@worldbookllm/shared';
 import { type FormEvent, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
 
 import { ApiClientError } from '../api/client.js';
@@ -139,6 +139,12 @@ function FileView({ file, onChanged }: FileViewProps) {
             </button>
           ) : null}
         </div>
+        <Link
+          className="ask-agent"
+          to={`/books/${encodeURIComponent(slug)}/agent?about=${encodeURIComponent(file.path)}`}
+        >
+          Ask the agent about this file
+        </Link>
       </header>
 
       {error === null ? null : (

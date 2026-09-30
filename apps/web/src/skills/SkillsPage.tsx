@@ -5,6 +5,7 @@ import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
+import { StorySkillsInstall } from '../agent/StorySkillsInstall.js';
 import { StarterSkillsDialog } from './StarterSkillsDialog.js';
 
 type LoadState =
@@ -159,6 +160,7 @@ export function SkillsPage() {
         >
           New skill
         </button>
+        <StorySkillsInstall onInstalled={refresh} />
         <button type="button" className="button-secondary" onClick={() => setInstalling(true)}>
           Install starter skills
         </button>

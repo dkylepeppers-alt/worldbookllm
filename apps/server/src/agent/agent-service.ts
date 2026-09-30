@@ -220,7 +220,14 @@ export class AgentService {
     private readonly providers: ProviderService,
     private readonly tools: AgentToolRegistry,
     private readonly logError: (error: unknown) => void = () => undefined,
-  ) {}
+  ) {
+    // No turn survives a restart. A message still marked streaming was cut
+    // off by the process exiting; record it as interrupted so it does not
+    // look like a turn in progress forever.
+    this.db
+      .prepare("UPDATE agent_messages SET status = 'interrupted' WHERE status = 'streaming'")
+      .run();
+  }
 
   createChat(book: string, title?: string): AgentChat {
     this.books.root(book);
@@ -508,7 +515,10 @@ export class AgentService {
             content: outcome.ok ? result : `Error: ${result}`,
           });
         }
-        persist('streaming');
+        // Point the message at the pending checkpoint as soon as it exists:
+        // a restart promotes pending checkpoints to history, and the
+        // interrupted turn must still show its changes and be undoable.
+        persist('streaming', session.pendingId);
         if (signal.aborted) break;
       }
 

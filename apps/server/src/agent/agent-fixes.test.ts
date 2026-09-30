@@ -139,6 +139,133 @@ describe('stopping a turn', () => {
   });
 });
 
+describe('restarting the server', () => {
+  it('records the pending checkpoint on the message while the turn runs', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-pending-'));
+    tempDirs.push(dataDir);
+    const db = openDatabase(dataDir);
+    const presets = new PresetService(db);
+    presets.updateSettings({
+      providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+    });
+    const skills = new SkillService(db, new SkillFileStore(dataDir));
+    const pendingId = '3f0c2b1a-9d8e-4c7b-a6f5-e4d3c2b1a098';
+    const books = {
+      root: () => dataDir,
+      get: () => ({
+        slug: 'harbor',
+        title: 'Harbor',
+        genre: null,
+        status: null,
+        seriesId: null,
+        bookNumber: null,
+        counts: {},
+        updatedAt: new Date().toISOString(),
+      }),
+      startSession: () => ({ book: 'harbor', pendingId }),
+      commitSession: async () => null,
+    } as unknown as BookService;
+    let midTurn: string | null | undefined;
+    let requests = 0;
+    const toolCall = {
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'c1',
+                type: 'function',
+                function: { name: 'write_file', arguments: '{}' },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const text = { choices: [{ index: 0, delta: { content: 'Done.' } }] };
+    const providers = {
+      createChatRequest: () => ({
+        url: 'http://provider.test/v1',
+        method: 'POST',
+        headers: {},
+        body: {},
+      }),
+      snapshotRequestBody: () => ({}),
+      openChatStream() {
+        requests += 1;
+        if (requests === 2) {
+          midTurn = db
+            .prepare("SELECT checkpoint_id FROM agent_messages WHERE role = 'assistant'")
+            .pluck()
+            .get() as string | null;
+        }
+        const payload = requests === 1 ? toolCall : text;
+        return Promise.resolve(
+          new Response(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`).body!,
+        );
+      },
+    } as unknown as ProviderService;
+    const tools = {
+      definitions: () => [],
+      execute: async () => ({ ok: true, result: 'ok' }),
+    };
+    const agent = new AgentService(
+      db,
+      books,
+      skills,
+      presets,
+      providers,
+      tools as unknown as AgentToolRegistry,
+    );
+    const chatId = agent.createChat('harbor').id;
+    const prepared = agent.prepare(chatId, 'Write it.');
+    try {
+      await agent.run(prepared, new AbortController().signal, () => undefined);
+    } finally {
+      prepared.release();
+    }
+    expect(midTurn).toBe(pendingId);
+    // The committed checkpoint replaces it when the turn ends (null: nothing changed).
+    expect(agent.getChat(chatId).messages[1]?.checkpointId).toBeNull();
+    db.close();
+  });
+
+  it('marks a turn left streaming by the previous process as interrupted', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-restart-'));
+    tempDirs.push(dataDir);
+    const db = openDatabase(dataDir);
+    const presets = new PresetService(db);
+    presets.updateSettings({
+      providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+    });
+    const skills = new SkillService(db, new SkillFileStore(dataDir));
+    const books = { root: () => dataDir } as unknown as BookService;
+    const create = () =>
+      new AgentService(
+        db,
+        books,
+        skills,
+        presets,
+        {} as ProviderService,
+        {} as unknown as AgentToolRegistry,
+      );
+    const before = create();
+    const chat = before.createChat('harbor');
+    // prepare() stores the assistant message as streaming; the process then "exits".
+    before.prepare(chat.id, 'Draft the opening.');
+    expect(before.getChat(chat.id).messages[1]?.status).toBe('streaming');
+
+    const after = create();
+    expect(after.getChat(chat.id).messages.map((message) => message.status)).toEqual([
+      'complete',
+      'interrupted',
+    ]);
+    db.close();
+  });
+});
+
 describe('run_story exit codes', () => {
   it('fails the tool for exits 2, 3 and 4, and keeps exit 1 informational', async () => {
     let exitCode = 0;

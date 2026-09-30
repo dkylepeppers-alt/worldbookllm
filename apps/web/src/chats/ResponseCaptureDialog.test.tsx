@@ -144,11 +144,14 @@ describe('ResponseCaptureDialog', () => {
         conversionNotes: [],
       }),
     );
+    // Saving navigates and then closes; wait for both instead of racing the render.
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     expect(addSource).toHaveBeenCalledWith(created);
     expect(setLastSourceId).toHaveBeenCalledWith(created.id);
-    expect(onClose).toHaveBeenCalledOnce();
-    expect(screen.getByTestId('location').textContent).toBe(
-      `/notebooks/${notebook.id}/sources/${created.id}`,
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe(
+        `/notebooks/${notebook.id}/sources/${created.id}`,
+      ),
     );
   });
 

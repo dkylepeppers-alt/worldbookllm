@@ -4,6 +4,8 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-
 
 import './styles.css';
 
+import { AgentChatRoute } from './agent/AgentChatPage.js';
+import { AgentPage } from './agent/AgentPage.js';
 import { ApiProvider } from './api/ApiContext.js';
 import { createApiClient, type ApiClient } from './api/client.js';
 import { BiblePage } from './books/BiblePage.js';
@@ -43,6 +45,8 @@ export function AppRoutes() {
           <Route index element={<Navigate to="write" replace />} />
           <Route path="write" element={<WritePage />} />
           <Route path="bible" element={<BiblePage />} />
+          <Route path="agent" element={<AgentPage />} />
+          <Route path="agent/:chatId" element={<AgentChatRoute />} />
           <Route path="health" element={<HealthPage />} />
           <Route path="project" element={<ProjectPage />} />
           <Route path="files/*" element={<BookFilePage />} />

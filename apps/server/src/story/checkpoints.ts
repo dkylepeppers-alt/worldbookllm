@@ -452,6 +452,11 @@ export class CheckpointSession {
     }
   }
 
+  /** The hidden checkpoint holding the changes so far, or null before the first change. */
+  get pendingId(): string | null {
+    return this.checkpointId;
+  }
+
   get changedPaths(): string[] {
     return [...this.after.keys()]
       .filter((path) => !sameBytes(this.before.get(path) ?? null, this.after.get(path) ?? null))
