@@ -39,4 +39,4 @@
 ## S5 — Journey and docs
 
 - e2e (phone profile): convert a book, seed the bible, add a sequel, edit an alias in the bible, see drift, push it.
-- Docs: `ARCHITECTURE.md` series section, `ROADMAP.md` M7 status, `DEPLOYMENT.md` backup note (series folders are under `data/series/`), ADR 0018 status to accepted.
+- Docs: `ARCHITECTURE.md` series section, `ROADMAP.md` M7 status, `DEPLOYMENT.md` backup note (series folders are under `data/series/`).

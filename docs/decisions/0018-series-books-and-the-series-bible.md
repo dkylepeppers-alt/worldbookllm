@@ -1,6 +1,6 @@
 # ADR 0018 — Series live on disk as sibling projects with a series bible, addressed by slug
 
-**Status:** proposed · 2026-09-30 · implements the spec's phase 5 (ADR 0014)
+**Status:** accepted · 2026-09-30 · implements the spec's phase 5 (ADR 0014)
 
 ## Context
 
