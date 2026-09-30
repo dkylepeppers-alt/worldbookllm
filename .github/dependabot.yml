@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # @eslint/js is versioned with eslint core; bump them together so the
+      # recommended rules never lag the linter (including across majors).
+      eslint:
+        patterns:
+          - 'eslint'
+          - '@eslint/js'
       minor-and-patch:
         update-types:
           - minor

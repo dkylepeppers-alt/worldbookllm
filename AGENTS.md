@@ -4,7 +4,7 @@ A local-first, model-agnostic creative writing and worldbuilding workspace: stor
 
 ## Commands
 
-All from the repo root (pnpm 9, Node ≥ 20.19):
+All from the repo root (pnpm 9, Node ≥ 22.12):
 
 - `pnpm dev` — start server (http://localhost:3001) and web UI (http://localhost:5173) together
 - `pnpm test` / `pnpm lint` / `pnpm typecheck` / `pnpm build` — fan out to all packages

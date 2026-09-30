@@ -248,7 +248,7 @@ export class AgentToolRegistry {
   private activateSkill(name: string, context: ToolContext): string {
     const skill = this.skills.get(this.skillByName(name, context).id);
     const referencesDir = join(this.skillsRoot, skill.name, 'references');
-    let references: string[] = [];
+    let references: string[];
     try {
       references = readdirSync(referencesDir)
         .filter((file) => file.endsWith('.md'))

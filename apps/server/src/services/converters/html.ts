@@ -51,7 +51,7 @@ export function convertHtml(bytes: Buffer, fileName: string): ConversionResult {
 
   // Readability mutates the document it parses, so give it a fresh copy and keep
   // `document` intact for the fallback path.
-  let article: ReturnType<Readability['parse']> = null;
+  let article: ReturnType<Readability['parse']>;
   try {
     article = new Readability(parseHTML(html).document).parse();
   } catch {

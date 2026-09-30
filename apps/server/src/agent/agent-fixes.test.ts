@@ -499,6 +499,7 @@ describe('agent edits and checkpoints', () => {
       key: string,
       work: () => Promise<T> | T,
     ) {
+      // Function.prototype.call erases run's generic, so restore it here.
       return original.call(this, key, async () => {
         if (armed && key === slug) {
           armed = false;
@@ -506,7 +507,7 @@ describe('agent edits and checkpoints', () => {
           await gate;
         }
         return work();
-      });
+      }) as Promise<T>;
     };
 
     try {
