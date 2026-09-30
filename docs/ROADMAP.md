@@ -123,7 +123,7 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Done when:** a user installs the starter set, attaches a skill to a chat, sends a message, and the Prompt Inspector shows the exact skill text the model received — with the skill visible and editable as Markdown on disk.
 
-## M7 — Story workspace (proposed)
+## M7 — Story workspace
 
 **Goal:** make worldbookllm a complete, mobile-first workspace for [story-skills](https://github.com/danjdewhurst/story-skills) books and series.
 

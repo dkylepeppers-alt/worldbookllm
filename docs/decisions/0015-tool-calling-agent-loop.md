@@ -1,6 +1,6 @@
 # ADR 0015 — Tool-calling agent loop running story-skills
 
-**Status:** proposed · 2026-09-30 · supersedes ADR 0011 decisions 3, 6, and 7
+**Status:** accepted · 2026-09-30 · supersedes ADR 0011 decisions 3, 6, and 7
 
 ## Context
 

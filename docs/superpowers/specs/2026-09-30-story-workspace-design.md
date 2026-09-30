@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-30
 
-**Status:** Proposed
+**Status:** Approved
 
 **Decision records:** ADR 0014 (story projects replace notebooks), ADR 0015 (tool-calling agent loop)
 
@@ -404,7 +404,6 @@ Each phase merges green and leaves the app usable.
   4. See drift, then push the change.
   5. Build EPUB and export a SillyTavern lorebook.
 
-## Open questions
+## Resolved decisions
 
-1. **Review mode default.** The agent's writes apply immediately with undo, and review mode is
-   opt-in. Is that the right default?
+- **Review mode default (2026-09-30).** The agent's writes apply immediately, and each turn ends in a change summary with undo. Review mode is opt-in, as a global setting with a per-chat override.

@@ -1,6 +1,6 @@
 # ADR 0014 — Story-skills projects replace notebooks
 
-**Status:** proposed · 2026-09-30 · supersedes ADR 0003's notebook/source layout and the source-organization model (categories, tags, bulk organize)
+**Status:** accepted · 2026-09-30 · supersedes ADR 0003's notebook/source layout and the source-organization model (categories, tags, bulk organize)
 
 ## Context
 
