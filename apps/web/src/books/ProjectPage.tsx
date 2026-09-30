@@ -130,9 +130,16 @@ export function ProjectPage() {
       ) : null}
 
       <h3>Remove</h3>
-      <button type="button" className="button-danger" onClick={() => setTrashing(true)}>
-        Move book to trash
-      </button>
+      {tree.book.seriesId === null ? (
+        <button type="button" className="button-danger" onClick={() => setTrashing(true)}>
+          Move book to trash
+        </button>
+      ) : (
+        <p>
+          Books in a series and series bibles cannot be moved to trash yet. Their folders stay in
+          data/series/.
+        </p>
+      )}
       {trashing ? (
         <ConfirmDialog
           title={`Move ${tree.book.title} to trash?`}

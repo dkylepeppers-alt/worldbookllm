@@ -412,6 +412,7 @@ describe('book health and project', () => {
       addSeriesBook,
     });
     expect(await screen.findByRole('link', { name: 'Tides' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Move book to trash' })).toBeNull();
     await userEvent.type(
       screen.getByRole('textbox', { name: 'Add a book to this series' }),
       'High Water',
