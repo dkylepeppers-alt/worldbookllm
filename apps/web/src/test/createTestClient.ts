@@ -32,6 +32,7 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     updateCustomAgent: unused,
     deleteCustomAgent: unused,
     deleteAgentChat: unused,
+    stopAgentChat: unused,
     streamAgentMessage: unused,
     installStorySkills: unused,
     getProviderCatalog: () => Promise.resolve([]),

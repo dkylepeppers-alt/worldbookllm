@@ -452,6 +452,48 @@ describe('agent turns', () => {
     expect(after.statusCode).toBe(204);
   });
 
+  it('stops a running turn from another request and records it as interrupted', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let markReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve;
+    });
+    const { app, chat } = await boot([() => sse(text('Hi.'))], 'custom', 'local', async () => {
+      markReady();
+      await gate;
+    });
+
+    const idle = await app.inject({ method: 'POST', url: `/api/agent-chats/${chat.id}/stop` });
+    expect(idle.statusCode).toBe(409);
+    expect(idle.json<{ error: string }>().error).toBe('not_running');
+
+    const pending = app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Hello' },
+    });
+    await ready;
+    const stopped = await app.inject({ method: 'POST', url: `/api/agent-chats/${chat.id}/stop` });
+    expect(stopped.statusCode).toBe(202);
+    release();
+    await pending;
+
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>();
+    expect(detail.messages[1]?.status).toBe('interrupted');
+    const again = await app.inject({ method: 'POST', url: `/api/agent-chats/${chat.id}/stop` });
+    expect(again.statusCode).toBe(409);
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/api/agent-chats/00000000-0000-4000-8000-000000000000/stop',
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
   it('records a failed turn when setup cannot open the book', async () => {
     const { app, book, chat } = await boot([() => sse(text('unused'))]);
     rmSync(join(dataDir, 'projects', book.slug), { recursive: true, force: true });

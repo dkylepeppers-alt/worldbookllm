@@ -428,6 +428,44 @@ describe('agent tab', () => {
     );
   });
 
+  it('stops a turn running in another tab from the chat it is watching', async () => {
+    let saved: AgentChatDetail = {
+      ...chat,
+      changesets: [],
+      messages: [
+        userMessage(0, 'Draft the storm'),
+        assistantMessage(1, { status: 'streaming', content: '', steps: [], checkpointId: null }),
+      ],
+    };
+    const stopAgentChat = vi.fn(() => {
+      saved = {
+        ...saved,
+        messages: [saved.messages[0]!, { ...saved.messages[1]!, status: 'interrupted' }],
+      };
+      return Promise.resolve();
+    });
+    renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+      getAgentChat: () => Promise.resolve(saved),
+      listCheckpoints: () => Promise.resolve([]),
+      stopAgentChat,
+    });
+
+    expect(
+      await screen.findByText(
+        'The agent is working on this chat in another tab or on another device.',
+      ),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(stopAgentChat).toHaveBeenCalledWith(CHAT_ID);
+    await waitFor(() =>
+      expect(
+        screen.queryByText(
+          'The agent is working on this chat in another tab or on another device.',
+        ),
+      ).toBeNull(),
+    );
+  });
+
   it('offers to install Story Skills when none are installed', async () => {
     const installStorySkills = vi.fn(() =>
       Promise.resolve({ installed: [storySkill], skipped: [] }),

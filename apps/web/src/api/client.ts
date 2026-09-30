@@ -154,6 +154,8 @@ export interface ApiClient {
   ): Promise<CustomAgent>;
   deleteCustomAgent(id: string, signal?: AbortSignal): Promise<void>;
   deleteAgentChat(id: string, signal?: AbortSignal): Promise<void>;
+  /** Stops the chat's running turn, whichever tab or device is streaming it. */
+  stopAgentChat(id: string, signal?: AbortSignal): Promise<void>;
   streamAgentMessage(
     chatId: string,
     content: string,
@@ -377,6 +379,8 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: agentChatDetailSchema,
         signal,
       }),
+    stopAgentChat: (id, signal) =>
+      request(`/api/agent-chats/${encodeURIComponent(id)}/stop`, { method: 'POST', signal }),
     deleteAgentChat: (id, signal) =>
       request(`/api/agent-chats/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
     streamAgentMessage: (chatId, content, options) =>

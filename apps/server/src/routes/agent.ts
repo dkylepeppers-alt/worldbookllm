@@ -69,6 +69,13 @@ export function registerAgentRoutes(app: FastifyInstance): void {
     }
   });
 
+  // Stops a running turn from any tab or device, not only the one streaming it.
+  app.post('/api/agent-chats/:id/stop', async (request, reply) => {
+    const { id } = agentChatParamsSchema.parse(request.params);
+    agent().stop(id);
+    return reply.status(202).send();
+  });
+
   // Review mode: a turn's proposed changes, applied or skipped per file (ADR 0016).
   app.get('/api/agent-changesets/:id', (request) => {
     const { id } = agentChangesetParamsSchema.parse(request.params);

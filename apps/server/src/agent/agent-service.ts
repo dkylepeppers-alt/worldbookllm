@@ -246,6 +246,8 @@ export interface PreparedAgentTurn {
   /** Review mode: stage the turn's changes for the writer instead of applying them. */
   reviewMode: boolean;
   assistant: AgentMessage;
+  /** Aborted when the turn is stopped from outside its own stream (`stop`). */
+  signal: AbortSignal;
   release(): void;
 }
 
@@ -261,6 +263,8 @@ export interface PreparedAgentTurn {
  */
 export class AgentService {
   private readonly active = new Set<string>();
+  /** Stops the running turn per chat, for a writer watching from another tab or device. */
+  private readonly stops = new Map<string, AbortController>();
 
   constructor(
     private readonly db: Database.Database,
@@ -440,6 +444,16 @@ export class AgentService {
     return `The writer pinned ${paths.length === 1 ? 'this file' : 'these files'} to the message below. Current contents:\n\n${files.join('\n\n')}`;
   }
 
+  /** Stops the chat's running turn; it is recorded as interrupted, as if its stream closed. */
+  stop(chatId: string): void {
+    this.chatRow(chatId);
+    const stopper = this.stops.get(chatId);
+    if (stopper === undefined) {
+      throw new ConflictError('not_running', 'The agent is not working in this chat.');
+    }
+    stopper.abort();
+  }
+
   /** Validates the turn can run and records the user message and a streaming assistant message. */
   prepare(chatId: string, content: string, pinnedPaths: readonly string[] = []): PreparedAgentTurn {
     if (this.active.has(chatId)) {
@@ -464,11 +478,14 @@ export class AgentService {
     }
     const pinned = this.pinnedNote(detail.book, pinnedPaths);
     this.active.add(chatId);
+    const stopper = new AbortController();
+    this.stops.set(chatId, stopper);
     let released = false;
     const release = () => {
       if (!released) {
         released = true;
         this.active.delete(chatId);
+        this.stops.delete(chatId);
       }
     };
     try {
@@ -526,6 +543,7 @@ export class AgentService {
         agent,
         reviewMode: detail.reviewMode ?? settings.agentReviewMode,
         assistant: this.message(assistantId),
+        signal: stopper.signal,
         release,
       };
     } catch (error) {
@@ -536,9 +554,11 @@ export class AgentService {
 
   async run(
     prepared: PreparedAgentTurn,
-    signal: AbortSignal,
+    streamSignal: AbortSignal,
     emit: (event: AgentStreamEvent) => void,
   ): Promise<void> {
+    // The turn stops when its own stream closes or when `stop` is called.
+    const signal = AbortSignal.any([streamSignal, prepared.signal]);
     const { chat, config } = prepared;
     const steps: AgentStep[] = [];
     const texts: string[] = [];

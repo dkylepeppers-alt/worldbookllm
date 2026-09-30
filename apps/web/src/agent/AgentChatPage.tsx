@@ -8,6 +8,7 @@ import type {
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
 import { useBook } from '../books/book-context.js';
 import { errorMessage, useLoad } from '../books/useLoad.js';
@@ -80,6 +81,9 @@ function AgentChatPage({ chatId }: { chatId: string }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [older, setOlder] = useState<ReadonlyMap<string, Checkpoint>>(new Map());
+  // The watched turn's assistant message this screen asked the server to stop.
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [stopError, setStopError] = useState<string | null>(null);
 
   const run = runner.run?.chatId === chatId ? runner.run : null;
   const chat = loaded.status === 'ready' ? newer(loaded.data, runner.settled) : null;
@@ -87,6 +91,23 @@ function AgentChatPage({ chatId }: { chatId: string }) {
   // or from another device) is watched until the server settles it.
   const watching = run === null && chat?.messages.at(-1)?.status === 'streaming';
   const reloadChat = loaded.reload;
+  const watchedId = watching ? (chat?.messages.at(-1)?.id ?? null) : null;
+
+  async function stopWatched() {
+    if (watchedId === null) return;
+    setStoppingId(watchedId);
+    setStopError(null);
+    try {
+      await api.stopAgentChat(chatId);
+    } catch (caught) {
+      // Already finished: the next reload shows how it ended.
+      if (!(caught instanceof ApiClientError && caught.status === 409)) {
+        setStoppingId(null);
+        setStopError(errorMessage(caught));
+      }
+    }
+    reloadChat();
+  }
   useEffect(() => {
     if (!watching) return;
     const timer = setTimeout(reloadChat, WATCH_POLL_MS);
@@ -291,6 +312,16 @@ function AgentChatPage({ chatId }: { chatId: string }) {
       {busyElsewhere ? (
         <p className="change-note">The agent is working in another chat of this book.</p>
       ) : null}
+      {watching ? (
+        <p className="change-note">
+          The agent is working on this chat in another tab or on another device.
+        </p>
+      ) : null}
+      {stopError === null ? null : (
+        <p className="form-error" role="alert">
+          {stopError}
+        </p>
+      )}
 
       <AgentComposer
         // A turn the server refused before it started gives its message back
@@ -301,10 +332,10 @@ function AgentChatPage({ chatId }: { chatId: string }) {
         initialDraft={error?.draft ?? ''}
         submitLabel="Send"
         running={run !== null || watching}
-        stopping={run?.turn.stopping ?? false}
+        stopping={run?.turn.stopping ?? (watchedId !== null && stoppingId === watchedId)}
         busy={busyElsewhere}
         onSend={(content) => runner.send(chatId, content)}
-        onStop={run === null ? undefined : runner.stop}
+        onStop={run !== null ? runner.stop : watching ? () => void stopWatched() : undefined}
       />
 
       <div className="agent-chat-footer">
