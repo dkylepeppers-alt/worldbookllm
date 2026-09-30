@@ -31,7 +31,7 @@ Not there yet (see the [roadmap](docs/ROADMAP.md)): series and a series bible, `
 
 ## Requirements
 
-- **Node.js ≥ 20.19** and **pnpm 9** (`corepack enable` activates the pinned version automatically)
+- **Node.js ≥ 24** and **pnpm 9** (`corepack enable` activates the pinned version automatically)
 - Roughly 1 GB of disk for dependencies and build output
 - An API key for at least one supported provider, or a local OpenAI-compatible server such as Ollama
 

@@ -2,7 +2,7 @@
 # the server, which serves both the API and the built web app (ADR 0002,
 # ADR 0010). This is optimized for clarity over image size — see
 # docs/DEPLOYMENT.md for a note on trimming it further.
-FROM node:22-slim
+FROM node:24-slim
 
 # better-sqlite3 needs a native addon; these let it build from source on any
 # platform pnpm doesn't have a prebuilt binary for.

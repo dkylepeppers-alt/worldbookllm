@@ -631,7 +631,7 @@ export function convertAI21Messages(messages: any[], names: PromptNames): any[] 
 
   // Collect all the system messages up until the first instance of a
   // non-system message, and then remove them from the messages array.
-  let i = 0,
+  let i: number,
     systemPrompt = '';
 
   for (i = 0; i < messages.length; i++) {
