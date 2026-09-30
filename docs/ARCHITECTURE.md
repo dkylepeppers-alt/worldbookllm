@@ -39,6 +39,9 @@ Data directory layout (created at first run, gitignored):
 data/
 ├── worldbookllm.db            # SQLite: metadata, chats, presets, settings
 ├── secrets.json               # named provider API keys (local only)
+├── projects/
+│   └── <book-slug>/          # a story-skills book (ADR 0014): story.md, characters/, chapters/, …
+├── trash/                     # books moved out of the library
 ├── notebooks/
 │   └── <notebook-id>/
 │       └── sources/

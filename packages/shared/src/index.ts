@@ -5,6 +5,7 @@ export interface HealthStatus {
 }
 
 export * from './api-errors.js';
+export * from './books.js';
 export * from './notebooks.js';
 export * from './chats.js';
 export * from './provider-config.js';

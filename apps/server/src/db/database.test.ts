@@ -38,7 +38,7 @@ describe('database startup', () => {
 
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
-    expect(db.pragma('user_version', { simple: true })).toBe(7);
+    expect(db.pragma('user_version', { simple: true })).toBe(8);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -46,6 +46,16 @@ describe('database startup', () => {
       .all();
     expect(tables).toEqual([
       'app_settings',
+      // Story-skills books (ADR 0014): the index, its FTS5 table, and checkpoints.
+      'book_checkpoint_files',
+      'book_checkpoints',
+      'book_files',
+      'book_search',
+      'book_search_config',
+      'book_search_content',
+      'book_search_data',
+      'book_search_docsize',
+      'book_search_idx',
       'chats',
       'messages',
       'notebooks',
@@ -135,7 +145,7 @@ describe('database startup', () => {
     openDatabase(dataDir).close();
 
     const reopened = openDatabase(dataDir);
-    expect(reopened.pragma('user_version', { simple: true })).toBe(7);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(8);
     expect(reopened.prepare('SELECT count(*) FROM notebooks').pluck().get()).toBe(0);
     reopened.close();
   });
@@ -171,7 +181,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(7);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(8);
     expect(
       migrated
         .prepare('SELECT origin_json, conversion_notes_json FROM sources WHERE id = ?')
@@ -227,7 +237,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(7);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(8);
     expect(migrated.prepare('SELECT id, name FROM notebooks').get()).toEqual({
       id: 'notebook',
       name: 'Atlas',
@@ -287,7 +297,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(7);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(8);
     // Seeded from the most-recently-updated notebook's configured provider.
     expect(
       migrated.prepare('SELECT provider_config_json FROM app_settings WHERE id = 1').pluck().get(),
@@ -456,13 +466,13 @@ describe('database startup', () => {
     const dataDir = makeTempDir();
     const file = join(dataDir, 'worldbookllm.db');
     const future = new Database(file);
-    future.pragma('user_version = 8');
+    future.pragma('user_version = 9');
     future.close();
 
-    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 8/u);
+    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 9/u);
 
     const unchanged = new Database(file);
-    expect(unchanged.pragma('user_version', { simple: true })).toBe(8);
+    expect(unchanged.pragma('user_version', { simple: true })).toBe(9);
     unchanged.close();
   });
 });

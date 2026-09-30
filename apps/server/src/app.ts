@@ -10,6 +10,7 @@ import { SkillFileStore } from './files/skill-files.js';
 import { SourceFileStore } from './files/source-files.js';
 import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
+import { registerBookRoutes } from './routes/books.js';
 import { registerChatRoutes } from './routes/chats.js';
 import { registerMessageRoutes } from './routes/messages.js';
 import { registerNotebookRoutes } from './routes/notebooks.js';
@@ -19,6 +20,7 @@ import { registerSecretRoutes } from './routes/secrets.js';
 import { registerSkillRoutes } from './routes/skills.js';
 import { registerSourceRoutes } from './routes/sources.js';
 import { SecretStore } from './secrets/secret-store.js';
+import { BookService } from './services/books.js';
 import { ChatService } from './services/chats.js';
 import { GenerationService } from './services/generation.js';
 import { NotebookService } from './services/notebooks.js';
@@ -30,6 +32,10 @@ import { SkillService } from './services/skills.js';
 import { SourceOrganizationService } from './services/source-organization.js';
 import { SourceService } from './services/sources.js';
 import { StarterSkillService } from './services/starter-skills.js';
+import { BookFileStore } from './story/book-files.js';
+import { BookIndex } from './story/book-index.js';
+import { CheckpointService } from './story/checkpoints.js';
+import { StoryCli } from './story/story-cli.js';
 
 /**
  * True for a request the SPA fallback should answer with index.html: a
@@ -48,6 +54,7 @@ function isSpaNavigation(method: string, url: string): boolean {
 }
 
 export interface AppServices {
+  books: BookService;
   notebooks: NotebookService;
   sources: SourceService;
   skills: SkillService;
@@ -113,6 +120,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   sources.ensureSearchIndex((sourceId, error) => {
     app.log.warn({ sourceId, err: error }, 'could not index source for search');
   });
+  const bookFiles = new BookFileStore(dataDir);
+  const books = new BookService(
+    bookFiles,
+    new BookIndex(db, bookFiles),
+    new CheckpointService(db, bookFiles),
+    new StoryCli(),
+  );
   const skills = new SkillService(db, new SkillFileStore(dataDir));
   const starterSkills = new StarterSkillService(
     resolveStarterSkillsDir(options.starterSkillsDir),
@@ -127,6 +141,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   );
 
   app.decorate('services', {
+    books,
     notebooks,
     sources,
     skills,
@@ -155,6 +170,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get('/api/health', () => ({ status: 'ok' }));
 
+  registerBookRoutes(app);
   registerNotebookRoutes(app);
   registerSourceRoutes(app);
   registerSecretRoutes(app);

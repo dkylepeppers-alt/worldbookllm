@@ -13,7 +13,7 @@ All from the repo root (pnpm 9, Node ≥ 20.19):
 
 ## Layout
 
-- `apps/server` — Fastify API (TypeScript, ESM with NodeNext — relative imports need `.js` extensions). Owns all state: data dir, SQLite, provider calls. `src/app.ts` builds the app (testable via `fastify.inject()`); `src/index.ts` listens.
+- `apps/server` — Fastify API (TypeScript, ESM with NodeNext — relative imports need `.js` extensions). Owns all state: data dir, SQLite, provider calls. `src/app.ts` builds the app (testable via `fastify.inject()`); `src/index.ts` listens. `src/story/` is the story-skills core (ADR 0014): the only code that runs the pinned `story` CLI (`StoryCli`, validated against a vendored command table that a test keeps in sync with upstream), path confinement, the book index, and checkpoints. Never spawn `story` or touch book files outside it.
 - `apps/web` — React 19 + Vite SPA. Talks to the server only via `/api` (proxied in dev). Tests use vitest + jsdom + testing-library.
 - `apps/e2e` — Playwright browser journeys backed by a deterministic local stub provider.
 - `packages/providers` — framework-free provider core ported from SillyTavern. Builds requests and normalizes responses; callers inject keys/config and perform network I/O.
