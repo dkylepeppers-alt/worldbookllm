@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { BookSummary } from '@worldbookllm/shared';
+import type { BookSummary, GenerationControls } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -17,7 +17,10 @@ import type { CheckpointSession } from '../story/checkpoints.js';
 import { buildApp } from '../app.js';
 import { AgentService, truncateResult } from './agent-service.js';
 import { StorySkillsInstaller } from './story-skills-installer.js';
+import { AgentChangesetService } from './changesets.js';
+import { CustomAgentService } from './custom-agents.js';
 import { AgentToolRegistry } from './tools.js';
+import { LiveWorkspace } from './workspace.js';
 
 const tempDirs: string[] = [];
 
@@ -122,6 +125,9 @@ describe('stopping a turn', () => {
       presets,
       providers,
       tools as unknown as AgentToolRegistry,
+      new AgentChangesetService(db, books),
+      new CustomAgentService(db, skills),
+      join(dataDir, 'staging'),
     );
     const chat = agent.createChat('harbor');
     const prepared = agent.prepare(chat.id, 'Do both.');
@@ -135,6 +141,73 @@ describe('stopping a turn', () => {
     const detail = agent.getChat(chat.id);
     expect(detail.messages[1]?.status).toBe('interrupted');
     expect(detail.messages[1]?.steps[0]?.toolCalls.map((call) => call.name)).toEqual(['read_file']);
+    db.close();
+  });
+});
+
+describe('generation controls', () => {
+  it('never sends the default preset’s assistant prefill to the agent', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-prefill-'));
+    tempDirs.push(dataDir);
+    const db = openDatabase(dataDir);
+    const presets = new PresetService(db);
+    presets.updateSettings({
+      providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+    });
+    const preset = presets.resolve(null);
+    presets.patch(preset.id, {
+      generation: { temperature: 0.4, assistantPrefill: 'Certainly! Here is' },
+    });
+    const skills = new SkillService(db, new SkillFileStore(dataDir));
+    const books = {
+      root: () => dataDir,
+      get: () => ({
+        slug: 'harbor',
+        title: 'Harbor',
+        genre: null,
+        status: null,
+        seriesId: null,
+        bookNumber: null,
+        counts: {},
+        updatedAt: new Date().toISOString(),
+      }),
+      startSession: () => ({ book: 'harbor' }),
+      commitSession: async () => null,
+    } as unknown as BookService;
+    const seen: GenerationControls[] = [];
+    const providers = {
+      createChatRequest(_config: unknown, _messages: unknown, controls: GenerationControls) {
+        seen.push(controls);
+        return { url: 'http://provider.test/v1', method: 'POST', headers: {}, body: {} };
+      },
+      snapshotRequestBody: () => ({}),
+      openChatStream: () =>
+        Promise.resolve(
+          new Response(
+            `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: 'Hi.' } }] })}\n\ndata: [DONE]\n\n`,
+          ).body!,
+        ),
+    } as unknown as ProviderService;
+    const agent = new AgentService(
+      db,
+      books,
+      skills,
+      presets,
+      providers,
+      { definitions: () => [] } as unknown as AgentToolRegistry,
+      new AgentChangesetService(db, books),
+      new CustomAgentService(db, skills),
+      join(dataDir, 'staging'),
+    );
+    const chat = agent.createChat('harbor');
+    const prepared = agent.prepare(chat.id, 'Hello.');
+    try {
+      await agent.run(prepared, new AbortController().signal, () => undefined);
+    } finally {
+      prepared.release();
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ temperature: 0.4, assistantPrefill: null });
     db.close();
   });
 });
@@ -218,6 +291,9 @@ describe('restarting the server', () => {
       presets,
       providers,
       tools as unknown as AgentToolRegistry,
+      new AgentChangesetService(db, books),
+      new CustomAgentService(db, skills),
+      join(dataDir, 'staging'),
     );
     const chatId = agent.createChat('harbor').id;
     const prepared = agent.prepare(chatId, 'Write it.');
@@ -250,6 +326,9 @@ describe('restarting the server', () => {
         presets,
         {} as ProviderService,
         {} as unknown as AgentToolRegistry,
+        new AgentChangesetService(db, books),
+        new CustomAgentService(db, skills),
+        join(dataDir, 'staging'),
       );
     const before = create();
     const chat = before.createChat('harbor');
@@ -274,8 +353,11 @@ describe('run_story exit codes', () => {
         return { exitCode, stdout: '', stderr: 'diagnostic', envelope: null };
       },
     } as unknown as BookService;
-    const registry = new AgentToolRegistry(books, {} as SkillService, '/tmp/skills');
-    const context = { book: 'harbor', session: { book: 'harbor' } as CheckpointSession };
+    const registry = new AgentToolRegistry({} as SkillService, '/tmp/skills');
+    const context = {
+      workspace: new LiveWorkspace(books, { book: 'harbor' } as CheckpointSession),
+      skills: null,
+    };
     const args = JSON.stringify({ command: 'add', args: ['character', 'Mara'] });
 
     for (const code of [2, 3, 4]) {
@@ -401,7 +483,7 @@ describe('agent edits and checkpoints', () => {
     const path = 'notes/page.md';
     await books.writeFile(slug, path, { content: 'hello world', expectedHash: null });
     const session = books.startSession(slug, 'Agent: edit', 'agent');
-    const registry = new AgentToolRegistry(books, app.services.skills, join(dataDir, 'skills'));
+    const registry = new AgentToolRegistry(app.services.skills, join(dataDir, 'skills'));
 
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -438,7 +520,7 @@ describe('agent edits and checkpoints', () => {
       const edit = registry.execute(
         'edit_file',
         JSON.stringify({ path, find: 'hello', replace: 'HELLO' }),
-        { book: slug, session },
+        { workspace: new LiveWorkspace(books, session), skills: null },
       );
       release();
       const [outcome] = await Promise.all([edit, userWrite]);
@@ -454,7 +536,7 @@ describe('agent edits and checkpoints', () => {
     const path = 'notes/page.md';
     await books.writeFile(slug, path, { content: 'original', expectedHash: null });
     const session = books.startSession(slug, 'Agent: guarded write', 'agent');
-    const registry = new AgentToolRegistry(books, app.services.skills, join(dataDir, 'skills'));
+    const registry = new AgentToolRegistry(app.services.skills, join(dataDir, 'skills'));
     const writeTool = registry
       .definitions()
       .find((definition) => definition.function.name === 'write_file');
@@ -463,8 +545,8 @@ describe('agent edits and checkpoints', () => {
     });
 
     const read = await registry.execute('read_file', JSON.stringify({ path }), {
-      book: slug,
-      session,
+      workspace: new LiveWorkspace(books, session),
+      skills: null,
     });
     expect(read.ok).toBe(true);
     const observed = JSON.parse(read.result) as { path: string; hash: string; content: string };
@@ -474,7 +556,7 @@ describe('agent edits and checkpoints', () => {
     const stale = await registry.execute(
       'write_file',
       JSON.stringify({ path, content: 'agent edit', expectedHash: observed.hash }),
-      { book: slug, session },
+      { workspace: new LiveWorkspace(books, session), skills: null },
     );
     expect(stale).toMatchObject({ ok: false, result: expect.stringMatching(/changed/u) });
     expect(books.readFile(slug, path).content).toBe('user edit');
@@ -485,12 +567,12 @@ describe('agent edits and checkpoints', () => {
     const path = 'notes/page.md';
     await books.writeFile(slug, path, { content: 'banana', expectedHash: null });
     const session = books.startSession(slug, 'Agent: ambiguous edit', 'agent');
-    const registry = new AgentToolRegistry(books, app.services.skills, join(dataDir, 'skills'));
+    const registry = new AgentToolRegistry(app.services.skills, join(dataDir, 'skills'));
 
     const outcome = await registry.execute(
       'edit_file',
       JSON.stringify({ path, find: 'ana', replace: 'X' }),
-      { book: slug, session },
+      { workspace: new LiveWorkspace(books, session), skills: null },
     );
     expect(outcome).toMatchObject({ ok: false });
     expect(outcome.result).toMatch(/2 times/u);

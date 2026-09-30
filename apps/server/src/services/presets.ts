@@ -145,6 +145,7 @@ export class PresetService {
       return appSettingsSchema.parse({
         defaultPresetId: row?.default_preset_id,
         providerConfig: row === undefined ? null : JSON.parse(row.provider_config_json),
+        agentReviewMode: row?.agent_review_mode === 1,
       });
     } catch (error) {
       throw new InvalidStoredDataError('Application settings have invalid stored data', {
@@ -159,13 +160,14 @@ export class PresetService {
       const current = this.getSettings();
       this.db
         .prepare(
-          'UPDATE app_settings SET default_preset_id = ?, provider_config_json = ? WHERE id = 1',
+          'UPDATE app_settings SET default_preset_id = ?, provider_config_json = ?, agent_review_mode = ? WHERE id = 1',
         )
         .run(
           input.defaultPresetId ?? current.defaultPresetId,
           JSON.stringify(
             input.providerConfig === undefined ? current.providerConfig : input.providerConfig,
           ),
+          (input.agentReviewMode ?? current.agentReviewMode) ? 1 : 0,
         );
       return this.getSettings();
     })();

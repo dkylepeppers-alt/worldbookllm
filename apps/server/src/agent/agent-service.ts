@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { rmSync } from 'node:fs';
 
 import type Database from 'better-sqlite3';
 
@@ -16,6 +17,9 @@ import type {
   AgentMessage,
   AgentStep,
   AgentStreamEvent,
+  CreateAgentChatInput,
+  CustomAgent,
+  PatchAgentChatInput,
   ProviderConfig,
 } from '@worldbookllm/shared';
 
@@ -25,7 +29,11 @@ import type { PresetService } from '../services/presets.js';
 import type { ProviderService } from '../services/providers.js';
 import type { SkillService } from '../services/skills.js';
 import type { CheckpointSession } from '../story/checkpoints.js';
-import type { AgentToolRegistry } from './tools.js';
+import type { StagedBook } from '../story/staging.js';
+import type { AgentChangesetService } from './changesets.js';
+import type { CustomAgentService } from './custom-agents.js';
+import type { AgentToolRegistry, ToolContext } from './tools.js';
+import { LiveWorkspace, type AgentWorkspace } from './workspace.js';
 
 export const AGENT_MAX_STEPS = 24;
 const TOOL_RESULT_MAX_BYTES = 24 * 1024;
@@ -35,6 +43,8 @@ interface AgentChatRow {
   id: string;
   book: string;
   title: string;
+  agent_id: string | null;
+  review_mode: 0 | 1 | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +57,7 @@ interface AgentMessageRow {
   content: string;
   reasoning: string | null;
   status: AgentMessage['status'];
+  note: string | null;
   steps_json: string;
   checkpoint_id: string | null;
   created_at: string;
@@ -58,6 +69,8 @@ function toChat(row: AgentChatRow): AgentChat {
     id: row.id,
     book: row.book,
     title: row.title,
+    agentId: row.agent_id,
+    reviewMode: row.review_mode === null ? null : row.review_mode === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -72,6 +85,7 @@ function toMessage(row: AgentMessageRow): AgentMessage {
     content: row.content,
     reasoning: row.reasoning,
     status: row.status,
+    note: row.note,
     steps: JSON.parse(row.steps_json) as AgentStep[],
     checkpointId: row.checkpoint_id,
     createdAt: row.created_at,
@@ -125,11 +139,18 @@ export function providerToolArguments(raw: string): string {
 }
 
 /** Rebuilds the provider conversation, including tool calls stored on each step. */
+/** A user message as the model receives it: the app's note (if any), then the writer's words. */
+export function userText(content: string, note: string | null): string {
+  return note === null ? content : `${note}\n\n${content}`;
+}
+
 export function historyMessages(history: AgentMessage[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   for (const message of history) {
     if (message.role === 'user') {
-      if (message.content.trim() !== '') messages.push({ role: 'user', content: message.content });
+      if (message.content.trim() !== '') {
+        messages.push({ role: 'user', content: userText(message.content, message.note) });
+      }
       continue;
     }
     if (message.steps.length === 0) {
@@ -196,6 +217,12 @@ export interface PreparedAgentTurn {
   config: ProviderConfig;
   history: AgentMessage[];
   userContent: string;
+  /** What the app tells the model alongside the message, such as review outcomes. */
+  note: string | null;
+  /** The chat's custom agent; null for the default agent. */
+  agent: CustomAgent | null;
+  /** Review mode: stage the turn's changes for the writer instead of applying them. */
+  reviewMode: boolean;
   assistant: AgentMessage;
   release(): void;
 }
@@ -207,7 +234,8 @@ export interface PreparedAgentTurn {
  * limit is reached. Every request body and tool result is recorded on the
  * assistant message, and every file the turn changed lands in one
  * checkpoint, committed even when the turn is stopped or fails, so it can
- * always be undone.
+ * always be undone. In review mode (ADR 0016) the turn works on a staged
+ * copy instead, and its changes become a changeset the writer reviews.
  */
 export class AgentService {
   private readonly active = new Set<string>();
@@ -219,8 +247,13 @@ export class AgentService {
     private readonly presets: PresetService,
     private readonly providers: ProviderService,
     private readonly tools: AgentToolRegistry,
+    private readonly changesets: AgentChangesetService,
+    private readonly agents: CustomAgentService,
+    private readonly stagingDir: string,
     private readonly logError: (error: unknown) => void = () => undefined,
   ) {
+    // Staged copies belong to turns, and no turn outlives the process.
+    rmSync(this.stagingDir, { recursive: true, force: true });
     // No turn survives a restart. A message still marked streaming was cut
     // off by the process exiting; record it as interrupted so it does not
     // look like a turn in progress forever.
@@ -229,22 +262,50 @@ export class AgentService {
       .run();
   }
 
-  createChat(book: string, title?: string): AgentChat {
+  createChat(book: string, input: CreateAgentChatInput = {}): AgentChat {
     this.books.root(book);
+    if (input.agentId) this.agents.get(input.agentId);
     const now = new Date().toISOString();
     const row: AgentChatRow = {
       id: randomUUID(),
       book,
-      title: title ?? 'New chat',
+      title: input.title ?? 'New chat',
+      agent_id: input.agentId ?? null,
+      review_mode:
+        input.reviewMode === undefined || input.reviewMode === null
+          ? null
+          : input.reviewMode
+            ? 1
+            : 0,
       created_at: now,
       updated_at: now,
     };
     this.db
       .prepare(
-        'INSERT INTO agent_chats (id, book, title, created_at, updated_at) VALUES (@id, @book, @title, @created_at, @updated_at)',
+        `INSERT INTO agent_chats (id, book, title, agent_id, review_mode, created_at, updated_at)
+         VALUES (@id, @book, @title, @agent_id, @review_mode, @created_at, @updated_at)`,
       )
       .run(row);
     return toChat(row);
+  }
+
+  /** Changes the chat's agent or review mode; takes effect from the next turn. */
+  patchChat(id: string, input: PatchAgentChatInput): AgentChat {
+    const current = this.chatRow(id);
+    if (input.agentId) this.agents.get(input.agentId);
+    const agentId = input.agentId === undefined ? current.agent_id : input.agentId;
+    const reviewMode =
+      input.reviewMode === undefined
+        ? current.review_mode
+        : input.reviewMode === null
+          ? null
+          : input.reviewMode
+            ? 1
+            : 0;
+    this.db
+      .prepare('UPDATE agent_chats SET agent_id = ?, review_mode = ?, updated_at = ? WHERE id = ?')
+      .run(agentId, reviewMode, new Date().toISOString(), id);
+    return toChat(this.chatRow(id));
   }
 
   listChats(book: string): AgentChat[] {
@@ -263,7 +324,7 @@ export class AgentService {
         .prepare('SELECT * FROM agent_messages WHERE chat_id = ? ORDER BY seq')
         .all(id) as AgentMessageRow[]
     ).map(toMessage);
-    return { ...toChat(chat), messages };
+    return { ...toChat(chat), messages, changesets: this.changesets.listForChat(id) };
   }
 
   deleteChat(id: string): void {
@@ -305,7 +366,8 @@ export class AgentService {
       );
     }
     const detail = this.getChat(chatId);
-    const config = this.presets.getSettings().providerConfig;
+    const settings = this.presets.getSettings();
+    const config = settings.providerConfig;
     if (!config) throw new ConfigurationError('Configure a provider before talking to the agent.');
     if (!supportsTools(config.source)) {
       throw new ConfigurationError(
@@ -328,14 +390,19 @@ export class AgentService {
     try {
       const now = new Date().toISOString();
       const seq = detail.messages.length;
+      const agent = detail.agentId === null ? null : this.agents.get(detail.agentId);
       const insert = this.db.prepare(
-        `INSERT INTO agent_messages (id, chat_id, seq, role, content, reasoning, status, steps_json, checkpoint_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, '[]', NULL, ?, ?)`,
+        `INSERT INTO agent_messages (id, chat_id, seq, role, content, reasoning, status, note, steps_json, checkpoint_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, '[]', NULL, ?, ?)`,
       );
       const assistantId = randomUUID();
+      let note: string | null = null;
       this.db.transaction(() => {
-        insert.run(randomUUID(), chatId, seq, 'user', content, 'complete', now, now);
-        insert.run(assistantId, chatId, seq + 1, 'assistant', '', 'streaming', now, now);
+        // Reporting a review outcome marks it told; the transaction keeps
+        // that from happening unless the message that carries it is stored.
+        note = this.changesets.outcomeNote(chatId);
+        insert.run(randomUUID(), chatId, seq, 'user', content, 'complete', note, now, now);
+        insert.run(assistantId, chatId, seq + 1, 'assistant', '', 'streaming', null, now, now);
         const title = detail.messages.length === 0 ? content.slice(0, 80) : detail.title;
         this.db
           .prepare('UPDATE agent_chats SET title = ?, updated_at = ? WHERE id = ?')
@@ -346,6 +413,9 @@ export class AgentService {
         config,
         history: detail.messages,
         userContent: content,
+        note,
+        agent,
+        reviewMode: detail.reviewMode ?? settings.agentReviewMode,
         assistant: this.message(assistantId),
         release,
       };
@@ -366,6 +436,7 @@ export class AgentService {
     let reasoning = '';
     let limited = false;
     let session: CheckpointSession | undefined;
+    let staged: StagedBook | undefined;
 
     const persist = (status: AgentMessage['status'], checkpointId: string | null = null) => {
       const content = [...texts, ...(limited ? [`(Stopped after ${AGENT_MAX_STEPS} steps.)`] : [])]
@@ -388,9 +459,26 @@ export class AgentService {
     };
     let checkpointSettled = false;
     let checkpointId: string | null = null;
+    // Ends the turn's changes: commits the checkpoint, or in review mode
+    // stores the staged changes as a changeset. Runs even when the turn is
+    // stopped or fails, so partial work is still undoable or reviewable.
     const finishCheckpoint = async (): Promise<string | null> => {
       if (checkpointSettled) return checkpointId;
       checkpointSettled = true;
+      if (staged) {
+        try {
+          const changeset = this.changesets.create(
+            chat.id,
+            prepared.assistant.id,
+            chat.book,
+            staged.changes(),
+          );
+          if (changeset) emit({ type: 'changeset', changeset });
+        } finally {
+          staged.dispose();
+        }
+        return null;
+      }
       if (!session) return null;
       const checkpoint = await this.books.commitSession(session);
       if (checkpoint) emit({ type: 'checkpoint', checkpoint });
@@ -401,16 +489,37 @@ export class AgentService {
     try {
       // Setup stays inside the try: a failure after prepare() has already
       // stored a streaming message must be recorded, not left hanging.
-      const controls = this.presets.resolve(null).generation;
-      session = this.books.startSession(
-        chat.book,
-        `Agent: ${prepared.userContent.slice(0, 60)}`,
-        'agent',
-      );
+      // Presets were designed for notebook chat. An assistant prefill would be
+      // sent as a trailing assistant message on every step and can break
+      // tool calling, so the agent never uses one. Presets' role for the
+      // agent is to be revisited when the notebook era is retired.
+      const controls = { ...this.presets.resolve(null).generation, assistantPrefill: null };
+      let workspace: AgentWorkspace;
+      if (prepared.reviewMode) {
+        staged = await this.books.stage(chat.book, this.stagingDir);
+        workspace = staged;
+      } else {
+        session = this.books.startSession(
+          chat.book,
+          `Agent: ${prepared.userContent.slice(0, 60)}`,
+          'agent',
+        );
+        workspace = new LiveWorkspace(this.books, session);
+      }
+      const toolContext: ToolContext = {
+        workspace,
+        skills: prepared.agent?.skills ? new Set(prepared.agent.skills) : null,
+      };
       const messages: ChatMessage[] = [
-        { role: 'system', content: this.systemPrompt(chat.book) },
+        {
+          role: 'system',
+          content: this.systemPrompt(chat.book, {
+            agent: prepared.agent,
+            reviewMode: prepared.reviewMode,
+          }),
+        },
         ...historyMessages(prepared.history),
-        { role: 'user', content: prepared.userContent },
+        { role: 'user', content: userText(prepared.userContent, prepared.note) },
       ];
 
       for (let index = 0; ; index += 1) {
@@ -489,10 +598,7 @@ export class AgentService {
             arguments: call.arguments,
           });
           const started = Date.now();
-          const outcome = await this.tools.execute(call.name, call.arguments, {
-            book: chat.book,
-            session,
-          });
+          const outcome = await this.tools.execute(call.name, call.arguments, toolContext);
           const result = truncateResult(outcome.result);
           step.toolCalls.push({
             id: call.id,
@@ -518,7 +624,7 @@ export class AgentService {
         // Point the message at the pending checkpoint as soon as it exists:
         // a restart promotes pending checkpoints to history, and the
         // interrupted turn must still show its changes and be undoable.
-        persist('streaming', session.pendingId);
+        persist('streaming', session?.pendingId ?? null);
         if (signal.aborted) break;
       }
 
@@ -565,9 +671,16 @@ export class AgentService {
   }
 
   /** The agent's standing instructions, skill catalog, and book facts. */
-  systemPrompt(book: string): string {
+  systemPrompt(
+    book: string,
+    options: { agent?: CustomAgent | null; reviewMode?: boolean } = {},
+  ): string {
+    const { agent = null, reviewMode = false } = options;
     const summary = this.books.get(book);
-    const skills = this.skills.list();
+    const allowed = agent?.skills ? new Set(agent.skills) : null;
+    const skills = this.skills
+      .list()
+      .filter((skill) => allowed === null || allowed.has(skill.name));
     const counts = Object.entries(summary.counts)
       .map(([kind, count]) => `${count} ${kind}`)
       .join(', ');
@@ -575,13 +688,18 @@ export class AgentService {
       `You are the story-skills agent in worldbookllm, working on the book "${summary.title}".`,
       'The book is a story-skills project: plain Markdown files with YAML frontmatter, one entity per file (characters/, worldbuilding/, plot/, chapters/, scenes/, continuity/, glossary/, research/). The filename is the entity id; _index.md registries are generated by story reindex.',
       'Use the tools to read and change the book. Run the story CLI only through run_story (never bun, node, or npx); the server supplies --path and --json.',
-      'Your file changes apply immediately and are recorded as one undoable change for this turn. Tell the user what you changed.',
+      reviewMode
+        ? 'Review mode is on: your file changes are proposed, not applied. You work on a staged copy of the book, so read_file and the story commands show your proposed versions; the writer reviews each changed file after this turn and applies or skips it. story build and export are unavailable. Tell the user what you propose.'
+        : 'Your file changes apply immediately and are recorded as one undoable change for this turn. Tell the user what you changed.',
       'Ask the user before inventing canon they have not given you.',
       'When a request matches a skill below, load it with activate_skill and follow it; load its references with read_skill_file when it says to.',
+      ...(agent === null || agent.instructions.trim() === ''
+        ? []
+        : ['', `## Your role: ${agent.name}`, agent.instructions.trim()]),
       '',
       '## Skills',
       ...(skills.length === 0
-        ? ['No skills are installed.']
+        ? [allowed === null ? 'No skills are installed.' : 'No skills are available to you.']
         : skills.map((skill) => `- ${skill.name}: ${skill.description}`)),
       '',
       '## Book',

@@ -88,7 +88,11 @@ const preset: Preset = {
   updatedAt: '2026-07-10T12:00:00.000Z',
 };
 
-const appSettings: AppSettings = { defaultPresetId: preset.id, providerConfig: null };
+const appSettings: AppSettings = {
+  defaultPresetId: preset.id,
+  providerConfig: null,
+  agentReviewMode: false,
+};
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {

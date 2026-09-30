@@ -2,7 +2,6 @@ import type { Checkpoint } from '@worldbookllm/shared';
 import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { useApi } from '../api/useApi.js';
 import { useBook } from '../books/book-context.js';
 import { fileHref } from '../books/book-sections.js';
 import { useLoad } from '../books/useLoad.js';
@@ -10,28 +9,44 @@ import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 import { lineDiff } from './line-diff.js';
 
-interface CheckpointDiffDialogProps {
-  checkpoint: Checkpoint;
+export interface DiffFile {
   path: string;
+  before: string | null;
+  after: string | null;
+}
+
+interface DiffDialogProps {
+  /** Names the change: a checkpoint's label, or the proposal it came from. */
+  label: string;
+  files: ReadonlyArray<Pick<Checkpoint['files'][number], 'path' | 'change'>>;
+  path: string;
+  /** Identifies what `load` fetches, so it reloads only when that changes. */
+  loadKey: string;
+  load: (signal: AbortSignal) => Promise<readonly DiffFile[]>;
+  /** Whether "Open file" makes sense: the file exists in the book as shown. */
+  canOpen: (path: string) => boolean;
   onClose: () => void;
 }
 
 const MARKS = { same: ' ', add: '+', del: '−' } as const;
 
-/** One file's before and after in a checkpoint, as a folded line diff. */
-export function CheckpointDiffDialog({ checkpoint, path, onClose }: CheckpointDiffDialogProps) {
-  const api = useApi();
+/** One file's before and after in a change, as a folded line diff. */
+export function DiffDialog({
+  label,
+  files,
+  path,
+  loadKey,
+  load,
+  canOpen,
+  onClose,
+}: DiffDialogProps) {
   const { slug } = useBook();
   const closeRef = useRef<HTMLButtonElement>(null);
   useDialogLifecycle(closeRef, onClose);
   const [selected, setSelected] = useState(path);
-  const detail = useLoad(
-    (signal) => api.getCheckpoint(slug, checkpoint.id, signal),
-    `${slug}:${checkpoint.id}`,
-  );
+  const detail = useLoad(load, loadKey);
   const file =
-    detail.status === 'ready' ? detail.data.files.find((entry) => entry.path === selected) : null;
-  const change = checkpoint.files.find((entry) => entry.path === selected)?.change;
+    detail.status === 'ready' ? detail.data.find((entry) => entry.path === selected) : null;
 
   return (
     <div className="dialog-backdrop">
@@ -41,13 +56,13 @@ export function CheckpointDiffDialog({ checkpoint, path, onClose }: CheckpointDi
         aria-modal="true"
         aria-labelledby="diff-dialog-title"
       >
-        <p className="coordinate-label">{checkpoint.label}</p>
+        <p className="coordinate-label">{label}</p>
         <h2 id="diff-dialog-title">{selected}</h2>
-        {checkpoint.files.length > 1 ? (
+        {files.length > 1 ? (
           <label className="diff-file-select">
             File
             <select value={selected} onChange={(event) => setSelected(event.target.value)}>
-              {checkpoint.files.map((entry) => (
+              {files.map((entry) => (
                 <option key={entry.path} value={entry.path}>
                   {entry.path}
                 </option>
@@ -88,7 +103,7 @@ export function CheckpointDiffDialog({ checkpoint, path, onClose }: CheckpointDi
           </ol>
         ) : null}
         <div className="dialog-actions">
-          {change === 'deleted' || checkpoint.undoneAt !== null ? null : (
+          {!canOpen(selected) ? null : (
             <Link className="button-secondary" to={fileHref(slug, selected)} onClick={onClose}>
               Open file
             </Link>

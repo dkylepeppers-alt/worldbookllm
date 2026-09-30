@@ -2166,7 +2166,7 @@ a.button-secondary {
   border-top: 1px solid var(--line);
 }
 
-.change-summary li button {
+.change-summary li > button:first-child {
   display: flex;
   width: 100%;
   align-items: center;
@@ -2289,4 +2289,150 @@ ol.inspector-sections {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* ── Review mode and custom agents (ADR 0016) ──────────────────────────── */
+
+.agent-chat-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem 1rem;
+}
+
+.agent-chat-settings > label:first-child {
+  display: grid;
+  flex: 1 1 12rem;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.agent-chat-settings select {
+  min-height: 44px;
+}
+
+.agent-chat-settings > a {
+  align-self: center;
+  color: var(--blueprint);
+}
+
+.agent-chat-settings .form-error {
+  flex-basis: 100%;
+}
+
+/* A checkbox or radio with its label as plain text, not a field tag. */
+.agent-review-toggle {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 560;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.agent-review-toggle input {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  margin: 0;
+}
+
+.agent-review-toggle .coordinate-label {
+  color: var(--muted);
+}
+
+.settings-note {
+  margin: 0.25rem 0 0;
+  max-width: 62ch;
+  color: var(--muted);
+}
+
+.text-button {
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 0.75rem;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.proposed-changes li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  padding-block: 0.25rem;
+}
+
+.proposed-changes li > button:first-child {
+  flex: 1 1 14rem;
+  width: auto;
+}
+
+.proposed-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.proposed-actions .button-secondary {
+  padding: 0.4rem 0.9rem;
+}
+
+.proposed-status {
+  color: var(--muted);
+}
+
+.proposed-applied .proposed-status {
+  color: var(--lichen);
+}
+
+.proposed-skipped .change-path {
+  text-decoration: line-through;
+}
+
+.proposed-all {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.agent-skills {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  border: 1px solid var(--line);
+  padding: 0.75rem 1rem;
+}
+
+.agent-skills legend {
+  padding: 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 720;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.agent-skill-list {
+  display: grid;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.agent-skill-list li {
+  border-bottom: 1px solid var(--line);
+}
+
+.agent-skill-list span {
+  display: grid;
+  gap: 0.1rem;
+  padding-block: 0.4rem;
+}
+
+.agent-skill-list small {
+  color: var(--muted);
 }

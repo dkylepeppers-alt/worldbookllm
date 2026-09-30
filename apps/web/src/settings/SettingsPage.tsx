@@ -5,6 +5,7 @@ import type {
   SecretState,
 } from '@worldbookllm/shared';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
@@ -21,6 +22,7 @@ type SettingsState =
       catalog: ProviderCatalogEntry[];
       secrets: SecretState;
       providerConfig: ProviderConfig | null;
+      agentReviewMode: boolean;
     };
 
 interface SecretTarget {
@@ -52,7 +54,13 @@ export function SettingsPage() {
     const controller = new AbortController();
     void load(controller.signal)
       .then(([catalog, secrets, appSettings]) =>
-        setState({ status: 'ready', catalog, secrets, providerConfig: appSettings.providerConfig }),
+        setState({
+          status: 'ready',
+          catalog,
+          secrets,
+          providerConfig: appSettings.providerConfig,
+          agentReviewMode: appSettings.agentReviewMode,
+        }),
       )
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -65,10 +73,30 @@ export function SettingsPage() {
   async function refresh() {
     try {
       const [catalog, secrets, appSettings] = await load();
-      setState({ status: 'ready', catalog, secrets, providerConfig: appSettings.providerConfig });
+      setState({
+        status: 'ready',
+        catalog,
+        secrets,
+        providerConfig: appSettings.providerConfig,
+        agentReviewMode: appSettings.agentReviewMode,
+      });
     } catch {
       setState({ status: 'error' });
     }
+  }
+
+  async function setReviewMode(agentReviewMode: boolean) {
+    setBusyId('agent-review-mode');
+    setMutationError(null);
+    try {
+      await api.updateAppSettings({ agentReviewMode });
+    } catch (error) {
+      setMutationError(messageFor(error, 'Could not change review mode.'));
+      setBusyId(null);
+      return;
+    }
+    await refresh();
+    setBusyId(null);
   }
 
   async function activate(provider: ProviderCatalogEntry, secret: MaskedSecret) {
@@ -136,6 +164,28 @@ export function SettingsPage() {
         >
           Configure provider
         </button>
+      </section>
+
+      <section className="chat-provider-header" aria-label="Agent">
+        <div>
+          <p className="coordinate-label">Agent</p>
+          <label className="agent-review-toggle">
+            <input
+              type="checkbox"
+              checked={state.agentReviewMode === true}
+              disabled={busyId !== null}
+              onChange={(event) => void setReviewMode(event.target.checked)}
+            />
+            <span>Review the agent's changes before they apply</span>
+          </label>
+          <p className="settings-note">
+            Off: changes apply at once and each turn can be undone. On: each turn proposes changes
+            you apply or skip file by file. A chat can override this.
+          </p>
+        </div>
+        <Link className="button-secondary" to="/agents">
+          Custom agents
+        </Link>
       </section>
 
       {mutationError === null ? null : <p role="alert">{mutationError}</p>}

@@ -50,15 +50,26 @@ export function AgentPage() {
   const [params] = useSearchParams();
   const about = params.get('about');
   const chats = useLoad((signal) => api.listAgentChats(slug, signal), slug);
+  const agents = useLoad((signal) => api.listCustomAgents(signal), 'agents');
+  const settings = useLoad((signal) => api.getAppSettings(signal), 'app-settings');
+  const [agentId, setAgentId] = useState('');
+  // null follows the global review-mode setting; a choice here overrides it for the chat.
+  const [review, setReview] = useState<boolean | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const running = runner.run !== null;
+  const agentList = agents.status === 'ready' ? agents.data : [];
+  const agentNames = new Map(agentList.map((agent) => [agent.id, agent.name]));
+  const globalReview = settings.status === 'ready' ? settings.data.agentReviewMode : false;
 
   async function start(content: string): Promise<'accepted' | 'rejected'> {
     setCreating(true);
     setError(null);
     try {
-      const chat = await api.createAgentChat(slug);
+      const chat = await api.createAgentChat(slug, {
+        ...(agentId === '' ? {} : { agentId }),
+        ...(review === null ? {} : { reviewMode: review }),
+      });
       void runner.send(chat.id, content);
       await navigate(`/books/${encodeURIComponent(slug)}/agent/${chat.id}`);
       return 'accepted';
@@ -75,7 +86,7 @@ export function AgentPage() {
       <h2 id="agent-heading">Agent</h2>
       <p className="agent-intro">
         The agent reads and edits this book's files with the story CLI. Each turn's changes are
-        listed with diffs and can be undone.
+        listed with diffs and can be undone, or held for your review first.
       </p>
       <SkillsNotice />
       {error === null ? null : (
@@ -83,6 +94,31 @@ export function AgentPage() {
           {error}
         </p>
       )}
+      <div className="agent-chat-settings">
+        <label>
+          <span className="coordinate-label">Agent</span>
+          <select value={agentId} onChange={(event) => setAgentId(event.target.value)}>
+            <option value="">Default agent</option>
+            {agentList.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Link className="coordinate-label" to="/agents">
+          Manage agents
+        </Link>
+        <label className="agent-review-toggle">
+          <input
+            type="checkbox"
+            checked={review ?? globalReview}
+            disabled={settings.status !== 'ready'}
+            onChange={(event) => setReview(event.target.checked)}
+          />
+          <span>Review changes before they apply</span>
+        </label>
+      </div>
       <AgentComposer
         id="agent-new-chat-input"
         label={about === null ? 'New chat' : `New chat about ${about}`}
@@ -117,6 +153,7 @@ export function AgentPage() {
                 <Link to={`/books/${encodeURIComponent(slug)}/agent/${chat.id}`}>{chat.title}</Link>
                 <span className="coordinate-label">
                   {formatChatTime(chat.updatedAt)}
+                  {chat.agentId === null ? '' : ` · ${agentNames.get(chat.agentId) ?? 'agent'}`}
                   {runner.run?.chatId === chat.id ? ' · working' : ''}
                 </span>
               </li>

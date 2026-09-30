@@ -1,4 +1,10 @@
-import type { AgentChatDetail, AgentMessage, Checkpoint } from '@worldbookllm/shared';
+import type {
+  AgentChangeset,
+  AgentChat,
+  AgentChatDetail,
+  AgentMessage,
+  Checkpoint,
+} from '@worldbookllm/shared';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
@@ -11,9 +17,19 @@ import { AgentComposer } from './AgentComposer.js';
 import { AgentInspectorDialog } from './AgentInspectorDialog.js';
 import { AgentMessages } from './AgentMessages.js';
 import { useAgentRunner } from './agent-runner-context.js';
-import { CheckpointDiffDialog } from './CheckpointDiffDialog.js';
+import { AgentChatSettings } from './AgentChatSettings.js';
+import { DiffDialog, type DiffFile } from './DiffDialog.js';
 
 const WATCH_POLL_MS = 2000;
+
+interface DiffTarget {
+  label: string;
+  files: ReadonlyArray<Pick<Checkpoint['files'][number], 'path' | 'change'>>;
+  path: string;
+  loadKey: string;
+  load: (signal: AbortSignal) => Promise<readonly DiffFile[]>;
+  canOpen: (path: string) => boolean;
+}
 
 /** The later of two snapshots of the same chat. */
 function newer(left: AgentChatDetail, right: AgentChatDetail | null): AgentChatDetail {
@@ -55,9 +71,12 @@ function AgentChatPage({ chatId }: { chatId: string }) {
     `${slug}:${runner.checkpoint?.id ?? ''}:${tree.files.map((file) => file.hash).join()}`,
   );
   const [inspecting, setInspecting] = useState<AgentMessage | null>(null);
-  const [diff, setDiff] = useState<{ checkpoint: Checkpoint; path: string } | null>(null);
+  const [diff, setDiff] = useState<DiffTarget | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undoError, setUndoError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AgentChat | null>(null);
+  const [resolved, setResolved] = useState<ReadonlyMap<string, AgentChangeset>>(new Map());
+  const [resolving, setResolving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [older, setOlder] = useState<ReadonlyMap<string, Checkpoint>>(new Map());
@@ -137,6 +156,59 @@ function AgentChatPage({ chatId }: { chatId: string }) {
     }
   }
 
+  // Review mode: the latest known state of each changeset, by the message that proposed it.
+  const changesets = new Map<string, AgentChangeset>();
+  for (const changeset of chat?.changesets ?? []) {
+    changesets.set(changeset.messageId, resolved.get(changeset.id) ?? changeset);
+  }
+
+  async function resolve(changeset: AgentChangeset, action: 'apply' | 'skip', path?: string) {
+    setResolving(`${changeset.id}:${path ?? '*'}`);
+    setUndoError(null);
+    try {
+      const result = await api.resolveAgentChangeset(
+        changeset.id,
+        action,
+        path === undefined ? undefined : [path],
+      );
+      setResolved((current) => new Map(current).set(changeset.id, result.changeset));
+      if (result.checkpoint !== null) reloadTree();
+    } catch (caught) {
+      setUndoError(errorMessage(caught));
+    } finally {
+      setResolving(null);
+    }
+  }
+
+  // "Open file" only for files the book has now: a later undo, edit, or
+  // removal can take away a file a change once created.
+  const inBook = (path: string) => tree.files.some((file) => file.path === path);
+
+  function openCheckpoint(checkpoint: Checkpoint, path: string) {
+    setDiff({
+      label: checkpoint.label,
+      files: checkpoint.files,
+      path,
+      loadKey: `checkpoint:${checkpoint.id}`,
+      load: (signal) =>
+        api.getCheckpoint(slug, checkpoint.id, signal).then((detail) => detail.files),
+      canOpen: (target) => checkpoint.undoneAt === null && inBook(target),
+    });
+  }
+
+  function openProposal(changeset: AgentChangeset, path: string) {
+    setDiff({
+      label: 'Proposed by the agent',
+      files: changeset.files,
+      path,
+      loadKey: `changeset:${changeset.id}`,
+      load: (signal) => api.getAgentChangeset(changeset.id, signal).then((detail) => detail.files),
+      canOpen: (target) =>
+        changeset.files.find((entry) => entry.path === target)?.status === 'applied' &&
+        inBook(target),
+    });
+  }
+
   async function remove() {
     setDeleteBusy(true);
     try {
@@ -179,6 +251,11 @@ function AgentChatPage({ chatId }: { chatId: string }) {
           ← Chats
         </Link>
         <h2 id="agent-chat-title">{chat.title}</h2>
+        <AgentChatSettings
+          chat={settings?.id === chat.id ? settings : chat}
+          disabled={run !== null || watching}
+          onChanged={setSettings}
+        />
       </header>
 
       {chat.messages.length === 0 && run === null ? (
@@ -190,9 +267,13 @@ function AgentChatPage({ chatId }: { chatId: string }) {
           checkpoints={checkpoints}
           latestLiveId={latestLiveId}
           undoing={undoing}
+          changesets={changesets}
+          resolving={resolving}
           onInspect={setInspecting}
-          onOpenDiff={(checkpoint, path) => setDiff({ checkpoint, path })}
+          onOpenDiff={openCheckpoint}
           onUndo={(checkpoint) => void undo(checkpoint)}
+          onOpenProposal={openProposal}
+          onResolve={(changeset, action, path) => void resolve(changeset, action, path)}
         />
       )}
 
@@ -240,13 +321,7 @@ function AgentChatPage({ chatId }: { chatId: string }) {
       {inspecting === null ? null : (
         <AgentInspectorDialog message={inspecting} onClose={() => setInspecting(null)} />
       )}
-      {diff === null ? null : (
-        <CheckpointDiffDialog
-          checkpoint={diff.checkpoint}
-          path={diff.path}
-          onClose={() => setDiff(null)}
-        />
-      )}
+      {diff === null ? null : <DiffDialog {...diff} onClose={() => setDiff(null)} />}
       {deleting ? (
         <ConfirmDialog
           title={`Delete ${chat.title}?`}

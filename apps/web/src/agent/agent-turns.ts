@@ -1,4 +1,9 @@
-import type { AgentMessage, AgentStreamEvent, Checkpoint } from '@worldbookllm/shared';
+import type {
+  AgentChangeset,
+  AgentMessage,
+  AgentStreamEvent,
+  Checkpoint,
+} from '@worldbookllm/shared';
 
 export interface ToolCallView {
   id: string;
@@ -21,11 +26,20 @@ export interface PendingTurn {
   steps: StepView[];
   reasoning: string;
   checkpoint: Checkpoint | null;
+  /** Review mode: the changes the turn proposes, announced when it ends. */
+  changeset: AgentChangeset | null;
   stopping: boolean;
 }
 
 export function startTurn(userContent: string): PendingTurn {
-  return { userContent, steps: [], reasoning: '', checkpoint: null, stopping: false };
+  return {
+    userContent,
+    steps: [],
+    reasoning: '',
+    checkpoint: null,
+    changeset: null,
+    stopping: false,
+  };
 }
 
 function updateStep(turn: PendingTurn, index: number, change: (step: StepView) => StepView) {
@@ -74,6 +88,8 @@ export function applyAgentEvent(turn: PendingTurn, event: AgentStreamEvent): Pen
       }));
     case 'checkpoint':
       return { ...turn, checkpoint: event.checkpoint };
+    case 'changeset':
+      return { ...turn, changeset: event.changeset };
     default:
       return turn;
   }

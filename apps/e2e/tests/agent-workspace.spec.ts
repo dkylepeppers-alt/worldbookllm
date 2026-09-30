@@ -97,3 +97,56 @@ test('M7 agent tab on a phone', async ({ page }) => {
     await expect(page.getByText('Interrupted')).toBeVisible();
   });
 });
+
+test('review mode with a custom agent on a phone', async ({ page }) => {
+  const dataDir = process.env.WORLDBOOKLLM_E2E_DATA_DIR;
+  const stubUrl = process.env.E2E_STUB_URL;
+  let slug = '';
+  await test.step('set up a provider and a book', async () => {
+    await page.request.patch('/api/app-settings', {
+      data: { providerConfig: { source: 'custom', model: STUB_MODEL_ID, baseUrl: stubUrl } },
+    });
+    const created = await page.request.post('/api/books', { data: { title: 'Tide Ledger' } });
+    slug = ((await created.json()) as { slug: string }).slug;
+  });
+  const characterFile = join(dataDir ?? '', 'projects', slug, 'characters/ada-brass.md');
+
+  await test.step('save a custom agent', async () => {
+    await page.goto('/agents');
+    await page.getByRole('button', { name: 'New agent' }).click();
+    await page.getByLabel('Name').fill('Harbor clerk');
+    await page.getByLabel('Instructions').fill('Keep the harbor ledger exact.');
+    await page.getByRole('button', { name: 'Create agent' }).click();
+    await expect(
+      page.getByRole('region', { name: 'Saved agents' }).getByText('Harbor clerk'),
+    ).toBeVisible();
+  });
+
+  await test.step('start a review-mode chat with that agent', async () => {
+    await page.goto(`/books/${slug}/agent`);
+    await page.getByRole('combobox', { name: 'Agent' }).selectOption({ label: 'Harbor clerk' });
+    await page.getByRole('checkbox', { name: 'Review changes before they apply' }).check();
+    await page.getByLabel('New chat').fill('Add Ada Brass to the cast');
+    await page.getByRole('button', { name: 'Start chat' }).click();
+    await expect(page.getByText(`${STUB_AGENT_REPLY} Speaking as Harbor clerk.`)).toBeVisible();
+  });
+
+  const proposal = page.getByRole('region', { name: 'Proposed changes' });
+
+  await test.step('the change waits for review', async () => {
+    await expect(proposal.getByText('new characters/ada-brass.md')).toBeVisible();
+    await expect(access(characterFile)).rejects.toThrow();
+    await proposal.getByRole('button', { name: 'new characters/ada-brass.md' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(
+      dialog.getByRole('list', { name: 'Changes to characters/ada-brass.md' }),
+    ).toContainText(STUB_AGENT_CHARACTER);
+    await dialog.getByRole('button', { name: 'Close' }).click();
+  });
+
+  await test.step('apply it into the book', async () => {
+    await proposal.getByRole('button', { name: 'Apply characters/ada-brass.md' }).click();
+    await expect(proposal.getByText('applied')).toBeVisible();
+    await expect(readFile(characterFile, 'utf8')).resolves.toContain(STUB_AGENT_CHARACTER);
+  });
+});

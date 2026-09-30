@@ -48,7 +48,12 @@ describe('PresetControls thinking toggle', () => {
     );
     const client = createTestClient({
       listPresets: () => Promise.resolve([preset]),
-      getAppSettings: () => Promise.resolve({ defaultPresetId: preset.id, providerConfig: null }),
+      getAppSettings: () =>
+        Promise.resolve({
+          defaultPresetId: preset.id,
+          providerConfig: null,
+          agentReviewMode: false,
+        }),
       updatePreset,
     });
     render(

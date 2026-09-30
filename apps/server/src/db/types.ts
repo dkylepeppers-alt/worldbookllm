@@ -57,6 +57,7 @@ export interface AppSettingsRow {
   id: 1;
   default_preset_id: string;
   provider_config_json: string;
+  agent_review_mode: 0 | 1;
 }
 
 export interface MessageRow {

@@ -238,12 +238,20 @@ describe('preset schemas', () => {
       patchPresetSchema.parse({ generation: { temperature: 0.4, extra: true } }),
     ).toThrow();
     expect(() => patchPresetSchema.parse({ name: 'Valid', extra: true })).toThrow();
-    expect(appSettingsSchema.parse({ defaultPresetId: PRESET_ID, providerConfig: null })).toEqual({
-      defaultPresetId: PRESET_ID,
-      providerConfig: null,
-    });
+    expect(
+      appSettingsSchema.parse({
+        defaultPresetId: PRESET_ID,
+        providerConfig: null,
+        agentReviewMode: false,
+      }),
+    ).toEqual({ defaultPresetId: PRESET_ID, providerConfig: null, agentReviewMode: false });
     expect(() =>
-      appSettingsSchema.parse({ defaultPresetId: PRESET_ID, providerConfig: null, extra: true }),
+      appSettingsSchema.parse({
+        defaultPresetId: PRESET_ID,
+        providerConfig: null,
+        agentReviewMode: false,
+        extra: true,
+      }),
     ).toThrow();
     expect(() => appSettingsSchema.parse({ defaultPresetId: PRESET_ID })).toThrow();
   });
@@ -259,6 +267,9 @@ describe('preset schemas', () => {
     ).toEqual({ providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' } });
     expect(patchAppSettingsSchema.parse({ providerConfig: null })).toEqual({
       providerConfig: null,
+    });
+    expect(patchAppSettingsSchema.parse({ agentReviewMode: true })).toEqual({
+      agentReviewMode: true,
     });
     expect(() => patchAppSettingsSchema.parse({})).toThrow();
   });

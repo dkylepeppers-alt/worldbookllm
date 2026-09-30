@@ -122,16 +122,23 @@ export const presetListSchema = z.array(presetSchema);
 export const appSettingsSchema = z.strictObject({
   defaultPresetId: z.uuid(),
   providerConfig: providerConfigSchema.nullable(),
+  /** Agent review mode default: stage the agent's changes for approval (chats can override). */
+  agentReviewMode: z.boolean(),
 });
 
 export const patchAppSettingsSchema = z
   .strictObject({
     defaultPresetId: z.uuid().optional(),
     providerConfig: providerConfigSchema.nullable().optional(),
+    agentReviewMode: z.boolean().optional(),
   })
-  .refine((value) => value.defaultPresetId !== undefined || value.providerConfig !== undefined, {
-    message: 'At least one setting is required',
-  });
+  .refine(
+    (value) =>
+      value.defaultPresetId !== undefined ||
+      value.providerConfig !== undefined ||
+      value.agentReviewMode !== undefined,
+    { message: 'At least one setting is required' },
+  );
 
 export const createPresetSchema = portablePresetSchema;
 

@@ -123,7 +123,11 @@ async function renderWorkspace(overrides = {}, value: Notebook = notebook) {
     getChat: () => Promise.resolve(detailWith([])),
     listPresets: () => Promise.resolve([defaultPreset, prosePreset]),
     getAppSettings: () =>
-      Promise.resolve({ defaultPresetId: defaultPreset.id, providerConfig: null }),
+      Promise.resolve({
+        defaultPresetId: defaultPreset.id,
+        providerConfig: null,
+        agentReviewMode: false,
+      }),
     ...overrides,
   });
   render(
@@ -339,7 +343,11 @@ describe('ChatPanel', () => {
     const getAppSettings = vi
       .fn()
       .mockRejectedValueOnce(new ApiClientError(500, 'internal_error', 'Failed'))
-      .mockResolvedValueOnce({ defaultPresetId: defaultPreset.id, providerConfig: null });
+      .mockResolvedValueOnce({
+        defaultPresetId: defaultPreset.id,
+        providerConfig: null,
+        agentReviewMode: false,
+      });
     await renderWorkspace({
       listChats: () => Promise.resolve([explicit]),
       listPresets,
@@ -365,9 +373,11 @@ describe('ChatPanel', () => {
       .fn()
       .mockRejectedValueOnce(new ApiClientError(500, 'internal_error', 'Failed'))
       .mockResolvedValueOnce([defaultPreset, prosePreset]);
-    const getAppSettings = vi
-      .fn()
-      .mockResolvedValue({ defaultPresetId: defaultPreset.id, providerConfig: null });
+    const getAppSettings = vi.fn().mockResolvedValue({
+      defaultPresetId: defaultPreset.id,
+      providerConfig: null,
+      agentReviewMode: false,
+    });
     await renderWorkspace({ listPresets, getAppSettings });
     const user = userEvent.setup();
 

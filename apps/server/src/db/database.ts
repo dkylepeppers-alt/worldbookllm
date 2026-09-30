@@ -14,6 +14,7 @@ import { migrateToVersion8 } from './migrations/008-books.js';
 import { migrateToVersion9 } from './migrations/009-notebook-migrations.js';
 import { migrateToVersion10 } from './migrations/010-agent-chats.js';
 import { migrateToVersion11 } from './migrations/011-pending-checkpoints.js';
+import { migrateToVersion12 } from './migrations/012-custom-agents-review-mode.js';
 
 interface Migration {
   version: number;
@@ -32,6 +33,7 @@ const MIGRATIONS: readonly Migration[] = [
   { version: 9, up: migrateToVersion9 },
   { version: 10, up: migrateToVersion10 },
   { version: 11, up: migrateToVersion11 },
+  { version: 12, up: migrateToVersion12 },
 ];
 const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 

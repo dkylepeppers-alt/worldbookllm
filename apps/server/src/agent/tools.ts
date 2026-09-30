@@ -5,11 +5,10 @@ import type { ToolDefinition } from '@worldbookllm/providers';
 import { bookFilePathSchema, sha256Schema, storyOptionsSchema } from '@worldbookllm/shared';
 import { z } from 'zod';
 
-import type { BookService } from '../services/books.js';
 import type { SkillService } from '../services/skills.js';
 import { confine } from '../story/book-paths.js';
-import type { CheckpointSession } from '../story/checkpoints.js';
 import { isStoryCommand, type StoryCommandName } from '../story/story-commands.js';
+import type { AgentWorkspace } from './workspace.js';
 
 /**
  * `story` commands the agent may run (ADR 0015 decision 4). Project
@@ -49,8 +48,9 @@ export const AGENT_STORY_COMMANDS: ReadonlySet<StoryCommandName> = new Set<Story
 const SKILL_FILE_MAX_BYTES = 64 * 1024;
 
 export interface ToolContext {
-  book: string;
-  session: CheckpointSession;
+  workspace: AgentWorkspace;
+  /** Skills this turn's agent may use; null allows every installed skill. */
+  skills: ReadonlySet<string> | null;
 }
 
 export interface ToolOutcome {
@@ -92,14 +92,14 @@ const pathParameter = {
 
 /**
  * The agent's tools over one book and the installed skills. Every path is
- * confined to the book (or the skill's folder); every write goes through
- * BookService inside the turn's checkpoint session.
+ * confined to the book (or the skill's folder); every write goes through the
+ * turn's workspace: the book inside its checkpoint session, or a staged copy
+ * in review mode.
  */
 export class AgentToolRegistry {
   private readonly tools: ReadonlyMap<string, AgentTool<never>>;
 
   constructor(
-    private readonly books: BookService,
     private readonly skills: SkillService,
     private readonly skillsRoot: string,
   ) {
@@ -109,7 +109,7 @@ export class AgentToolRegistry {
         'Load the full instructions of an installed skill before doing work it covers.',
         { properties: { name: { type: 'string' } }, required: ['name'] },
         z.object({ name: z.string() }),
-        ({ name }) => this.activateSkill(name),
+        ({ name }, context) => this.activateSkill(name, context),
       ),
       tool(
         'read_skill_file',
@@ -119,31 +119,28 @@ export class AgentToolRegistry {
           required: ['name', 'path'],
         },
         z.object({ name: z.string(), path: z.string() }),
-        ({ name, path }) => this.readSkillFile(name, path),
+        ({ name, path }, context) => this.readSkillFile(name, path, context),
       ),
       tool(
         'list_files',
         "List the book's Markdown files with their kind and title, optionally under one folder.",
         { properties: { dir: { type: 'string', description: 'Folder prefix, e.g. characters' } } },
         z.object({ dir: z.string().optional() }),
-        ({ dir }, context) => this.listFiles(context.book, dir),
+        ({ dir }, context) => this.listFiles(context.workspace, dir),
       ),
       tool(
         'read_file',
         'Read a book file, frontmatter included, with the hash required to replace it safely.',
         { properties: { path: pathParameter }, required: ['path'] },
         z.object({ path: bookFilePathSchema }),
-        ({ path }, context) => {
-          const file = this.books.readFile(context.book, path);
-          return JSON.stringify({ path: file.path, hash: file.hash, content: file.content });
-        },
+        ({ path }, context) => JSON.stringify(context.workspace.readFile(path)),
       ),
       tool(
         'search',
         'Full-text search across the book; returns matching files with excerpts.',
         { properties: { query: { type: 'string' } }, required: ['query'] },
         z.object({ query: z.string().min(1).max(500) }),
-        ({ query }, context) => this.search(context.book, query),
+        ({ query }, context) => this.search(context.workspace, query),
       ),
       tool(
         'write_file',
@@ -166,7 +163,7 @@ export class AgentToolRegistry {
           expectedHash: sha256Schema.nullable(),
         }),
         async ({ path, content, expectedHash }, context) => {
-          await this.books.writeInSession(context.session, path, content, expectedHash);
+          await context.workspace.writeFile(path, content, expectedHash);
           return `Wrote ${path}.`;
         },
       ),
@@ -183,9 +180,7 @@ export class AgentToolRegistry {
         },
         z.object({ path: bookFilePathSchema, find: z.string().min(1), replace: z.string() }),
         ({ path, find, replace }, context) =>
-          this.books
-            .editInSession(context.session, path, find, replace)
-            .then(() => `Edited ${path}.`),
+          context.workspace.editFile(path, find, replace).then(() => `Edited ${path}.`),
       ),
       tool(
         'run_story',
@@ -241,14 +236,17 @@ export class AgentToolRegistry {
     }
   }
 
-  private skillByName(name: string) {
+  private skillByName(name: string, context: ToolContext) {
     const skill = this.skills.list().find((entry) => entry.name === name);
     if (!skill) throw new Error(`No installed skill is named ${name}.`);
+    if (context.skills !== null && !context.skills.has(name)) {
+      throw new Error(`The skill ${name} is not available to this agent.`);
+    }
     return skill;
   }
 
-  private activateSkill(name: string): string {
-    const skill = this.skills.get(this.skillByName(name).id);
+  private activateSkill(name: string, context: ToolContext): string {
+    const skill = this.skills.get(this.skillByName(name, context).id);
     const referencesDir = join(this.skillsRoot, skill.name, 'references');
     let references: string[] = [];
     try {
@@ -267,8 +265,8 @@ export class AgentToolRegistry {
     ].join('');
   }
 
-  private readSkillFile(name: string, path: string): string {
-    const skill = this.skillByName(name);
+  private readSkillFile(name: string, path: string, context: ToolContext): string {
+    const skill = this.skillByName(name, context);
     const absolute = confine(join(this.skillsRoot, skill.name), path);
     if (!absolute.endsWith('.md')) throw new Error('Only Markdown skill files can be read.');
     if (statSync(absolute).size > SKILL_FILE_MAX_BYTES) {
@@ -277,17 +275,17 @@ export class AgentToolRegistry {
     return readFileSync(absolute, 'utf8');
   }
 
-  private listFiles(book: string, dir: string | undefined): string {
+  private listFiles(workspace: AgentWorkspace, dir: string | undefined): string {
     const prefix = dir ? `${dir.replace(/\/+$/u, '')}/` : '';
-    const files = this.books
-      .listFiles(book)
+    const files = workspace
+      .listFiles()
       .filter((file) => file.kind !== 'registry' && file.path.startsWith(prefix));
     if (files.length === 0) return 'No files.';
     return files.map((file) => `${file.path} — ${file.kind} — ${file.title}`).join('\n');
   }
 
-  private search(book: string, query: string): string {
-    const results = this.books.search(book, query);
+  private search(workspace: AgentWorkspace, query: string): string {
+    const results = workspace.search(query);
     if (results.length === 0) return 'No matches.';
     return results.map((hit) => `${hit.path} (${hit.title}): ${hit.excerpt}`).join('\n');
   }
@@ -301,7 +299,7 @@ export class AgentToolRegistry {
     if (!isStoryCommand(command) || !AGENT_STORY_COMMANDS.has(command)) {
       throw new Error(`story ${command} is not available to the agent.`);
     }
-    const result = await this.books.runStoryForAgent(context.session, command, args, options);
+    const result = await context.workspace.runStory(command, args, options);
     const output = result.envelope
       ? JSON.stringify(result.envelope)
       : [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n');

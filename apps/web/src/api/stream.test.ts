@@ -245,6 +245,7 @@ describe('streamAgentMessage', () => {
     content: 'Read it.',
     reasoning: null,
     status: 'complete',
+    note: null,
     steps: [],
     checkpointId: null,
     createdAt: '2026-09-30T12:00:00.000Z',
