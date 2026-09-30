@@ -73,7 +73,7 @@ export function registerAgentRoutes(app: FastifyInstance): void {
   app.post('/api/agent-chats/:id/stop', async (request, reply) => {
     const { id } = agentChatParamsSchema.parse(request.params);
     agent().stop(id);
-    return reply.status(202).send();
+    return reply.status(204).send();
   });
 
   // Review mode: a turn's proposed changes, applied or skipped per file (ADR 0016).

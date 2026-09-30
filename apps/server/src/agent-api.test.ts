@@ -477,7 +477,7 @@ describe('agent turns', () => {
     });
     await ready;
     const stopped = await app.inject({ method: 'POST', url: `/api/agent-chats/${chat.id}/stop` });
-    expect(stopped.statusCode).toBe(202);
+    expect(stopped.statusCode).toBe(204);
     release();
     await pending;
 
