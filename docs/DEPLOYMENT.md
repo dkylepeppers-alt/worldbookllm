@@ -14,14 +14,13 @@ needs lives under one data directory on the machine you run it on.
 
 ## Environment variables
 
-| Variable             | Default                             | Meaning                                                                                                                                        |
-| -------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HOST`               | `127.0.0.1`                         | Interface the server binds to. Set to `0.0.0.0` to accept connections from other machines/containers.                                          |
-| `PORT`               | `3001`                              | Port the server (API + built web app) listens on.                                                                                              |
-| `DATA_DIR`           | `<repo>/data`                       | Where the SQLite database, book Markdown files, and secrets file live. **The only directory you need to back up.**                             |
-| `WEB_DIST_DIR`       | `<repo>/apps/web/dist`              | The built web app the server serves. Only relevant if you build/host the web app somewhere other than its default location next to the server. |
-| `API_PROXY_TARGET`   | `http://127.0.0.1:3001`             | **Dev only** — where `pnpm dev`'s Vite server proxies `/api`. Not used in production, where there is only one server.                          |
-| `STARTER_SKILLS_DIR` | `<repo>/apps/server/skills-starter` | Where the vendored starter skill set is read from when a user installs it. Only relevant if you relocate the server away from the repo layout. |
+| Variable           | Default                 | Meaning                                                                                                                                        |
+| ------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HOST`             | `127.0.0.1`             | Interface the server binds to. Set to `0.0.0.0` to accept connections from other machines/containers.                                          |
+| `PORT`             | `3001`                  | Port the server (API + built web app) listens on.                                                                                              |
+| `DATA_DIR`         | `<repo>/data`           | Where the SQLite database, book Markdown files, and secrets file live. **The only directory you need to back up.**                             |
+| `WEB_DIST_DIR`     | `<repo>/apps/web/dist`  | The built web app the server serves. Only relevant if you build/host the web app somewhere other than its default location next to the server. |
+| `API_PROXY_TARGET` | `http://127.0.0.1:3001` | **Dev only** — where `pnpm dev`'s Vite server proxies `/api`. Not used in production, where there is only one server.                          |
 
 Every variable has a sensible default; a bare `pnpm start` after `pnpm build` works with no
 configuration at all.
@@ -46,10 +45,11 @@ session, etc.) — see the systemd example below.
 
 ## Docker
 
-A `Dockerfile` and `docker-compose.yml` are included at the repo root. They build the whole
-workspace inside the image and run `pnpm start`, so the image needs nothing installed on the host
-beyond Docker itself. The image favors clarity over size (a single stage, no dependency pruning);
-see "Trimming the image" below if that matters for your setup.
+A `Dockerfile` and `docker-compose.yml` are included at the repo root, so the host needs nothing
+installed beyond Docker itself. The build is two stages: the first installs the workspace and runs
+`pnpm build`; the second keeps only the server bundle, its production dependencies, and the built
+web app. The container runs the server directly with `node` as the unprivileged `node` user
+(uid 1000), stops cleanly on `docker stop`, and reports health from `/api/health`.
 
 ```bash
 docker compose up -d --build
@@ -71,15 +71,19 @@ docker build -t worldbookllm .
 docker run -d --name worldbookllm -p 3001:3001 -v worldbookllm-data:/data worldbookllm
 ```
 
-### Trimming the image
+### Upgrading from an image that ran as root
 
-The provided `Dockerfile` is a single stage that installs every dependency (including
-devDependencies) and keeps the full monorepo source in the final image — simple to read and modify,
-at the cost of a larger image than a production-optimized multi-stage build would produce. If image
-size matters for your deployment, a multi-stage build that runs `pnpm build` in one stage and copies
-only `apps/server/dist`, `apps/web/dist`, and a pruned `node_modules` into a slim runtime stage is a
-reasonable follow-up — it isn't included here to keep the documented path something you can read
-top to bottom and trust.
+Images built before the server ran as the `node` user wrote `/data` as root, and the new image
+cannot write to those files (the server fails to start with `EPERM`). Hand the volume to uid 1000
+once, then start the new image as usual:
+
+```bash
+docker compose down
+docker run --rm -v worldbookllm-data:/data --entrypoint chown node:24-slim -R 1000:1000 /data
+docker compose up -d --build
+```
+
+For a bind mount, run `sudo chown -R 1000:1000 ./data` on the host instead.
 
 ## Reverse proxy and HTTPS
 
