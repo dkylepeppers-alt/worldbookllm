@@ -83,6 +83,8 @@ The package is pure: no filesystem, no HTTP framework, no secret reads. It expos
 
 The server performs the actual `fetch`, injects keys from the local secret store (multiple named keys per provider with rotation, ported from SillyTavern's SecretManager; stored in `data/secrets.json`, always masked in API responses), and pipes normalized SSE events to the browser.
 
+Function tool calling is ported from the same SillyTavern commit (ADR 0015): `GenerationParams.tools`/`toolChoice` are shaped per provider (OpenAI-style passthrough, Claude `input_schema` with the tools beta, Gemini `function_declarations`), `supportsTools(source)` mirrors upstream's source list, and `ToolCallAccumulator` turns each provider's streamed tool-call fragments into complete calls.
+
 Model + provider selection is a single **global setting** (ADR 0013), configured once on the Settings page and resolved identically for every notebook and chat. Keys never leave the server beyond masked display. Switching models never requires rebuilding a project — sources and chats are provider-independent.
 
 ## Native preset library and exchange provenance
@@ -97,9 +99,18 @@ Assistant responses can be reviewed and saved through the normal source-creation
 
 ## Creative skills library
 
-Skills are reusable craft instructions (character voice, settlement design, story diagnosis) in the agentskills.io format: a directory per skill at `data/skills/<name>/` whose `SKILL.md` carries `name`/`description` frontmatter and a Markdown instruction body. Like sources, the files are the source of truth and SQLite is a rebuildable index; like presets, skills are global rather than per-notebook. A chat attaches skills the same way it selects sources (`skillIds`), and the assembler injects the attached skill bodies as a `## Skills` system message immediately after the protected Sources module — prompt-orchestrated, with no provider-layer or preset-schema change. Injected skill content is captured in the immutable exchange snapshot, so the Prompt Inspector always shows exactly what craft text the model received. A curated MIT-attributed starter set from jwynia/agent-skills ships with the server and installs idempotently. See ADR 0011, including the staged path from this foundation to a model-driven skill activation loop.
+Skills are reusable craft instructions (character voice, settlement design, story diagnosis) in the agentskills.io format: a directory per skill at `data/skills/<name>/` whose `SKILL.md` carries `name`/`description` frontmatter and a Markdown instruction body. Like sources, the files are the source of truth and SQLite is a rebuildable index; like presets, skills are global rather than per-notebook. A chat attaches skills the same way it selects sources (`skillIds`), and the assembler injects the attached skill bodies as a `## Skills` system message immediately after the protected Sources module — prompt-orchestrated, with no provider-layer or preset-schema change. Injected skill content is captured in the immutable exchange snapshot, so the Prompt Inspector always shows exactly what craft text the model received. A curated MIT-attributed starter set from jwynia/agent-skills ships with the server and installs idempotently. See ADR 0011. For books, ADR 0015 replaces this injection with the agent's on-demand skill activation (below); the starter set is retired once the Agent tab ships.
 
 Two generation controls extend this beyond the M4 scope: an optional `thinking` flag (additive to the schemaVersion-1 generation controls) asks the provider to reason before answering and surface that reasoning, rendered collapsed in the chat UI; and each assistant turn can be regenerated, keeping every prior response as a variant on the same message (`messages.variants_json` + `active_variant`, with the existing `content`/`reasoning`/`status`/`context` columns always mirroring the active variant so the assembler and every other reader are unchanged). A chat's source selection also supports bulk Select all/Clear all, still a single `sourceIds` replacement under the hood.
+
+## Story-skills books and the agent (M7)
+
+M7 replaces notebooks with [story-skills](https://github.com/danjdewhurst/story-skills) books (ADR 0014) and runs the story-skills skills through a tool-calling agent (ADR 0015). Books and notebooks run side by side until the notebook UI is retired.
+
+- **Books** are story-skills schema v2 projects under `data/projects/<slug>/`, indexed by `(book, path)` with FTS5 search. `apps/server/src/story/` holds the only code that runs the pinned `story` CLI (`StoryCli`: execFile, vendored command allowlist checked against upstream by a test, server-owned `--path`/`--out`/`--dir`/`--json`, timeout, output cap, scrubbed env, the book root shown as `.`), path confinement (`confine`), the index, and checkpoints.
+- **Checkpoints** record the before and after bytes of every file a change touches, including CLI-made changes, and undo last-in-first-out, refusing over later edits. A `CheckpointSession` gathers several separately locked writes, such as one agent turn, into a single checkpoint.
+- **The web UI** at `/books` is a phone-first workspace (Write / Bible / Health / Project tabs as a bottom bar, a side rail from 800px) with a raw Markdown editor, `story report`/`next` health, and history with undo.
+- **The agent** (`apps/server/src/agent/`) runs a bounded loop (24 steps) on agent chats bound to a book: it streams text, collects tool calls, runs them (`activate_skill`, `read_skill_file`, `list_files`, `read_file`, `search`, `write_file`, `edit_file`, allowlisted `run_story`), and feeds results back. Each step's secret-free request and every tool result are stored on the assistant message; the turn's file changes form one undoable checkpoint. The system prompt carries the installed skill catalog; `StorySkillsInstaller` installs the pinned story-skills skills with their `references/`.
 
 ## Production serving and installability (PWA)
 
@@ -127,3 +138,6 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0010 — Installable PWA, served single-origin in production](decisions/0010-pwa-single-origin-serving.md)
 - [0011 — Prompt-orchestrated creative skills library](decisions/0011-prompt-orchestrated-skills-library.md)
 - [0012 — FTS5 standalone search index synchronized by services](decisions/0012-fts5-standalone-search-index.md)
+- [0013 — Single global provider/model setting](decisions/0013-global-provider-settings.md)
+- [0014 — Story-skills projects replace notebooks](decisions/0014-story-projects-replace-notebooks.md)
+- [0015 — Tool-calling agent loop running story-skills](decisions/0015-tool-calling-agent-loop.md)
