@@ -63,6 +63,7 @@ describe('books API', () => {
       title: 'The Salt Road',
       genre: 'fantasy',
       status: 'planning',
+      kind: 'book',
       seriesId: null,
       counts: {},
     });

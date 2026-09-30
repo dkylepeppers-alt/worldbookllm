@@ -364,8 +364,8 @@ export class AgentService {
     this.db.prepare('DELETE FROM agent_chats WHERE id = ?').run(id);
   }
 
-  /** Refuses trash while one of the book's chats has a turn running. */
-  assertBookIdle(book: string): void {
+  /** Refuses trash, or a move, while one of the book's chats has a turn running. */
+  assertBookIdle(book: string, action = 'trashing it'): void {
     const ids = this.db
       .prepare('SELECT id FROM agent_chats WHERE book = ?')
       .pluck()
@@ -373,7 +373,7 @@ export class AgentService {
     if (ids.some((id) => this.active.has(id))) {
       throw new ConflictError(
         'generation_in_progress',
-        'An agent turn is running in this book. Wait for it to finish before trashing it.',
+        `An agent turn is running in this book. Wait for it to finish before ${action}.`,
       );
     }
   }
