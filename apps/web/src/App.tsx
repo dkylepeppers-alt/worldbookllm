@@ -1,11 +1,18 @@
 import '@fontsource-variable/archivo/wght.css';
 import '@fontsource-variable/source-serif-4/opsz.css';
-import { BrowserRouter, Route, Routes, useParams } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 
 import './styles.css';
 
 import { ApiProvider } from './api/ApiContext.js';
 import { createApiClient, type ApiClient } from './api/client.js';
+import { BiblePage } from './books/BiblePage.js';
+import { BookFilePage } from './books/BookFilePage.js';
+import { BookLayout } from './books/BookLayout.js';
+import { BookLibraryPage } from './books/BookLibraryPage.js';
+import { HealthPage } from './books/HealthPage.js';
+import { ProjectPage } from './books/ProjectPage.js';
+import { WritePage } from './books/WritePage.js';
 import { AppShell } from './layout/AppShell.js';
 import { NotebookListPage } from './notebooks/NotebookListPage.js';
 import { NotebookWorkspace, ReaderEmpty } from './notebooks/NotebookWorkspace.js';
@@ -30,6 +37,15 @@ export function AppRoutes() {
         <Route path="notebooks/:notebookId" element={<NotebookWorkspace />}>
           <Route index element={<ReaderEmpty />} />
           <Route path="sources/:sourceId" element={<KeyedReaderRoute />} />
+        </Route>
+        <Route path="books" element={<BookLibraryPage />} />
+        <Route path="books/:slug" element={<BookLayout />}>
+          <Route index element={<Navigate to="write" replace />} />
+          <Route path="write" element={<WritePage />} />
+          <Route path="bible" element={<BiblePage />} />
+          <Route path="health" element={<HealthPage />} />
+          <Route path="project" element={<ProjectPage />} />
+          <Route path="files/*" element={<BookFilePage />} />
         </Route>
         <Route path="settings" element={<SettingsPage />} />
         <Route path="presets" element={<PresetsPage />} />

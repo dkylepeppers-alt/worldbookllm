@@ -1628,3 +1628,320 @@ label {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Books (ADR 0014): library, workspace tabs, bible, files, health ───── */
+
+.book-library,
+.book-panel,
+.book-file {
+  display: grid;
+  gap: 1rem;
+}
+
+/* Same page frame as the other screens: a 1rem gutter on phones, capped width on desktop. */
+.book-library,
+.book-layout {
+  width: min(100% - 2rem, 1100px);
+  margin: 0 auto;
+  padding-block: clamp(1.25rem, 5vw, 3rem);
+}
+
+.book-create {
+  display: grid;
+  gap: 0.65rem;
+  max-width: 640px;
+}
+
+.file-button {
+  position: relative;
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-self: start;
+  cursor: pointer;
+}
+
+.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.file-button:focus-within {
+  outline: 3px solid var(--vermilion);
+  outline-offset: 3px;
+}
+
+.form-error {
+  margin: 0;
+  border: 1px solid var(--vermilion);
+  background: var(--surface);
+  padding: 0.65rem 0.8rem;
+  color: var(--ink);
+}
+
+.book-grid {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.book-card {
+  position: relative;
+  min-height: 150px;
+  overflow: hidden;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  padding: 1.25rem;
+  box-shadow: 5px 5px 0 rgb(36 87 197 / 15%);
+}
+
+.book-card h2 {
+  margin: 0 0 0.5rem;
+}
+
+.book-link {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.book-link:hover h2 {
+  color: var(--blueprint);
+}
+
+.book-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.book-header {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.book-header a {
+  color: var(--blueprint);
+  text-decoration: none;
+}
+
+.book-header h1 {
+  margin: 0;
+  font-size: clamp(1.4rem, 4vw, 2.25rem);
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+}
+
+.book-tabs {
+  position: fixed;
+  z-index: 20;
+  inset: auto 0 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--ink);
+  background: var(--surface);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.book-tabs a {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  font-size: 0.74rem;
+  font-weight: 720;
+  letter-spacing: 0.045em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.book-tabs a[aria-current='page'] {
+  color: var(--vermilion);
+  box-shadow: inset 0 3px 0 var(--vermilion);
+}
+
+.section-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.section-switch button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  padding: 0.35rem 0.75rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.section-switch button[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.entry-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.entry-list li {
+  display: grid;
+  gap: 0.2rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.75rem 0;
+}
+
+.entry-list a {
+  color: var(--blueprint);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.entry-list a:hover {
+  text-decoration: underline;
+}
+
+.entry-list button {
+  justify-self: start;
+}
+
+.add-entity {
+  display: grid;
+  gap: 0.65rem;
+  max-width: 520px;
+}
+
+.add-entity label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.add-entity button {
+  justify-self: start;
+}
+
+.book-file-header {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.book-file-header h2 {
+  margin: 0;
+}
+
+.field-list {
+  display: grid;
+  margin: 0;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.field-list div {
+  display: grid;
+  gap: 0.15rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.55rem 0.8rem;
+}
+
+.field-list div:last-child {
+  border-bottom: 0;
+}
+
+.field-list dt {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.095em;
+  text-transform: uppercase;
+}
+
+.field-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.book-file .markdown-body {
+  padding-inline: 0;
+}
+
+.book-file textarea {
+  width: 100%;
+  min-height: 60vh;
+}
+
+.check-grid {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check-card {
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  padding: 0.8rem 1rem;
+  box-shadow: 4px 4px 0 rgb(36 87 197 / 12%);
+}
+
+.check-card p {
+  margin: 0;
+}
+
+.check-failed {
+  border-color: var(--vermilion);
+}
+
+@media (min-width: 620px) {
+  .book-grid,
+  .check-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* From tablet width the tab bar becomes a side rail beside the book body. */
+@media (min-width: 800px) {
+  .book-layout {
+    grid-template-columns: 180px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .book-header {
+    grid-column: 1 / -1;
+  }
+
+  .book-tabs {
+    position: sticky;
+    top: 1rem;
+    inset: auto;
+    grid-template-columns: 1fr;
+    border: 1px solid var(--ink);
+    padding-bottom: 0;
+  }
+
+  .book-tabs a {
+    justify-content: flex-start;
+    padding-inline: 1rem;
+  }
+
+  .book-tabs a[aria-current='page'] {
+    box-shadow: inset 3px 0 0 var(--vermilion);
+  }
+}
+
+@media (min-width: 1180px) {
+  .book-grid,
+  .check-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
