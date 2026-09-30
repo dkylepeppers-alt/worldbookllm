@@ -129,7 +129,7 @@ export function truncateResult(result: string): string {
  * so the provider sees an empty object and the tool result carries the error.
  * The recorded step keeps the raw string.
  */
-export function providerToolArguments(raw: string): string {
+function providerToolArguments(raw: string): string {
   try {
     JSON.parse(raw);
     return raw;
@@ -140,11 +140,11 @@ export function providerToolArguments(raw: string): string {
 
 /** Rebuilds the provider conversation, including tool calls stored on each step. */
 /** A user message as the model receives it: the app's note (if any), then the writer's words. */
-export function userText(content: string, note: string | null): string {
+function userText(content: string, note: string | null): string {
   return note === null ? content : `${note}\n\n${content}`;
 }
 
-export function historyMessages(history: AgentMessage[]): ChatMessage[] {
+function historyMessages(history: AgentMessage[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   for (const message of history) {
     if (message.role === 'user') {

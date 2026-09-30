@@ -695,7 +695,7 @@ const WRITING_FLAGS: Readonly<Record<string, readonly string[]>> = {
   progress: ['log'],
 };
 
-export function storyCommandWrites(command: string, options: StoryOptions): boolean {
+function storyCommandWrites(command: string, options: StoryOptions): boolean {
   if (WRITING_COMMANDS.has(command)) return true;
   return (WRITING_FLAGS[command] ?? []).some(
     (flag) => options[flag] !== undefined && options[flag] !== false,

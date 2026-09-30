@@ -4,11 +4,12 @@ A local-first, model-agnostic creative writing and worldbuilding workspace: stor
 
 ## Commands
 
-All from the repo root (pnpm 9, Node ≥ 24):
+All from the repo root (pnpm 10, Node ≥ 24):
 
 - `pnpm dev` — start server (http://localhost:3001) and web UI (http://localhost:5173) together
 - `pnpm test` / `pnpm lint` / `pnpm typecheck` / `pnpm build` — fan out to all packages
 - `pnpm format` — Prettier write; CI runs `format:check`
+- `pnpm knip` — unused files, exports, and dependencies (CI runs it; drop `export` from anything only its own file uses)
 - Single package: `pnpm --filter @worldbookllm/server test` (also `.../providers`, `.../web`, `.../shared`)
 
 ## Layout

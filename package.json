@@ -8,7 +8,7 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@10.34.6",
   "scripts": {
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "knip": "knip",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:coverage": "pnpm -r test -- --coverage",
@@ -27,8 +28,9 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.8.0",
+    "knip": "^6.39.0",
     "prettier": "^3.9.9",
-    "typescript": "^6.0.3",
+    "typescript": "catalog:",
     "typescript-eslint": "^8.70.1"
   }
 }

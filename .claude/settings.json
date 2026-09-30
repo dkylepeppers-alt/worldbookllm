@@ -36,7 +36,11 @@
       "Bash(pnpm format:check)",
       "Bash(pnpm install)",
       "Bash(pnpm --filter:*)",
-      "Bash(pnpm -r:*)"
+      "Bash(pnpm -r:*)",
+      "Bash(pnpm exec prettier:*)",
+      "Bash(pnpm dev)",
+      "Bash(pnpm dedupe --check)",
+      "Bash(pnpm knip)"
     ]
   }
 }

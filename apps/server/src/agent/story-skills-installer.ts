@@ -14,10 +14,10 @@ const packageVersion = (JSON.parse(readFileSync(packageJson, 'utf8')) as { versi
 if (typeof packageVersion !== 'string' || packageVersion.trim() === '') {
   throw new Error('The installed story-skills package has no version.');
 }
-export const STORY_SKILLS_PACKAGE = `story-skills@${packageVersion}`;
+const STORY_SKILLS_PACKAGE = `story-skills@${packageVersion}`;
 
 /** The pinned story-skills package's skills folder. */
-export function resolveStorySkillsDir(): string {
+function resolveStorySkillsDir(): string {
   return join(dirname(packageJson), 'skills');
 }
 

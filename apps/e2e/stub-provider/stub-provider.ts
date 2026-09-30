@@ -1,14 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 export const STUB_MODEL_ID = 'stub-model';
-export const STUB_MODEL_NAME = 'Stub Model';
-export const STUB_REPLY = 'Stub reply: the word is brass.';
+const STUB_MODEL_NAME = 'Stub Model';
+const STUB_REPLY = 'Stub reply: the word is brass.';
 
 // Agent turns (requests that offer tools) follow a two-step script: the
 // first step adds a character with run_story, and once a tool result is in
 // the conversation the model answers without tools.
 export const STUB_AGENT_CHARACTER = 'Ada Brass';
-export const STUB_AGENT_INTRO = `Adding ${STUB_AGENT_CHARACTER}.`;
+const STUB_AGENT_INTRO = `Adding ${STUB_AGENT_CHARACTER}.`;
 export const STUB_AGENT_REPLY = `${STUB_AGENT_CHARACTER} is in the cast.`;
 
 /** A custom agent's name, read back from its system-prompt role heading. */

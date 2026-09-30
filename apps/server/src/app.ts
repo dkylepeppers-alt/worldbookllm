@@ -49,7 +49,7 @@ function isSpaNavigation(method: string, url: string): boolean {
   return !lastSegment.includes('.');
 }
 
-export interface AppServices {
+interface AppServices {
   books: BookService;
   agent: AgentService;
   customAgents: CustomAgentService;

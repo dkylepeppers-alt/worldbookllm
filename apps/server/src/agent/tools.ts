@@ -15,7 +15,7 @@ import type { AgentWorkspace } from './workspace.js';
  * creation and migration stay with the user, and `compare`/`similarity` are
  * left out because their --ref/--against options name arbitrary paths.
  */
-export const AGENT_STORY_COMMANDS: ReadonlySet<StoryCommandName> = new Set<StoryCommandName>([
+const AGENT_STORY_COMMANDS: ReadonlySet<StoryCommandName> = new Set<StoryCommandName>([
   'validate',
   'reindex',
   'wordcount',
