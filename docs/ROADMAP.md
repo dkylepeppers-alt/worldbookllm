@@ -123,19 +123,22 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Done when:** a user installs the starter set, attaches a skill to a chat, sends a message, and the Prompt Inspector shows the exact skill text the model received — with the skill visible and editable as Markdown on disk.
 
-## M7 — Story-skills agent (proposed)
+## M7 — Story workspace (proposed)
 
-**Goal:** replace the prompt-injected starter skills with [story-skills](https://github.com/danjdewhurst/story-skills), run by a tool-calling agent that loads skills on demand, works on a Markdown story project in the notebook, and uses the `story` CLI for checks — with every write reviewed by the user. See ADR 0014 and `docs/superpowers/specs/2026-09-30-story-skills-agent-design.md`.
+**Goal:** make worldbookllm a complete, mobile-first workspace for [story-skills](https://github.com/danjdewhurst/story-skills) projects. Story projects replace notebooks, the pinned `story` CLI performs every structural operation, and a tool-calling agent runs the story-skills skills with every change it proposes reviewed by the user. See ADR 0014, ADR 0015, and `docs/superpowers/specs/2026-09-30-story-workspace-design.md`.
+
+This supersedes the unfinished notebook-era scope: M2's remaining re-ingestion work and M5. Ingestion now files material into projects as research notes, and exports become `story build` formats.
 
 **Scope (in build order):**
 
-1. Native tool calling in `packages/providers`, ported from SillyTavern `29e0df488`
-2. Server agent loop with read-only tools (skill activation, source/project reads, allowlisted `story` commands) and multi-step exchange snapshots
-3. Opt-in story projects in notebooks (`story init`/`import`), a Story tab, and a Health panel
-4. Reviewable changesets for model-proposed file edits and write commands, with checkpoint undo
-5. story-skills installed as the starter set; the jwynia-adapted set removed
+1. Story core: pinned `story-skills`, a sandboxed CLI runner, the project index and API, and a one-time notebook-to-project migration
+2. Mobile shell: projects plus Write / Bible / Agent / Health / Project tabs, with schema-driven entity editors and CLI-backed actions
+3. Native tool calling in `packages/providers`, ported from SillyTavern `29e0df488`
+4. Read-only agent: skill activation, file reads and search, allowlisted `story` checks, and multi-step snapshots; story-skills replaces the jwynia starter set
+5. Changesets: model-proposed writes and commands previewed as diffs, then applied with checkpoint undo
+6. Polish: diagrams, knowledge views, drafting-context previews, and series
 
-**Done when:** a user opens a story project, asks the agent to create a character, sees it load the skill and run `story names`, reviews and applies the proposed file, and sees `story validate` pass — all visible in the Prompt Inspector.
+**Done when:** on a phone, a user migrates or creates a book, adds a character, asks the agent to build a location, watches it load the skill and run `story names`, applies the proposed files, sees Health report a valid project, and builds an EPUB — with every model request visible in the Prompt Inspector.
 
 ## Later / unscheduled
 

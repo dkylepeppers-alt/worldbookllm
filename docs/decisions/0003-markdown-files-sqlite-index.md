@@ -1,6 +1,6 @@
 # ADR 0003 — Markdown files on disk + SQLite index
 
-**Status:** accepted · 2026-07-10
+**Status:** accepted · 2026-07-10 · notebook/source layout superseded by ADR 0014 (proposed); the files-as-truth principle stands
 
 ## Context
 
