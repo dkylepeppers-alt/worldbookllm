@@ -4,7 +4,7 @@ import { dirname, join, relative } from 'node:path';
 
 import matter from 'gray-matter';
 
-import type { SkillMetadata } from '@worldbookllm/shared';
+import type { SkillMetadata, StorySkillsInstallResult } from '@worldbookllm/shared';
 
 import type { SkillService } from '../services/skills.js';
 
@@ -19,11 +19,6 @@ export const STORY_SKILLS_PACKAGE = `story-skills@${packageVersion}`;
 /** The pinned story-skills package's skills folder. */
 export function resolveStorySkillsDir(): string {
   return join(dirname(packageJson), 'skills');
-}
-
-export interface StorySkillsInstallResult {
-  installed: SkillMetadata[];
-  skipped: string[];
 }
 
 function filesUnder(dir: string): string[] {

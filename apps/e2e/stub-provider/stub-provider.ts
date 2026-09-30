@@ -10,6 +10,13 @@ export const STUB_ORGANIZATION_REPLY = JSON.stringify({
   ],
 });
 
+// Agent turns (requests that offer tools) follow a two-step script: the
+// first step adds a character with run_story, and once a tool result is in
+// the conversation the model answers without tools.
+export const STUB_AGENT_CHARACTER = 'Ada Brass';
+export const STUB_AGENT_INTRO = `Adding ${STUB_AGENT_CHARACTER}.`;
+export const STUB_AGENT_REPLY = `${STUB_AGENT_CHARACTER} is in the cast.`;
+
 // A message containing this marker switches the stream to a slow drip so a
 // test can exercise stop/abort behavior before the stream finishes.
 export const SLOW_MARKER = '[slow]';
@@ -21,7 +28,8 @@ export interface StubProvider {
 
 interface ChatCompletionRequest {
   stream?: boolean;
-  messages?: { content?: string }[];
+  messages?: { role?: string; content?: string | null }[];
+  tools?: unknown[];
 }
 
 /**
@@ -63,6 +71,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       json(res, 400, { error: { message: 'invalid JSON body' } });
       return;
     }
+    if (body.stream === true && isAgentRequest(body) && !wantsSlowStream(body)) {
+      streamAgentStep(res, body);
+      return;
+    }
     if (body.stream === true) {
       streamCompletion(res, wantsSlowStream(body));
       return;
@@ -94,6 +106,51 @@ function isOrganizationRequest(body: ChatCompletionRequest): boolean {
 
 function wantsSlowStream(body: ChatCompletionRequest): boolean {
   return (body.messages ?? []).some((message) => message.content?.includes(SLOW_MARKER) === true);
+}
+
+function isAgentRequest(body: ChatCompletionRequest): boolean {
+  return Array.isArray(body.tools) && body.tools.length > 0;
+}
+
+/** One agent step: a run_story call first, then a plain answer once a tool has replied. */
+function streamAgentStep(res: ServerResponse, body: ChatCompletionRequest): void {
+  const messages = body.messages ?? [];
+  const lastUser = messages.map((message) => message.role).lastIndexOf('user');
+  const toolReplied = messages.slice(lastUser + 1).some((message) => message.role === 'tool');
+  const chunks = toolReplied
+    ? [{ choices: [{ index: 0, delta: { content: STUB_AGENT_REPLY } }] }]
+    : [
+        { choices: [{ index: 0, delta: { content: STUB_AGENT_INTRO } }] },
+        {
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'stub_call_1',
+                    type: 'function',
+                    function: {
+                      name: 'run_story',
+                      arguments: JSON.stringify({
+                        command: 'add',
+                        args: ['character', STUB_AGENT_CHARACTER],
+                      }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ];
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache',
+  });
+  for (const chunk of chunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+  res.end('data: [DONE]\n\n');
 }
 
 function streamCompletion(res: ServerResponse, slow: boolean): void {

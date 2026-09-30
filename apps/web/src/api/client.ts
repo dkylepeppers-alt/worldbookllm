@@ -1,4 +1,11 @@
 import {
+  agentChatDetailSchema,
+  agentChatSchema,
+  storySkillsInstallResultSchema,
+  type AgentChat,
+  type AgentChatDetail,
+  type AgentStreamEvent,
+  type StorySkillsInstallResult,
   apiErrorSchema,
   bookCheckResultSchema,
   bookFileDetailSchema,
@@ -92,7 +99,7 @@ import {
 } from '@worldbookllm/shared';
 import { z } from 'zod';
 
-import { streamChatMessage, streamRegenerate } from './stream.js';
+import { streamAgentMessage, streamChatMessage, streamRegenerate } from './stream.js';
 
 interface ResponseSchema<T> {
   safeParse(value: unknown): { success: true; data: T } | { success: false };
@@ -150,6 +157,16 @@ export interface ApiClient {
   listCheckpoints(slug: string, signal?: AbortSignal): Promise<Checkpoint[]>;
   getCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<CheckpointDetail>;
   undoCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<Checkpoint>;
+  listAgentChats(slug: string, signal?: AbortSignal): Promise<AgentChat[]>;
+  createAgentChat(slug: string, signal?: AbortSignal): Promise<AgentChat>;
+  getAgentChat(id: string, signal?: AbortSignal): Promise<AgentChatDetail>;
+  deleteAgentChat(id: string, signal?: AbortSignal): Promise<void>;
+  streamAgentMessage(
+    chatId: string,
+    content: string,
+    options: StreamAgentMessageOptions,
+  ): Promise<void>;
+  installStorySkills(signal?: AbortSignal): Promise<StorySkillsInstallResult>;
   listNotebooks(signal?: AbortSignal): Promise<Notebook[]>;
   createNotebook(input: CreateNotebookInput, signal?: AbortSignal): Promise<Notebook>;
   getNotebook(id: string, signal?: AbortSignal): Promise<Notebook>;
@@ -217,6 +234,11 @@ export interface StreamMessageOptions {
   signal?: AbortSignal;
 }
 
+export interface StreamAgentMessageOptions {
+  onEvent: (event: AgentStreamEvent) => void;
+  signal?: AbortSignal;
+}
+
 export type CreateSecretInput = z.input<typeof createSecretSchema>;
 export type CreateChatInput = z.input<typeof createChatSchema>;
 
@@ -239,6 +261,7 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
   const bookListSchema = z.array(bookSummarySchema);
   const bookSearchResultListSchema = z.array(bookSearchResultSchema);
   const checkpointListSchema = z.array(checkpointSchema);
+  const agentChatListSchema = z.array(agentChatSchema);
   const bookFileWriteSchema = z.object({
     file: bookFileSchema,
     checkpoint: checkpointSchema.nullable(),
@@ -363,6 +386,30 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       request(`${book(slug)}/checkpoints/${encodeURIComponent(id)}/undo`, {
         method: 'POST',
         schema: checkpointSchema,
+        signal,
+      }),
+    listAgentChats: (slug, signal) =>
+      request(`${book(slug)}/agent-chats`, { schema: agentChatListSchema, signal }),
+    createAgentChat: (slug, signal) =>
+      request(`${book(slug)}/agent-chats`, {
+        method: 'POST',
+        body: {},
+        schema: agentChatSchema,
+        signal,
+      }),
+    getAgentChat: (id, signal) =>
+      request(`/api/agent-chats/${encodeURIComponent(id)}`, {
+        schema: agentChatDetailSchema,
+        signal,
+      }),
+    deleteAgentChat: (id, signal) =>
+      request(`/api/agent-chats/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
+    streamAgentMessage: (chatId, content, options) =>
+      streamAgentMessage(chatId, content, { ...options, fetchImpl }),
+    installStorySkills: (signal) =>
+      request('/api/skills-story/install', {
+        method: 'POST',
+        schema: storySkillsInstallResultSchema,
         signal,
       }),
     listNotebooks: (signal) => request('/api/notebooks', { schema: notebookListSchema, signal }),

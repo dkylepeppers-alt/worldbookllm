@@ -195,6 +195,16 @@ Every interactive surface reads as an instrument on a drafting table: square cor
 
 Each source row carries a **spine** — a 4px vertical bar in lichen green along its left edge, switching to vermilion when the item is the active/open source. It behaves like a book spine or a survey flag, not a decorative accent stripe: it is the row's own state indicator, not a border-based callout pattern.
 
+### Book Tabs
+
+The book workspace's Write / Bible / Agent / Health / Project tabs are a fixed bottom bar of five equal columns on phones and a bordered side rail from 800px, active tab marked in vermilion (inset top border on the bar, inset left border on the rail). While an agent turn runs, the Agent tab carries a small blueprint pulse dot.
+
+### Agent Turn
+
+- **Tool chips:** each tool call is a collapsed `<details>` row with a line border: monospace tool name, the file, query, or story command it acted on in muted text, and an uppercase status (running in blueprint, done in lichen, failed in vermilion with a vermilion border). Expanding shows the arguments and result as `pre` blocks on paper.
+- **Change summary:** a stamped card (quiet stamp shadow, ink border) after the turn's text: a "Changed N files" coordinate label, one row per file with its change kind (new / edited / deleted) as a monospace label and the path as a blueprint button that opens the diff, then Undo turn. An undone summary drops the shadow, turns the border to line grey, and strikes the paths through.
+- **Diff dialog:** a dialog sheet with a monospace line list; added lines get a faint lichen tint and a `+` mark, removed lines a faint vermilion tint and a `−` mark (screen readers hear "Added"/"Removed"), and unchanged runs fold into an uppercase "N unchanged lines" label.
+
 ## 6. Do's and Don'ts
 
 ### Do:

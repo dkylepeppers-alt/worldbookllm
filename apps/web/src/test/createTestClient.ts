@@ -1,4 +1,4 @@
-import type { StreamEvent } from '@worldbookllm/shared';
+import type { AgentStreamEvent, StreamEvent } from '@worldbookllm/shared';
 
 import type { ApiClient } from '../api/client.js';
 
@@ -21,6 +21,12 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     listCheckpoints: () => Promise.resolve([]),
     getCheckpoint: unused,
     undoCheckpoint: unused,
+    listAgentChats: () => Promise.resolve([]),
+    createAgentChat: unused,
+    getAgentChat: unused,
+    deleteAgentChat: unused,
+    streamAgentMessage: unused,
+    installStorySkills: unused,
     listNotebooks: () => Promise.resolve([]),
     createNotebook: unused,
     getNotebook: unused,
@@ -123,6 +129,59 @@ export function createScriptedStream(): ScriptedStream {
     },
     fail(error) {
       if (active === null) throw new Error('No stream in flight');
+      active.reject(error);
+      active = null;
+    },
+  };
+}
+
+export interface ScriptedAgentStream {
+  streamAgentMessage: ApiClient['streamAgentMessage'];
+  calls: { chatId: string; content: string }[];
+  /** Delivers an event to the in-flight turn; `done`/`error` resolve it. */
+  emit(event: AgentStreamEvent): void;
+  /** Rejects the in-flight turn, e.g. with an HTTP error before the stream began. */
+  fail(error: unknown): void;
+  readonly active: boolean;
+}
+
+/** The agent-turn counterpart of createScriptedStream. */
+export function createScriptedAgentStream(): ScriptedAgentStream {
+  let active: {
+    onEvent: (event: AgentStreamEvent) => void;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  } | null = null;
+  const calls: { chatId: string; content: string }[] = [];
+  return {
+    calls,
+    get active() {
+      return active !== null;
+    },
+    streamAgentMessage: (chatId, content, options) => {
+      calls.push({ chatId, content });
+      return new Promise<void>((resolve, reject) => {
+        if (options.signal?.aborted === true) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
+        options.signal?.addEventListener('abort', () => {
+          active = null;
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+        active = { onEvent: options.onEvent, resolve, reject };
+      });
+    },
+    emit(event) {
+      if (active === null) throw new Error('No agent turn in flight');
+      active.onEvent(event);
+      if (event.type === 'done' || event.type === 'error') {
+        active.resolve();
+        active = null;
+      }
+    },
+    fail(error) {
+      if (active === null) throw new Error('No agent turn in flight');
       active.reject(error);
       active = null;
     },

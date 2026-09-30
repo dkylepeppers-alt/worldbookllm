@@ -220,7 +220,14 @@ export class AgentService {
     private readonly providers: ProviderService,
     private readonly tools: AgentToolRegistry,
     private readonly logError: (error: unknown) => void = () => undefined,
-  ) {}
+  ) {
+    // No turn survives a restart. A message still marked streaming was cut
+    // off by the process exiting; record it as interrupted so it does not
+    // look like a turn in progress forever.
+    this.db
+      .prepare("UPDATE agent_messages SET status = 'interrupted' WHERE status = 'streaming'")
+      .run();
+  }
 
   createChat(book: string, title?: string): AgentChat {
     this.books.root(book);

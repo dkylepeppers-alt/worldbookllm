@@ -139,6 +139,41 @@ describe('stopping a turn', () => {
   });
 });
 
+describe('restarting the server', () => {
+  it('marks a turn left streaming by the previous process as interrupted', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-restart-'));
+    tempDirs.push(dataDir);
+    const db = openDatabase(dataDir);
+    const presets = new PresetService(db);
+    presets.updateSettings({
+      providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
+    });
+    const skills = new SkillService(db, new SkillFileStore(dataDir));
+    const books = { root: () => dataDir } as unknown as BookService;
+    const create = () =>
+      new AgentService(
+        db,
+        books,
+        skills,
+        presets,
+        {} as ProviderService,
+        {} as unknown as AgentToolRegistry,
+      );
+    const before = create();
+    const chat = before.createChat('harbor');
+    // prepare() stores the assistant message as streaming; the process then "exits".
+    before.prepare(chat.id, 'Draft the opening.');
+    expect(before.getChat(chat.id).messages[1]?.status).toBe('streaming');
+
+    const after = create();
+    expect(after.getChat(chat.id).messages.map((message) => message.status)).toEqual([
+      'complete',
+      'interrupted',
+    ]);
+    db.close();
+  });
+});
+
 describe('run_story exit codes', () => {
   it('fails the tool for exits 2, 3 and 4, and keeps exit 1 informational', async () => {
     let exitCode = 0;

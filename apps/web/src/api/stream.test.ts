@@ -1,8 +1,8 @@
-import type { Message, StreamEvent } from '@worldbookllm/shared';
+import type { AgentMessage, AgentStreamEvent, Message, StreamEvent } from '@worldbookllm/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiClientError } from './client.js';
-import { streamChatMessage, streamRegenerate } from './stream.js';
+import { streamAgentMessage, streamChatMessage, streamRegenerate } from './stream.js';
 
 const chatId = '60a0bf0c-031d-497c-9c1a-2f68441936a6';
 
@@ -23,7 +23,7 @@ const assistantMessage: Message = {
   createdAt: '2026-07-14T12:00:00.000Z',
 };
 
-function frame(event: StreamEvent): string {
+function frame(event: StreamEvent | AgentStreamEvent): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
@@ -233,5 +233,55 @@ describe('streamChatMessage', () => {
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(events).toEqual([{ type: 'delta', text: 'tick ' }]);
+  });
+});
+
+describe('streamAgentMessage', () => {
+  const agentMessage: AgentMessage = {
+    id: '0c8f34e8-96b5-4c62-8f2e-27e6a9f14d55',
+    chatId,
+    seq: 1,
+    role: 'assistant',
+    content: 'Read it.',
+    reasoning: null,
+    status: 'complete',
+    steps: [],
+    checkpointId: null,
+    createdAt: '2026-09-30T12:00:00.000Z',
+    updatedAt: '2026-09-30T12:00:00.000Z',
+  };
+
+  it('posts to the agent chat and emits step and tool events before done', async () => {
+    const events: AgentStreamEvent[] = [
+      { type: 'step', index: 0 },
+      { type: 'tool_call', stepIndex: 0, id: 'c1', name: 'read_file', arguments: '{}' },
+      { type: 'tool_result', stepIndex: 0, id: 'c1', ok: true, summary: 'ok' },
+      { type: 'step', index: 1 },
+      { type: 'delta', text: 'Read it.' },
+      { type: 'done', message: agentMessage },
+    ];
+    const fetchImpl = vi.fn().mockResolvedValue(sseResponse([events.map(frame).join('')]));
+    const received: AgentStreamEvent[] = [];
+
+    await streamAgentMessage(chatId, 'Read the story', {
+      onEvent: (event) => received.push(event),
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `/api/agent-chats/${chatId}/messages`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ content: 'Read the story' }),
+      }),
+    );
+    expect(received).toEqual(events);
+  });
+
+  it('does not treat a step or tool event as the end of the stream', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(sseResponse([frame({ type: 'step', index: 0 })]));
+    await expect(
+      streamAgentMessage(chatId, 'Hi', { onEvent: () => undefined, fetchImpl }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
   });
 });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { bookSlugSchema, checkpointSchema } from './books.js';
+import { skillMetadataSchema } from './skills.js';
 
 /**
  * Agent chats on story-skills books (ADR 0015): a bounded tool-calling loop
@@ -92,6 +93,12 @@ export const agentStreamEventSchema = z.discriminatedUnion('type', [
   }),
 ]);
 
+/** `POST /api/skills-story/install`: skills added, and names already present. */
+export const storySkillsInstallResultSchema = z.strictObject({
+  installed: z.array(skillMetadataSchema),
+  skipped: z.array(z.string()),
+});
+
 export function encodeAgentSseEvent(event: AgentStreamEvent): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
@@ -102,3 +109,4 @@ export type AgentStep = z.infer<typeof agentStepSchema>;
 export type AgentMessage = z.infer<typeof agentMessageSchema>;
 export type AgentChatDetail = z.infer<typeof agentChatDetailSchema>;
 export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
+export type StorySkillsInstallResult = z.infer<typeof storySkillsInstallResultSchema>;

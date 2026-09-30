@@ -1739,7 +1739,7 @@ label {
   z-index: 20;
   inset: auto 0 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   border-top: 1px solid var(--ink);
   background: var(--surface);
   padding-bottom: env(safe-area-inset-bottom);
@@ -1944,4 +1944,349 @@ label {
   .check-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+/* ── Agent tab (ADR 0015): chats, tool chips, change summaries, diffs ──── */
+
+.book-tabs a.tab-working::after {
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-left: 0.4rem;
+  border-radius: 50%;
+  background: var(--blueprint);
+  content: '';
+  animation: survey-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.agent-intro {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--muted);
+  font-family: 'Source Serif 4 Variable', Georgia, serif;
+}
+
+.agent-notice {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  padding: 0.9rem 1rem;
+  box-shadow: 4px 4px 0 rgb(36 87 197 / 12%);
+}
+
+.agent-notice p {
+  margin: 0;
+}
+
+.agent-notice p:not(.coordinate-label) {
+  font-family: 'Source Serif 4 Variable', Georgia, serif;
+}
+
+.install-status,
+.change-note {
+  margin: 0;
+  color: var(--muted);
+}
+
+.agent-composer {
+  margin-top: 0;
+}
+
+.agent-composer label {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.agent-chat-header {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.agent-chat-header a {
+  color: var(--blueprint);
+  text-decoration: none;
+}
+
+.agent-chat-header h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-messages {
+  margin: 0;
+}
+
+/* Agent text sits inline in the conversation, not in the reader's padded page. */
+.agent-messages .markdown-body {
+  padding: 0;
+}
+
+.agent-messages .markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-step + .agent-step {
+  margin-top: 0.5rem;
+}
+
+.agent-chat-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ask-agent {
+  justify-self: start;
+  font-weight: 650;
+}
+
+a.button-primary,
+a.button-secondary {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  font-weight: 680;
+  text-decoration: none;
+}
+
+a.button-secondary {
+  color: var(--ink);
+}
+
+.tool-chips {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tool-chip {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.tool-chip summary {
+  display: flex;
+  min-height: 44px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.55rem;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
+.tool-chip-name {
+  font-weight: 700;
+}
+
+.tool-chip-target {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 8rem;
+}
+
+.tool-chip-status {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.095em;
+  text-transform: uppercase;
+}
+
+.tool-chip-ok .tool-chip-status {
+  color: var(--lichen);
+}
+
+.tool-chip-failed {
+  border-color: var(--vermilion);
+}
+
+.tool-chip-failed .tool-chip-status {
+  color: var(--vermilion);
+}
+
+.tool-chip-running .tool-chip-status {
+  color: var(--blueprint);
+}
+
+.tool-chip[open] {
+  padding-bottom: 0.65rem;
+}
+
+.tool-chip > :not(summary) {
+  margin-inline: 0.65rem;
+}
+
+.tool-chip pre,
+.inspector-tool-call pre {
+  overflow: auto;
+  max-height: 16rem;
+  margin-top: 0.25rem;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 0.6rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.76rem;
+}
+
+.change-summary {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  margin-top: 0.75rem;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  padding: 0.75rem 0.9rem;
+  box-shadow: 4px 4px 0 rgb(36 87 197 / 12%);
+}
+
+.change-summary p {
+  margin: 0;
+}
+
+.change-summary ul {
+  display: grid;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.change-summary li + li {
+  border-top: 1px solid var(--line);
+}
+
+.change-summary li button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.6rem;
+  border: 0;
+  border-radius: 0;
+  padding: 0.25rem 0;
+  color: var(--blueprint);
+  text-align: left;
+}
+
+.change-summary-undone {
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.change-summary-undone .change-path {
+  text-decoration: line-through;
+}
+
+.change-kind {
+  flex: none;
+  min-width: 4.8rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.095em;
+  text-transform: uppercase;
+}
+
+.change-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.diff-dialog {
+  width: min(100%, 880px);
+}
+
+.diff-dialog h2 {
+  overflow-wrap: anywhere;
+}
+
+.diff-file-select {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.diff-lines {
+  overflow: auto;
+  max-height: 60vh;
+  margin: 0;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 0.4rem 0;
+  list-style: none;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.diff-lines li {
+  display: flex;
+  padding-inline: 0.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-mark {
+  flex: none;
+  width: 1.4ch;
+  color: var(--muted);
+}
+
+.diff-text {
+  min-width: 0;
+}
+
+.diff-add {
+  background: rgb(95 112 90 / 16%);
+}
+
+.diff-add .diff-mark {
+  color: var(--lichen);
+}
+
+.diff-del {
+  background: rgb(201 68 46 / 11%);
+}
+
+.diff-del .diff-mark {
+  color: var(--vermilion);
+}
+
+.diff-skip {
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.095em;
+  text-transform: uppercase;
+}
+
+ol.inspector-sections {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inspector-tool-call {
+  margin-top: 0.75rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

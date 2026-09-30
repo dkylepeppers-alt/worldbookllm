@@ -1,0 +1,211 @@
+import type { AgentChatDetail, AgentMessage, Checkpoint } from '@worldbookllm/shared';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+
+import { useApi } from '../api/useApi.js';
+import { useBook } from '../books/book-context.js';
+import { errorMessage, useLoad } from '../books/useLoad.js';
+import { ConfirmDialog } from '../components/ConfirmDialog.js';
+import { ErrorState, LoadingState } from '../components/RequestState.js';
+import { AgentComposer } from './AgentComposer.js';
+import { AgentInspectorDialog } from './AgentInspectorDialog.js';
+import { AgentMessages } from './AgentMessages.js';
+import { useAgentRunner } from './agent-runner-context.js';
+import { CheckpointDiffDialog } from './CheckpointDiffDialog.js';
+
+const WATCH_POLL_MS = 2000;
+
+/** The later of two snapshots of the same chat. */
+function newer(left: AgentChatDetail, right: AgentChatDetail | null): AgentChatDetail {
+  if (right === null || right.id !== left.id) return left;
+  if (right.messages.length !== left.messages.length) {
+    return right.messages.length > left.messages.length ? right : left;
+  }
+  const leftLast = left.messages.at(-1)?.updatedAt ?? '';
+  const rightLast = right.messages.at(-1)?.updatedAt ?? '';
+  return rightLast > leftLast ? right : left;
+}
+
+/**
+ * While this screen streams a turn, the pending view stands in for the rows
+ * the server already stored for it: the user message and the assistant
+ * message still marked streaming.
+ */
+function withoutRunningTurn(messages: AgentMessage[]): AgentMessage[] {
+  const index = messages.findIndex((message) => message.status === 'streaming');
+  if (index === -1) return messages;
+  const start = index > 0 && messages[index - 1]?.role === 'user' ? index - 1 : index;
+  return messages.slice(0, start);
+}
+
+export function AgentChatRoute() {
+  const chatId = useParams().chatId ?? '';
+  return <AgentChatPage key={chatId} chatId={chatId} />;
+}
+
+/** One agent chat: the conversation, its per-turn changes with undo, and the composer. */
+function AgentChatPage({ chatId }: { chatId: string }) {
+  const api = useApi();
+  const navigate = useNavigate();
+  const runner = useAgentRunner();
+  const { slug, tree, reload: reloadTree } = useBook();
+  const loaded = useLoad((signal) => api.getAgentChat(chatId, signal), chatId);
+  const history = useLoad(
+    (signal) => api.listCheckpoints(slug, signal),
+    `${slug}:${runner.checkpoint?.id ?? ''}:${tree.files.map((file) => file.hash).join()}`,
+  );
+  const [inspecting, setInspecting] = useState<AgentMessage | null>(null);
+  const [diff, setDiff] = useState<{ checkpoint: Checkpoint; path: string } | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  const run = runner.run?.chatId === chatId ? runner.run : null;
+  const chat = loaded.status === 'ready' ? newer(loaded.data, runner.settled) : null;
+  // A turn running without this screen's stream (started before a reload,
+  // or from another device) is watched until the server settles it.
+  const watching = run === null && chat?.messages.at(-1)?.status === 'streaming';
+  const reloadChat = loaded.reload;
+  useEffect(() => {
+    if (!watching) return;
+    const timer = setTimeout(reloadChat, WATCH_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [watching, reloadChat, chat]);
+
+  const checkpoints = new Map<string, Checkpoint>();
+  if (runner.checkpoint !== null) checkpoints.set(runner.checkpoint.id, runner.checkpoint);
+  if (history.status === 'ready') {
+    for (const checkpoint of history.data) checkpoints.set(checkpoint.id, checkpoint);
+  }
+  const latestLiveId =
+    history.status === 'ready'
+      ? (history.data.find((checkpoint) => checkpoint.undoneAt === null)?.id ?? null)
+      : null;
+
+  async function undo(checkpoint: Checkpoint) {
+    setUndoing(true);
+    setUndoError(null);
+    try {
+      await api.undoCheckpoint(slug, checkpoint.id);
+      reloadTree();
+      history.reload();
+    } catch (caught) {
+      setUndoError(errorMessage(caught));
+    } finally {
+      setUndoing(false);
+    }
+  }
+
+  async function remove() {
+    setDeleteBusy(true);
+    try {
+      await api.deleteAgentChat(chatId);
+      await navigate(`/books/${encodeURIComponent(slug)}/agent`);
+    } catch (caught) {
+      setUndoError(errorMessage(caught));
+      setDeleteBusy(false);
+      setDeleting(false);
+    }
+  }
+
+  if (loaded.status === 'loading') return <LoadingState>Opening the chat…</LoadingState>;
+  if (loaded.status === 'error' || chat === null) {
+    return (
+      <ErrorState
+        title="This chat could not open"
+        message={loaded.status === 'error' ? loaded.message : ''}
+        onRetry={loaded.reload}
+      />
+    );
+  }
+
+  const error = runner.error?.chatId === chatId ? runner.error : null;
+  const busyElsewhere = runner.run !== null && run === null;
+
+  return (
+    <section className="book-panel agent-chat" aria-labelledby="agent-chat-title">
+      <header className="agent-chat-header">
+        <Link className="coordinate-label" to={`/books/${encodeURIComponent(slug)}/agent`}>
+          ← Chats
+        </Link>
+        <h2 id="agent-chat-title">{chat.title}</h2>
+      </header>
+
+      {chat.messages.length === 0 && run === null ? (
+        <p className="empty-map">Ask the agent to plan, draft, revise, or check this book.</p>
+      ) : (
+        <AgentMessages
+          messages={run === null ? chat.messages : withoutRunningTurn(chat.messages)}
+          pending={run?.turn ?? null}
+          checkpoints={checkpoints}
+          latestLiveId={latestLiveId}
+          undoing={undoing}
+          onInspect={setInspecting}
+          onOpenDiff={(checkpoint, path) => setDiff({ checkpoint, path })}
+          onUndo={(checkpoint) => void undo(checkpoint)}
+        />
+      )}
+
+      {error === null ? null : (
+        <div className="form-error" role="alert">
+          <p>{error.message}</p>
+          {error.configuration ? <Link to="/settings">Open provider settings</Link> : null}
+        </div>
+      )}
+      {undoError === null ? null : (
+        <p className="form-error" role="alert">
+          {undoError}
+        </p>
+      )}
+      {busyElsewhere ? (
+        <p className="change-note">The agent is working in another chat of this book.</p>
+      ) : null}
+
+      <AgentComposer
+        id="agent-message-input"
+        label="Message"
+        submitLabel="Send"
+        running={run !== null || watching}
+        stopping={run?.turn.stopping ?? false}
+        busy={busyElsewhere}
+        onSend={(content) => runner.send(chatId, content)}
+        onStop={run === null ? undefined : runner.stop}
+      />
+
+      <div className="agent-chat-footer">
+        <button
+          type="button"
+          className="text-danger"
+          disabled={run !== null || watching}
+          onClick={() => setDeleting(true)}
+        >
+          Delete chat
+        </button>
+      </div>
+
+      {inspecting === null ? null : (
+        <AgentInspectorDialog message={inspecting} onClose={() => setInspecting(null)} />
+      )}
+      {diff === null ? null : (
+        <CheckpointDiffDialog
+          checkpoint={diff.checkpoint}
+          path={diff.path}
+          onClose={() => setDiff(null)}
+        />
+      )}
+      {deleting ? (
+        <ConfirmDialog
+          title={`Delete ${chat.title}?`}
+          confirmLabel="Delete chat"
+          busy={deleteBusy}
+          onCancel={() => setDeleting(false)}
+          onConfirm={() => void remove()}
+        >
+          The conversation is removed. Changes the agent made to the book stay, and can still be
+          undone from the Project tab.
+        </ConfirmDialog>
+      ) : null}
+    </section>
+  );
+}
