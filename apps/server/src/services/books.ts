@@ -791,7 +791,7 @@ export class BookService {
       genre: stringField(story, 'genre'),
       status: stringField(story, 'status'),
       kind: location.kind,
-      seriesId: location.seriesId ?? stringField(story, 'series'),
+      seriesId: location.seriesId,
       bookNumber: numberField(story, 'book-number'),
       counts: this.index.counts(slug),
       updatedAt: new Date(latest ?? Date.now()).toISOString(),

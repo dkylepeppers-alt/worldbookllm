@@ -8,6 +8,9 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
   return {
     listBooks: () => Promise.resolve([]),
     createBook: unused,
+    createSeries: unused,
+    addSeriesBook: unused,
+    moveBookToSeries: unused,
     importManuscript: unused,
     trashBook: unused,
     getBookTree: unused,

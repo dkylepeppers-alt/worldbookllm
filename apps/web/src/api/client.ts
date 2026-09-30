@@ -47,7 +47,10 @@ import {
   type CheckpointDetail,
   type ConnectionTestResponse,
   type CreateAgentChatInput,
+  type AddSeriesBookInput,
   type CreateBookInput,
+  type CreateSeriesInput,
+  type MoveBookToSeriesInput,
   type CreateCustomAgentInput,
   type CreateSkillInput,
   type CustomAgent,
@@ -93,6 +96,18 @@ export class ApiClientError extends Error {
 export interface ApiClient {
   listBooks(signal?: AbortSignal): Promise<BookSummary[]>;
   createBook(input: CreateBookInput, signal?: AbortSignal): Promise<BookSummary>;
+  /** Creates a series and its bible; resolves to the bible, addressed by the series id. */
+  createSeries(input: CreateSeriesInput, signal?: AbortSignal): Promise<BookSummary>;
+  addSeriesBook(
+    seriesId: string,
+    input: AddSeriesBookInput,
+    signal?: AbortSignal,
+  ): Promise<BookSummary>;
+  moveBookToSeries(
+    slug: string,
+    input: MoveBookToSeriesInput,
+    signal?: AbortSignal,
+  ): Promise<BookSummary>;
   importManuscript(file: File, signal?: AbortSignal): Promise<ManuscriptImportResult>;
   trashBook(slug: string, signal?: AbortSignal): Promise<void>;
   getBookTree(slug: string, signal?: AbortSignal): Promise<BookTree>;
@@ -272,6 +287,22 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
     listBooks: (signal) => request('/api/books', { schema: bookListSchema, signal }),
     createBook: (input, signal) =>
       request('/api/books', { method: 'POST', body: input, schema: bookSummarySchema, signal }),
+    createSeries: (input, signal) =>
+      request('/api/series', { method: 'POST', body: input, schema: bookSummarySchema, signal }),
+    addSeriesBook: (seriesId, input, signal) =>
+      request(`/api/series/${encodeURIComponent(seriesId)}/books`, {
+        method: 'POST',
+        body: input,
+        schema: bookSummarySchema,
+        signal,
+      }),
+    moveBookToSeries: (slug, input, signal) =>
+      request(`/api/books/${encodeURIComponent(slug)}/series`, {
+        method: 'POST',
+        body: input,
+        schema: bookSummarySchema,
+        signal,
+      }),
     importManuscript: (file, signal) => {
       const formData = new FormData();
       formData.append('file', file);

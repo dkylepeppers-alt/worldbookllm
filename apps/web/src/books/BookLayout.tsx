@@ -39,6 +39,9 @@ export function BookLayout() {
             <Link className="coordinate-label" to="/books">
               ← Books
             </Link>
+            {tree.data.book.kind === 'series-bible' ? (
+              <p className="coordinate-label">Series bible</p>
+            ) : null}
             <h1>{tree.data.book.title}</h1>
           </header>
           <BookTabs />

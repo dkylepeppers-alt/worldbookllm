@@ -18,7 +18,7 @@ test('M7 story workspace on a phone', async ({ page }) => {
 
   await test.step('create a book', async () => {
     await page.goto('/books');
-    await page.getByLabel('New book title').fill(BOOK_TITLE);
+    await page.getByLabel('New book or series title').fill(BOOK_TITLE);
     await page.getByRole('button', { name: 'Create book' }).click();
     await expect(page).toHaveURL(/\/books\/the-salt-road\/write$/);
     await expect(page.getByRole('heading', { name: BOOK_TITLE, level: 1 })).toBeVisible();

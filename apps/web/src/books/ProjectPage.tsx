@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
+import { SeriesSection } from './SeriesSection.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 const PROJECT_FILES = [
@@ -82,6 +83,8 @@ export function ProjectPage() {
           </li>
         ))}
       </ul>
+
+      <SeriesSection />
 
       <h3>History</h3>
       {error === null ? null : (

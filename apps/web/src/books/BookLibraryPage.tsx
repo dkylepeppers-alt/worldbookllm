@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
+import { groupLibrary } from './library-groups.js';
 import { MigrationReport } from './MigrationReport.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
@@ -13,13 +14,29 @@ function countLabel(book: BookSummary): string {
   return `${chapters} ${chapters === 1 ? 'chapter' : 'chapters'} · ${cast} in cast`;
 }
 
-/** The library of story-skills books (ADR 0014). */
+function BookCard({ book, index, label }: { book: BookSummary; index: number; label?: string }) {
+  return (
+    <li className="book-card">
+      <span className="map-index" aria-hidden="true">
+        {String(index + 1).padStart(2, '0')}
+      </span>
+      {label === undefined ? null : <p className="coordinate-label">{label}</p>}
+      <Link className="book-link" to={`/books/${book.slug}`}>
+        <h2>{book.title}</h2>
+      </Link>
+      <p className="coordinate-label">{[book.genre, book.status].filter(Boolean).join(' · ')}</p>
+      <p className="coordinate-label">{countLabel(book)}</p>
+    </li>
+  );
+}
+
+/** The library of story-skills books (ADR 0014), with each series gathered behind its bible (ADR 0018). */
 export function BookLibraryPage() {
   const api = useApi();
   const navigate = useNavigate();
   const books = useLoad((signal) => api.listBooks(signal), 'books');
   const [title, setTitle] = useState('');
-  const [busy, setBusy] = useState<'create' | 'import' | null>(null);
+  const [busy, setBusy] = useState<'create' | 'series' | 'import' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
@@ -34,6 +51,24 @@ export function BookLibraryPage() {
     try {
       const created = await api.createBook({ title: trimmed });
       await navigate(`/books/${created.slug}`);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleCreateSeries() {
+    const trimmed = title.trim();
+    if (trimmed === '') {
+      setError('Enter a title for the series.');
+      return;
+    }
+    setBusy('series');
+    setError(null);
+    try {
+      const bible = await api.createSeries({ title: trimmed });
+      await navigate(`/books/${bible.slug}`);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -71,7 +106,7 @@ export function BookLibraryPage() {
       <MigrationReport />
 
       <form className="book-create" onSubmit={(event) => void handleCreate(event)}>
-        <label htmlFor="new-book-title">New book title</label>
+        <label htmlFor="new-book-title">New book or series title</label>
         <div className="field-action">
           <input
             id="new-book-title"
@@ -82,6 +117,14 @@ export function BookLibraryPage() {
           />
           <button type="submit" className="button-primary" disabled={busy !== null}>
             {busy === 'create' ? 'Creating…' : 'Create book'}
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={busy !== null}
+            onClick={() => void handleCreateSeries()}
+          >
+            {busy === 'series' ? 'Creating…' : 'Create series'}
           </button>
         </div>
         <label className="button-secondary file-button">
@@ -108,24 +151,55 @@ export function BookLibraryPage() {
         books.data.length === 0 ? (
           <p className="empty-map">No books yet. Create one or import a manuscript.</p>
         ) : (
-          <ul className="book-grid" aria-label="Books">
-            {books.data.map((book, index) => (
-              <li key={book.slug} className="book-card">
-                <span className="map-index" aria-hidden="true">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <Link className="book-link" to={`/books/${book.slug}`}>
-                  <h2>{book.title}</h2>
-                </Link>
-                <p className="coordinate-label">
-                  {[book.genre, book.status].filter(Boolean).join(' · ')}
-                </p>
-                <p className="coordinate-label">{countLabel(book)}</p>
-              </li>
-            ))}
-          </ul>
+          <LibraryGroupsView books={books.data} />
         )
       ) : null}
     </section>
+  );
+}
+
+function LibraryGroupsView({ books }: { books: BookSummary[] }) {
+  const { standalone, series } = groupLibrary(books);
+  let index = 0;
+  return (
+    <>
+      {standalone.length === 0 ? null : (
+        <ul className="book-grid" aria-label="Books">
+          {standalone.map((book) => (
+            <BookCard key={book.slug} book={book} index={index++} />
+          ))}
+        </ul>
+      )}
+      {series.map((group) => {
+        const title = group.bible?.title ?? group.id;
+        return (
+          <section key={group.id} className="series-group" aria-labelledby={`series-${group.id}`}>
+            <p className="coordinate-label">
+              Series · {group.books.length} {group.books.length === 1 ? 'book' : 'books'}
+            </p>
+            <h2 id={`series-${group.id}`}>{title}</h2>
+            {group.bible === null ? null : (
+              <Link className="series-bible-link" to={`/books/${group.bible.slug}`}>
+                Series bible
+              </Link>
+            )}
+            {group.books.length === 0 ? (
+              <p className="empty-map">No books in this series yet. Add one from its bible.</p>
+            ) : (
+              <ul className="book-grid" aria-label={`Books in ${title}`}>
+                {group.books.map((book) => (
+                  <BookCard
+                    key={book.slug}
+                    book={book}
+                    index={index++}
+                    label={book.bookNumber === null ? undefined : `Book ${book.bookNumber}`}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        );
+      })}
+    </>
   );
 }
