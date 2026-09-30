@@ -18,4 +18,5 @@ export interface AppSettingsRow {
   agent_review_mode: 0 | 1;
   agent_generation_json: string;
   notebook_migration_seen: 0 | 1;
+  notebook_archive_path: string | null;
 }

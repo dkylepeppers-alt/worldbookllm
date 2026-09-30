@@ -142,6 +142,7 @@ describe('API client', () => {
           error: null,
         },
       ],
+      archivePath: 'notebooks.migrated',
       seen: false,
     };
     const fetchImpl = vi

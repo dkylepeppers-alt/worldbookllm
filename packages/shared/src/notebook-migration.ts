@@ -13,12 +13,17 @@ export const notebookMigrationEntrySchema = z.strictObject({
   sourceCount: z.number().int().nonnegative(),
   fileCount: z.number().int().nonnegative(),
   chatCount: z.number().int().nonnegative(),
-  /** Why the sources could not be written; the book then exists without them. */
+  /**
+   * Why the notebook has not finished moving. Its book then holds none of its
+   * sources or chats yet, and the move is tried again at the next start.
+   */
   error: z.string().nullable(),
 });
 
 export const notebookMigrationReportSchema = z.strictObject({
   entries: z.array(notebookMigrationEntrySchema),
+  /** Where `data/notebooks/` was renamed to, relative to the data dir; null until every notebook has moved. */
+  archivePath: z.string().nullable(),
   /** True once the writer has dismissed the report. */
   seen: z.boolean(),
 });

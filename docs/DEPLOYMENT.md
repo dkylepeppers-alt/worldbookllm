@@ -161,7 +161,8 @@ data/
 ├── secrets.json          # your AI provider API keys, stored locally, never sent anywhere but the provider
 ├── projects/
 │   └── <book-slug>/      # your books: story-skills Markdown, the source of truth (ADR 0014)
-├── notebooks.migrated/   # notebook-era sources, kept after the move into books (ADR 0017)
+├── notebooks.migrated/   # notebook-era sources, kept after the move into books (ADR 0017);
+│                         #   notebooks.migrated-<timestamp>/ if that name was taken
 └── skills/
     └── <name>/SKILL.md   # your creative skills, also source-of-truth Markdown (ADR 0011)
 ```

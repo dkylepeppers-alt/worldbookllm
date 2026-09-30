@@ -52,7 +52,7 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
         agentReviewMode: false,
         agentGeneration: DEFAULT_AGENT_GENERATION,
       }),
-    getNotebookMigration: () => Promise.resolve({ entries: [], seen: true }),
+    getNotebookMigration: () => Promise.resolve({ entries: [], archivePath: null, seen: true }),
     markNotebookMigrationSeen: () => Promise.resolve(),
     updateAppSettings: unused,
     ...overrides,

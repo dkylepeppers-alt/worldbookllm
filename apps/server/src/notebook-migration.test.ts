@@ -12,7 +12,7 @@ import type {
 import type Database from 'better-sqlite3';
 import type { FastifyInstance } from 'fastify';
 import matter from 'gray-matter';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildApp } from './app.js';
 import { openDatabase } from './db/database.js';
@@ -36,13 +36,17 @@ afterEach(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
+let created = 0;
+
+/** Seeds a notebook; each is created a second after the last, which sets the migration order. */
 function notebook(name: string): string {
   const id = randomUUID();
+  const at = new Date(Date.parse(NOW) + 1000 * created++).toISOString();
   db.prepare('INSERT INTO notebooks (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(
     id,
     name,
-    NOW,
-    NOW,
+    at,
+    at,
   );
   return id;
 }
@@ -180,6 +184,7 @@ describe('notebook migration', () => {
       await server.inject({ method: 'GET', url: '/api/notebook-migration' })
     ).json<NotebookMigrationReport>();
     expect(report.seen).toBe(false);
+    expect(report.archivePath).toBe('notebooks.migrated');
     expect(report.entries).toEqual([
       expect.objectContaining({
         notebookName: 'Harbor Lore',
@@ -232,8 +237,93 @@ describe('notebook migration', () => {
   it('does nothing in a data directory that never had notebooks', async () => {
     const server = await start();
     expect((await server.inject({ method: 'GET', url: '/api/notebook-migration' })).json()).toEqual(
-      { entries: [], seen: false },
+      { entries: [], archivePath: null, seen: false },
     );
     expect(existsSync(join(dataDir, 'notebooks.migrated'))).toBe(false);
+  });
+
+  it('keeps frontmatter the notebook app did not write in the research note', async () => {
+    const lore = notebook('Lore');
+    const kept = source(lore, 'Kept', 'Body text.');
+    const file = join(dataDir, kept.filePath);
+    const parsed = matter(readFileSync(file, 'utf8'));
+    writeFileSync(file, matter.stringify(parsed.content, { ...parsed.data, era: 'Second Age' }));
+    await start();
+
+    const note = readFileSync(join(dataDir, 'projects/lore/research/kept.md'), 'utf8');
+    expect(note).toContain('## Original frontmatter');
+    expect(note).toContain('era: Second Age');
+  });
+
+  it('retries a failed import in the same book at the next start and reports it again', async () => {
+    const retry = notebook('Retry');
+    source(retry, 'Note', 'Text.');
+    chat(retry, 'Question', [], [{ role: 'user', content: 'Hello?' }]);
+    db.close();
+    app = buildApp({ dataDir, logger: false });
+    const { books, notebookMigration, settings } = app.services;
+    vi.spyOn(books, 'writeImports').mockRejectedValueOnce(new Error('disk full'));
+
+    const [failed] = await notebookMigration.run();
+    expect(failed).toMatchObject({ bookSlug: 'retry', error: 'disk full', chatCount: 0 });
+    expect(existsSync(join(dataDir, 'notebooks'))).toBe(true);
+    expect(notebookMigration.report()).toMatchObject({
+      entries: [{ bookSlug: 'retry', error: 'disk full' }],
+      archivePath: null,
+    });
+    settings.markNotebookMigrationSeen();
+
+    const [moved] = await notebookMigration.run();
+    expect(moved).toMatchObject({ bookSlug: 'retry', error: null, fileCount: 1, chatCount: 1 });
+    expect(books.list().map((book) => book.slug)).toEqual(['retry']);
+    expect(existsSync(join(dataDir, 'projects/retry/research/note.md'))).toBe(true);
+    // The change is reported again even though the first report was dismissed.
+    expect(notebookMigration.report()).toMatchObject({
+      entries: [{ bookSlug: 'retry', error: null, chatCount: 1 }],
+      archivePath: 'notebooks.migrated',
+      seen: false,
+    });
+  });
+
+  it('resumes an interrupted move without duplicating the book, notes, or chats', async () => {
+    const resume = notebook('Resume');
+    source(resume, 'Only', 'Text.');
+    chat(resume, 'First', [], [{ role: 'user', content: 'One' }]);
+    chat(resume, 'Second', [], [{ role: 'user', content: 'Two' }]);
+    db.close();
+    app = buildApp({ dataDir, logger: false });
+    const { agent, books, notebookMigration } = app.services;
+    // The second chat fails after the first was imported, as a crash would.
+    const importChat = agent.importLegacyChat.bind(agent);
+    vi.spyOn(agent, 'importLegacyChat')
+      .mockImplementationOnce(importChat)
+      .mockImplementationOnce(() => {
+        throw new Error('crashed');
+      });
+    const [interrupted] = await notebookMigration.run();
+    expect(interrupted).toMatchObject({ bookSlug: 'resume', error: 'crashed' });
+    expect(notebookMigration.report().entries).toEqual([
+      expect.objectContaining({ bookSlug: 'resume', error: 'crashed', chatCount: 0 }),
+    ]);
+
+    const [moved] = await notebookMigration.run();
+    expect(moved).toMatchObject({ bookSlug: 'resume', error: null, fileCount: 1, chatCount: 2 });
+    expect(books.list().map((book) => book.slug)).toEqual(['resume']);
+    expect(books.tree('resume').files.map((file) => file.path)).not.toContain('research/only-2.md');
+    expect(
+      agent
+        .listChats('resume')
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(['First', 'Second']);
+  });
+
+  it('archives beside an existing notebooks.migrated folder and reports where', async () => {
+    mkdirSync(join(dataDir, 'notebooks.migrated'));
+    source(notebook('Late'), 'Note', 'Text.');
+    await start();
+    const { archivePath } = app!.services.notebookMigration.report();
+    expect(archivePath).toMatch(/^notebooks\.migrated-\d{4}-\d{2}-\d{2}T/u);
+    expect(existsSync(join(dataDir, archivePath!))).toBe(true);
   });
 });

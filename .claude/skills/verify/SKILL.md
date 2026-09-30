@@ -52,7 +52,7 @@ After UI verification, inspect the throwaway data directory: every imported file
 
 ## Notebook migration
 
-A data dir from before ADR 0017 migrates when the server starts: each notebook becomes a book under `projects/`, its sources research notes and its chats agent chats, and `notebooks/` is renamed to `notebooks.migrated/`. The library shows the report until dismissed. `apps/server/src/notebook-migration.test.ts` seeds such a data dir directly.
+A data dir from before ADR 0017 migrates when the server starts: each notebook becomes a book under `projects/`, its sources research notes and its chats agent chats, and `notebooks/` is renamed to `notebooks.migrated/` (or `notebooks.migrated-<timestamp>/`). A failed or interrupted move is retried in the same book at the next start. The library shows the report until dismissed. `apps/server/src/notebook-migration.test.ts` seeds such a data dir directly.
 
 ## Test commands
 

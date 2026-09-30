@@ -25,15 +25,25 @@ export function MigrationReport() {
     void api.markNotebookMigrationSeen().catch(() => undefined);
   }
 
-  const entries = report.data.entries;
+  const { entries, archivePath } = report.data;
+  const moved = entries.filter((entry) => entry.error === null).length;
   return (
     <section className="agent-notice migration-report" aria-label="Notebooks moved into books">
       <p className="coordinate-label">Notebooks moved</p>
       <p>
-        Your {count(entries.length, 'notebook is', 'notebooks are')} now{' '}
-        {entries.length === 1 ? 'a book' : 'books'}. Sources became research notes and chats
-        continue in each book's Agent tab. The original files are kept in{' '}
-        <code>data/notebooks.migrated/</code>.
+        {moved === entries.length
+          ? `Your ${count(entries.length, 'notebook is', 'notebooks are')} now ${entries.length === 1 ? 'a book' : 'books'}.`
+          : `${moved} of your ${count(entries.length, 'notebook has', 'notebooks have')} moved into books.`}{' '}
+        Sources became research notes and chats continue in each book's Agent tab.{' '}
+        {archivePath === null ? (
+          <>
+            The original files stay in <code>data/notebooks/</code> until every notebook has moved.
+          </>
+        ) : (
+          <>
+            The original files are kept in <code>data/{archivePath}/</code>.
+          </>
+        )}
       </p>
       <ul className="entry-list">
         {entries.map((entry) => (
@@ -45,7 +55,9 @@ export function MigrationReport() {
               {count(entry.chatCount, 'chat', 'chats')}
             </span>
             {entry.error === null ? null : (
-              <span className="form-error">Its sources could not be written: {entry.error}</span>
+              <span className="form-error">
+                Not moved yet; tried again when the server next starts: {entry.error}
+              </span>
             )}
           </li>
         ))}

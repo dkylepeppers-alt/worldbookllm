@@ -9,8 +9,13 @@ import type Database from 'better-sqlite3';
  *   are dropped.
  * - `app_settings.notebook_migration_seen` records that the writer has seen
  *   the one-time report of notebooks moved into books.
+ * - `app_settings.notebook_archive_path` records where `data/notebooks/` was
+ *   renamed to once every notebook had moved.
  * - `notebook_migrations.chat_count` counts the notebook chats carried over
- *   as agent chats.
+ *   as agent chats. `status` is `pending` from the moment a notebook's book
+ *   exists until its sources and chats have all moved, so an interrupted or
+ *   failed move resumes in the same book; `paths_json` maps source ids to the
+ *   research notes written, once they are.
  *
  * The notebook-era tables stay, unused, so the move can be audited and no
  * history is dropped.
@@ -21,7 +26,11 @@ export function migrateToVersion13(db: Database.Database): void {
       DEFAULT '{"temperature":1,"topP":null,"maxTokens":null,"thinking":false}';
     ALTER TABLE app_settings ADD COLUMN notebook_migration_seen INTEGER NOT NULL DEFAULT 0
       CHECK (notebook_migration_seen IN (0, 1));
+    ALTER TABLE app_settings ADD COLUMN notebook_archive_path TEXT;
     ALTER TABLE notebook_migrations ADD COLUMN chat_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE notebook_migrations ADD COLUMN status TEXT NOT NULL DEFAULT 'done'
+      CHECK (status IN ('pending', 'done'));
+    ALTER TABLE notebook_migrations ADD COLUMN paths_json TEXT;
 
     UPDATE app_settings
     SET agent_generation_json = (

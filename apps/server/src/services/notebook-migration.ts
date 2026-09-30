@@ -23,7 +23,7 @@ export interface NotebookMigrationOutcome {
   sourceCount: number;
   fileCount: number;
   chatCount: number;
-  /** Why the sources could not be written; the book then exists without them. */
+  /** Why the move did not finish; it is retried in the same book at the next start. */
   error: string | null;
   /** Sources whose files could not be read and were left out. */
   skippedSources: Array<{ sourceId: string; title: string; reason: string }>;
@@ -70,6 +70,8 @@ interface MigrationRow {
   file_count: number;
   chat_count: number;
   error: string | null;
+  status: 'pending' | 'done';
+  paths_json: string | null;
   notebook_name: string | null;
 }
 
@@ -122,9 +124,15 @@ function recordedRequestBody(contextJson: string): Record<string, unknown> | nul
  * shown by the step inspector.
  *
  * It reads the notebook-era tables and files directly; nothing there is
- * modified. It is idempotent: a notebook with a row in `notebook_migrations`
- * is skipped. Once every notebook has moved, `data/notebooks/` is renamed to
- * `data/notebooks.migrated/`, and the report is shown to the writer once.
+ * modified. It is resumable: a `pending` row in `notebook_migrations` is
+ * written as soon as a notebook's book exists, the research notes are written
+ * next (their paths recorded on the row), and the chats are carried over in
+ * the same transaction that marks the row `done`. A start that finds a
+ * pending row continues in the same book, so an interrupted or failed move
+ * never creates a second one. Once every notebook is done, `data/notebooks/`
+ * is renamed to `data/notebooks.migrated/` (with a timestamp suffix if that
+ * name is taken). The report is shown until the writer dismisses it, and
+ * again whenever a later start changes it.
  */
 export class NotebookMigrationService {
   private readonly dataDir: string;
@@ -139,12 +147,16 @@ export class NotebookMigrationService {
     this.dataDir = resolve(dataDir);
   }
 
-  /** Book slugs already created from notebooks, by notebook id. */
+  /** Book slugs created from notebooks, by notebook id, whether or not the move has finished. */
   migrated(): Map<string, string> {
+    return new Map([...this.rows()].map(([id, row]) => [id, row.book_slug]));
+  }
+
+  private rows(): Map<string, MigrationRow> {
     const rows = this.db
-      .prepare('SELECT notebook_id, book_slug FROM notebook_migrations')
-      .all() as Array<Pick<MigrationRow, 'notebook_id' | 'book_slug'>>;
-    return new Map(rows.map((row) => [row.notebook_id, row.book_slug]));
+      .prepare('SELECT *, NULL AS notebook_name FROM notebook_migrations')
+      .all() as MigrationRow[];
+    return new Map(rows.map((row) => [row.notebook_id, row]));
   }
 
   /** Migrates any notebooks not yet moved, then archives the notebook folder. */
@@ -155,15 +167,42 @@ export class NotebookMigrationService {
   }
 
   async migrateAll(): Promise<NotebookMigrationOutcome[]> {
-    const done = this.migrated();
+    const previous = this.rows();
     const outcomes: NotebookMigrationOutcome[] = [];
     const notebooks = this.db
       .prepare('SELECT id, name FROM notebooks ORDER BY created_at, id')
       .all() as NotebookRow[];
     for (const notebook of notebooks) {
-      if (done.has(notebook.id)) continue;
-      outcomes.push(await this.migrateNotebook(notebook));
+      const row = previous.get(notebook.id);
+      if (row?.status === 'done') continue;
+      try {
+        outcomes.push(await this.migrateNotebook(notebook, row));
+      } catch (error) {
+        // Recorded on the notebook's row, if it has one, so the others still move.
+        const failure = error instanceof Error ? error.message : String(error);
+        this.db
+          .prepare('UPDATE notebook_migrations SET error = ? WHERE notebook_id = ?')
+          .run(failure, notebook.id);
+        outcomes.push({
+          notebookId: notebook.id,
+          notebookName: notebook.name,
+          bookSlug: this.rows().get(notebook.id)?.book_slug ?? '',
+          sourceCount: 0,
+          fileCount: 0,
+          chatCount: 0,
+          error: failure,
+          skippedSources: [],
+        });
+      }
     }
+    // Show the report again when this start changed it: a notebook finished
+    // moving, or one failed for a reason the writer has not been shown.
+    const changed = outcomes.some(
+      (outcome) =>
+        outcome.error === null ||
+        outcome.error !== (previous.get(outcome.notebookId)?.error ?? null),
+    );
+    if (changed) this.settings.resetNotebookMigrationSeen();
     return outcomes;
   }
 
@@ -184,8 +223,9 @@ export class NotebookMigrationService {
         sourceCount: row.source_count,
         fileCount: row.file_count,
         chatCount: row.chat_count,
-        error: row.error,
+        error: row.status === 'done' ? null : (row.error ?? 'The move was interrupted.'),
       })),
+      archivePath: this.settings.notebookArchivePath(),
       seen: this.settings.notebookMigrationSeen(),
     };
   }
@@ -196,16 +236,18 @@ export class NotebookMigrationService {
     if (!existsSync(folder)) return;
     const pending = this.db
       .prepare(
-        'SELECT COUNT(*) FROM notebooks WHERE id NOT IN (SELECT notebook_id FROM notebook_migrations)',
+        `SELECT COUNT(*) FROM notebooks WHERE id NOT IN
+           (SELECT notebook_id FROM notebook_migrations WHERE status = 'done')`,
       )
       .pluck()
       .get() as number;
     if (pending > 0) return;
-    let target = join(this.dataDir, 'notebooks.migrated');
-    if (existsSync(target)) {
-      target = `${target}-${new Date().toISOString().replaceAll(':', '-')}`;
+    let name = 'notebooks.migrated';
+    if (existsSync(join(this.dataDir, name))) {
+      name = `${name}-${new Date().toISOString().replaceAll(':', '-')}`;
     }
-    renameSync(folder, target);
+    renameSync(folder, join(this.dataDir, name));
+    this.settings.setNotebookArchivePath(name);
   }
 
   private readSource(row: SourceRow): { title: string; content: string } {
@@ -226,84 +268,145 @@ export class NotebookMigrationService {
     return { title, content };
   }
 
-  private async migrateNotebook(notebook: NotebookRow): Promise<NotebookMigrationOutcome> {
-    const book = await this.books.create({ title: notebook.name });
-    const entries: ImportEntry[] = [];
-    const entrySources: string[] = [];
-    const skippedSources: NotebookMigrationOutcome['skippedSources'] = [];
+  /** The book a previous attempt created for this notebook, if it still exists. */
+  private existingBook(row: MigrationRow | undefined): string | null {
+    if (row === undefined) return null;
+    return this.books.list().some((book) => book.slug === row.book_slug) ? row.book_slug : null;
+  }
+
+  private async migrateNotebook(
+    notebook: NotebookRow,
+    previous: MigrationRow | undefined,
+  ): Promise<NotebookMigrationOutcome> {
+    const label = `Migrate notebook ${notebook.name}`;
+    let slug = this.existingBook(previous);
+    let paths = slug === null ? null : parseJson(previous?.paths_json ?? 'null');
+    if (slug === null) {
+      slug = (await this.books.create({ title: notebook.name })).slug;
+      paths = null;
+      // Recorded at once, so a restart resumes in this book instead of making another.
+      this.db
+        .prepare(
+          `INSERT INTO notebook_migrations
+             (notebook_id, book_slug, migrated_at, source_count, file_count, chat_count, error, status, paths_json)
+           VALUES (?, ?, ?, 0, 0, 0, NULL, 'pending', NULL)
+           ON CONFLICT (notebook_id) DO UPDATE SET
+             book_slug = excluded.book_slug, migrated_at = excluded.migrated_at,
+             error = NULL, status = 'pending', paths_json = NULL`,
+        )
+        .run(notebook.id, slug, new Date().toISOString());
+    }
+
     const sources = this.db
       .prepare('SELECT * FROM sources WHERE notebook_id = ? ORDER BY created_at, id')
       .all(notebook.id) as SourceRow[];
-
-    for (const source of sources) {
-      try {
-        const { title, content } = this.readSource(source);
-        const origin: SourceOrigin = sourceOriginSchema.parse(parseJson(source.origin_json));
-        const provenance = provenanceLines(
-          origin,
-          stringList(source.conversion_notes_json),
-          source.created_at,
-        );
-        if (source.category) provenance.push(`legacy-category: ${quoted(source.category)}`);
-        const tags = stringList(source.tags_json);
-        if (tags.length > 0) provenance.push('tags:', ...tags.map((tag) => `  - ${quoted(tag)}`));
-        entries.push({ title, markdown: content, kind: 'research', provenance });
-        entrySources.push(source.id);
-      } catch (error) {
-        skippedSources.push({
-          sourceId: source.id,
-          title: source.title,
-          reason: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    let failure: string | null = null;
+    const skippedSources: NotebookMigrationOutcome['skippedSources'] = [];
     const pathsBySource = new Map<string, string>();
-    if (entries.length > 0) {
-      try {
-        const result = await this.books.writeImports(
-          book.slug,
-          `Migrate notebook ${notebook.name}`,
-          entries,
-        );
-        result.files.forEach((path, index) => {
-          const sourceId = entrySources[index];
-          if (sourceId !== undefined) pathsBySource.set(sourceId, path);
-        });
-      } catch (error) {
-        failure = error instanceof Error ? error.message : String(error);
+
+    if (typeof paths === 'object' && paths !== null) {
+      // An earlier attempt wrote the research notes; only the chats remain.
+      for (const [sourceId, path] of Object.entries(paths)) {
+        if (typeof path === 'string') pathsBySource.set(sourceId, path);
       }
+    } else {
+      const entries: ImportEntry[] = [];
+      const entrySources: string[] = [];
+      for (const source of sources) {
+        try {
+          entries.push(this.importEntry(source));
+          entrySources.push(source.id);
+        } catch (error) {
+          skippedSources.push({
+            sourceId: source.id,
+            title: source.title,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      try {
+        if (entries.length > 0) {
+          await this.undoFailedAttempts(slug, label);
+          const result = await this.books.writeImports(slug, label, entries);
+          result.files.forEach((path, index) => {
+            const sourceId = entrySources[index];
+            if (sourceId !== undefined) pathsBySource.set(sourceId, path);
+          });
+        }
+      } catch (error) {
+        const failure = error instanceof Error ? error.message : String(error);
+        this.db
+          .prepare(
+            `UPDATE notebook_migrations SET migrated_at = ?, source_count = ?, error = ?
+             WHERE notebook_id = ?`,
+          )
+          .run(new Date().toISOString(), sources.length, failure, notebook.id);
+        return {
+          notebookId: notebook.id,
+          notebookName: notebook.name,
+          bookSlug: slug,
+          sourceCount: sources.length,
+          fileCount: 0,
+          chatCount: 0,
+          error: failure,
+          skippedSources,
+        };
+      }
+      this.db
+        .prepare('UPDATE notebook_migrations SET paths_json = ? WHERE notebook_id = ?')
+        .run(JSON.stringify(Object.fromEntries(pathsBySource)), notebook.id);
     }
 
-    const chatCount = this.migrateChats(notebook, book.slug, pathsBySource);
-
-    this.db
-      .prepare(
-        `INSERT INTO notebook_migrations
-           (notebook_id, book_slug, migrated_at, source_count, file_count, chat_count, error)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        notebook.id,
-        book.slug,
-        new Date().toISOString(),
-        sources.length,
-        pathsBySource.size,
-        chatCount,
-        failure,
-      );
+    // The chats and the finished row commit together, so a crash never leaves half of them.
+    const book = slug;
+    const chatCount = this.db.transaction(() => {
+      const count = this.migrateChats(notebook, book, pathsBySource);
+      this.db
+        .prepare(
+          `UPDATE notebook_migrations
+           SET migrated_at = ?, source_count = ?, file_count = ?, chat_count = ?, error = NULL, status = 'done'
+           WHERE notebook_id = ?`,
+        )
+        .run(new Date().toISOString(), sources.length, pathsBySource.size, count, notebook.id);
+      return count;
+    })();
 
     return {
       notebookId: notebook.id,
       notebookName: notebook.name,
-      bookSlug: book.slug,
+      bookSlug: book,
       sourceCount: sources.length,
       fileCount: pathsBySource.size,
       chatCount,
-      error: failure,
+      error: null,
       skippedSources,
     };
+  }
+
+  private importEntry(source: SourceRow): ImportEntry {
+    const { title, content } = this.readSource(source);
+    const origin: SourceOrigin = sourceOriginSchema.parse(parseJson(source.origin_json));
+    const provenance = provenanceLines(
+      origin,
+      stringList(source.conversion_notes_json),
+      source.created_at,
+    );
+    if (source.category) provenance.push(`legacy-category: ${quoted(source.category)}`);
+    const tags = stringList(source.tags_json);
+    if (tags.length > 0) provenance.push('tags:', ...tags.map((tag) => `  - ${quoted(tag)}`));
+    return { title, markdown: content, kind: 'research', provenance };
+  }
+
+  /**
+   * Rolls back what an earlier failed attempt left in the book. A failed
+   * import is recorded as a checkpoint, so undoing it removes any files it
+   * wrote before failing and the retry cannot duplicate them.
+   */
+  private async undoFailedAttempts(book: string, label: string): Promise<void> {
+    for (const checkpoint of this.books.listCheckpoints(book)) {
+      if (checkpoint.undoneAt === null && checkpoint.label === `${label} (failed)`) {
+        await this.books.undo(book, checkpoint.id);
+      }
+    }
   }
 
   /** Carries each notebook chat over as an agent chat on the new book. */

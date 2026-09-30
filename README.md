@@ -25,7 +25,7 @@ The provider layer is ported from SillyTavern's battle-tested backends and suppo
 - Skills library (the pinned story-skills set plus your own) and saved custom agents
 - Installable PWA, served single-origin by the server in production
 
-Upgrading from the notebook era? Notebooks, with their sources and chats, move into books automatically the first time the server starts ([ADR 0017](docs/decisions/0017-retire-notebooks-and-presets.md)); the original files are kept in `data/notebooks.migrated/`.
+Upgrading from the notebook era? Notebooks, with their sources and chats, move into books automatically the first time the server starts ([ADR 0017](docs/decisions/0017-retire-notebooks-and-presets.md)); the original files are kept in `data/notebooks.migrated/` (or `data/notebooks.migrated-<timestamp>/` if that folder already exists), and the library shows which.
 
 Not there yet (see the [roadmap](docs/ROADMAP.md)): series and a series bible, `story build` exports (EPUB, DOCX, …) from the UI, and SillyTavern lorebook/character-card export.
 

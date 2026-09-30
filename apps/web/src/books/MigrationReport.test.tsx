@@ -10,6 +10,7 @@ import { MigrationReport } from './MigrationReport.js';
 
 const report: NotebookMigrationReport = {
   seen: false,
+  archivePath: null,
   entries: [
     {
       notebookName: 'Harbor Lore',
@@ -51,16 +52,35 @@ describe('MigrationReport', () => {
     });
 
     const region = await screen.findByRole('region', { name: 'Notebooks moved into books' });
-    expect(region.textContent).toContain('2 notebooks are now books');
+    expect(region.textContent).toContain('1 of your 2 notebooks have moved into books');
+    expect(region.textContent).toContain('stay in data/notebooks/ until every notebook has moved');
     expect(screen.getByRole('link', { name: 'Harbor Lore' }).getAttribute('href')).toBe(
       '/books/harbor-lore',
     );
     expect(region.textContent).toContain('2 research notes of 3 sources · 1 chat');
-    expect(region.textContent).toContain('Its sources could not be written: story import failed');
+    expect(region.textContent).toContain(
+      'Not moved yet; tried again when the server next starts: story import failed',
+    );
 
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByRole('region', { name: 'Notebooks moved into books' })).toBeNull();
     await waitFor(() => expect(markNotebookMigrationSeen).toHaveBeenCalledTimes(1));
+  });
+
+  it('names the folder the originals were archived to', async () => {
+    renderReport({
+      getNotebookMigration: () =>
+        Promise.resolve({
+          ...report,
+          entries: report.entries.slice(0, 1),
+          archivePath: 'notebooks.migrated-2026-09-30T12-00-00.000Z',
+        }),
+    });
+    const region = await screen.findByRole('region', { name: 'Notebooks moved into books' });
+    expect(region.textContent).toContain('Your 1 notebook is now a book.');
+    expect(region.textContent).toContain(
+      'kept in data/notebooks.migrated-2026-09-30T12-00-00.000Z/',
+    );
   });
 
   it('stays hidden once seen or when nothing moved', async () => {

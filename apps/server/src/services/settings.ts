@@ -64,4 +64,18 @@ export class SettingsService {
   markNotebookMigrationSeen(): void {
     this.db.prepare('UPDATE app_settings SET notebook_migration_seen = 1 WHERE id = 1').run();
   }
+
+  /** Shows the report again, because a later start moved or failed to move something new. */
+  resetNotebookMigrationSeen(): void {
+    this.db.prepare('UPDATE app_settings SET notebook_migration_seen = 0 WHERE id = 1').run();
+  }
+
+  /** Where `data/notebooks/` was renamed to, relative to the data dir, once it was. */
+  notebookArchivePath(): string | null {
+    return this.row()?.notebook_archive_path ?? null;
+  }
+
+  setNotebookArchivePath(path: string): void {
+    this.db.prepare('UPDATE app_settings SET notebook_archive_path = ? WHERE id = 1').run(path);
+  }
 }
