@@ -3,20 +3,8 @@ import {
   agentChangesetResolutionSchema,
   agentChatDetailSchema,
   agentChatSchema,
-  customAgentSchema,
-  type AgentChangesetDetail,
-  type AgentChangesetResolution,
-  type CreateAgentChatInput,
-  type CreateCustomAgentInput,
-  type CustomAgent,
-  type PatchAgentChatInput,
-  type PatchCustomAgentInput,
-  storySkillsInstallResultSchema,
-  type AgentChat,
-  type AgentChatDetail,
-  type AgentStreamEvent,
-  type StorySkillsInstallResult,
   apiErrorSchema,
+  appSettingsSchema,
   bookCheckResultSchema,
   bookFileDetailSchema,
   bookFileSchema,
@@ -25,36 +13,28 @@ import {
   bookTreeSchema,
   checkpointDetailSchema,
   checkpointSchema,
-  manuscriptImportResultSchema,
-  storyCommandOutcomeSchema,
-  appSettingsSchema,
-  chatDetailSchema,
-  chatSchema,
   connectionTestResponseSchema,
-  createChatSchema,
   createSecretSchema,
+  customAgentSchema,
+  manuscriptImportResultSchema,
   maskedSecretSchema,
   modelListResponseSchema,
-  notebookListSchema,
-  notebookSchema,
-  presetListSchema,
-  presetSchema,
+  notebookMigrationReportSchema,
   providerCatalogEntrySchema,
   secretStateSchema,
-  messageSchema,
   skillDetailSchema,
-  skillMetadataSchema,
   skillMetadataListSchema,
-  starterSkillSchema,
-  sourceDetailSchema,
-  sourceMetadataListSchema,
-  sourceMetadataSchema,
-  existingSourceOrganizationResponseSchema,
-  sourceOrganizationResponseSchema,
-  sourcePreviewSchema,
-  sourceSearchResultListSchema,
+  skillMetadataSchema,
+  storyCommandOutcomeSchema,
+  storySkillsInstallResultSchema,
   type AddEntityInput,
+  type AgentChangesetDetail,
+  type AgentChangesetResolution,
+  type AgentChat,
+  type AgentChatDetail,
+  type AgentStreamEvent,
   type ApiErrorIssue,
+  type AppSettings,
   type BookCheckCommand,
   type BookCheckResult,
   type BookEntityKind,
@@ -65,51 +45,34 @@ import {
   type BookTree,
   type Checkpoint,
   type CheckpointDetail,
-  type CreateBookInput,
-  type ManuscriptImportResult,
-  type RenameEntityInput,
-  type StoryCommandOutcome,
-  type WriteBookFileInput,
-  type AppSettings,
-  type Chat,
-  type ChatDetail,
   type ConnectionTestResponse,
-  type CreateNotebookInput,
-  type CreatePreset,
-  type CreateSourceInput,
-  type CreateSourcesInput,
+  type CreateAgentChatInput,
+  type CreateBookInput,
+  type CreateCustomAgentInput,
+  type CreateSkillInput,
+  type CustomAgent,
+  type ManuscriptImportResult,
   type MaskedSecret,
-  type Message,
   type ModelListResponse,
-  type Notebook,
+  type NotebookMigrationReport,
+  type PatchAgentChatInput,
   type PatchAppSettings,
-  type PatchChat,
-  type PatchNotebook,
-  type PatchPreset,
-  type PatchSource,
+  type PatchCustomAgentInput,
+  type PatchSkill,
   type ProviderCatalogEntry,
   type ProviderConfig,
   type ProviderConnection,
-  type Preset,
-  type CreateSkillInput,
-  type PatchSkill,
+  type RenameEntityInput,
   type SecretState,
   type SkillDetail,
   type SkillMetadata,
-  type StarterSkill,
-  type SourceDetail,
-  type SourceMetadata,
-  type ExistingSourceOrganizationRequest,
-  type ExistingSourceOrganizationResponse,
-  type SourceOrganizationRequest,
-  type SourceOrganizationResponse,
-  type SourcePreview,
-  type SourceSearchResult,
-  type StreamEvent,
+  type StoryCommandOutcome,
+  type StorySkillsInstallResult,
+  type WriteBookFileInput,
 } from '@worldbookllm/shared';
 import { z } from 'zod';
 
-import { streamAgentMessage, streamChatMessage, streamRegenerate } from './stream.js';
+import { streamAgentMessage } from './stream.js';
 
 interface ResponseSchema<T> {
   safeParse(value: unknown): { success: true; data: T } | { success: false };
@@ -197,37 +160,6 @@ export interface ApiClient {
     options: StreamAgentMessageOptions,
   ): Promise<void>;
   installStorySkills(signal?: AbortSignal): Promise<StorySkillsInstallResult>;
-  listNotebooks(signal?: AbortSignal): Promise<Notebook[]>;
-  createNotebook(input: CreateNotebookInput, signal?: AbortSignal): Promise<Notebook>;
-  getNotebook(id: string, signal?: AbortSignal): Promise<Notebook>;
-  updateNotebook(id: string, input: PatchNotebook, signal?: AbortSignal): Promise<Notebook>;
-  deleteNotebook(id: string, signal?: AbortSignal): Promise<void>;
-  listSources(notebookId: string, signal?: AbortSignal): Promise<SourceMetadata[]>;
-  searchSources(notebookId: string, q: string, signal?: AbortSignal): Promise<SourceSearchResult[]>;
-  createSource(
-    notebookId: string,
-    input: CreateSourceInput,
-    signal?: AbortSignal,
-  ): Promise<SourceMetadata>;
-  createSources(
-    notebookId: string,
-    input: CreateSourcesInput,
-    signal?: AbortSignal,
-  ): Promise<SourceMetadata[]>;
-  suggestSourceOrganization(
-    notebookId: string,
-    input: SourceOrganizationRequest,
-    signal?: AbortSignal,
-  ): Promise<SourceOrganizationResponse>;
-  suggestExistingSourceOrganization(
-    notebookId: string,
-    input: ExistingSourceOrganizationRequest,
-    signal?: AbortSignal,
-  ): Promise<ExistingSourceOrganizationResponse>;
-  previewFileImport(notebookId: string, file: File, signal?: AbortSignal): Promise<SourcePreview>;
-  getSource(id: string, signal?: AbortSignal): Promise<SourceDetail>;
-  updateSource(id: string, input: PatchSource, signal?: AbortSignal): Promise<SourceDetail>;
-  deleteSource(id: string, signal?: AbortSignal): Promise<void>;
   getProviderCatalog(signal?: AbortSignal): Promise<ProviderCatalogEntry[]>;
   listModels(connection: ProviderConnection, signal?: AbortSignal): Promise<ModelListResponse>;
   testConnection(config: ProviderConfig, signal?: AbortSignal): Promise<ConnectionTestResponse>;
@@ -235,33 +167,15 @@ export interface ApiClient {
   createSecret(input: CreateSecretInput, signal?: AbortSignal): Promise<MaskedSecret>;
   activateSecret(key: string, id: string, signal?: AbortSignal): Promise<void>;
   deleteSecret(key: string, id: string, signal?: AbortSignal): Promise<void>;
-  listChats(notebookId: string, signal?: AbortSignal): Promise<Chat[]>;
-  createChat(notebookId: string, input: CreateChatInput, signal?: AbortSignal): Promise<Chat>;
-  getChat(id: string, signal?: AbortSignal): Promise<ChatDetail>;
-  updateChat(id: string, input: PatchChat, signal?: AbortSignal): Promise<Chat>;
-  deleteChat(id: string, signal?: AbortSignal): Promise<void>;
-  regenerateMessage(chatId: string, options: StreamMessageOptions): Promise<void>;
-  selectVariant(messageId: string, activeVariant: number, signal?: AbortSignal): Promise<Message>;
   listSkills(signal?: AbortSignal): Promise<SkillMetadata[]>;
   createSkill(input: CreateSkillInput, signal?: AbortSignal): Promise<SkillMetadata>;
   getSkill(id: string, signal?: AbortSignal): Promise<SkillDetail>;
   updateSkill(id: string, input: PatchSkill, signal?: AbortSignal): Promise<SkillDetail>;
   deleteSkill(id: string, signal?: AbortSignal): Promise<void>;
-  listStarterSkills(signal?: AbortSignal): Promise<StarterSkill[]>;
-  installStarterSkills(starterIds: string[], signal?: AbortSignal): Promise<SkillMetadata[]>;
-  listPresets(signal?: AbortSignal): Promise<Preset[]>;
-  createPreset(input: CreatePreset, signal?: AbortSignal): Promise<Preset>;
-  getPreset(id: string, signal?: AbortSignal): Promise<Preset>;
-  updatePreset(id: string, input: PatchPreset, signal?: AbortSignal): Promise<Preset>;
-  deletePreset(id: string, signal?: AbortSignal): Promise<void>;
   getAppSettings(signal?: AbortSignal): Promise<AppSettings>;
   updateAppSettings(input: PatchAppSettings, signal?: AbortSignal): Promise<AppSettings>;
-  streamMessage(chatId: string, content: string, options: StreamMessageOptions): Promise<void>;
-}
-
-export interface StreamMessageOptions {
-  onEvent: (event: StreamEvent) => void;
-  signal?: AbortSignal;
+  getNotebookMigration(signal?: AbortSignal): Promise<NotebookMigrationReport>;
+  markNotebookMigrationSeen(signal?: AbortSignal): Promise<void>;
 }
 
 export interface StreamAgentMessageOptions {
@@ -270,7 +184,6 @@ export interface StreamAgentMessageOptions {
 }
 
 export type CreateSecretInput = z.input<typeof createSecretSchema>;
-export type CreateChatInput = z.input<typeof createChatSchema>;
 
 interface RequestOptions<T> {
   method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -286,8 +199,6 @@ function isAbortError(error: unknown): boolean {
 
 export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): ApiClient {
   const providerCatalogSchema = z.array(providerCatalogEntrySchema);
-  const chatListSchema = z.array(chatSchema);
-  const starterSkillListSchema = z.array(starterSkillSchema);
   const bookListSchema = z.array(bookSummarySchema);
   const bookSearchResultListSchema = z.array(bookSearchResultSchema);
   const checkpointListSchema = z.array(checkpointSchema);
@@ -474,82 +385,6 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: storySkillsInstallResultSchema,
         signal,
       }),
-    listNotebooks: (signal) => request('/api/notebooks', { schema: notebookListSchema, signal }),
-    createNotebook: (input, signal) =>
-      request('/api/notebooks', { method: 'POST', body: input, schema: notebookSchema, signal }),
-    getNotebook: (id, signal) =>
-      request(`/api/notebooks/${encodeURIComponent(id)}`, { schema: notebookSchema, signal }),
-    updateNotebook: (id, input, signal) =>
-      request(`/api/notebooks/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: input,
-        schema: notebookSchema,
-        signal,
-      }),
-    deleteNotebook: (id, signal) =>
-      request(`/api/notebooks/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
-    listSources: (notebookId, signal) =>
-      request(`/api/notebooks/${encodeURIComponent(notebookId)}/sources`, {
-        schema: sourceMetadataListSchema,
-        signal,
-      }),
-    searchSources: (notebookId, q, signal) =>
-      request(
-        `/api/notebooks/${encodeURIComponent(notebookId)}/sources/search?${new URLSearchParams({ q }).toString()}`,
-        { schema: sourceSearchResultListSchema, signal },
-      ),
-    createSource: (notebookId, input, signal) =>
-      request(`/api/notebooks/${encodeURIComponent(notebookId)}/sources`, {
-        method: 'POST',
-        body: input,
-        schema: sourceMetadataSchema,
-        signal,
-      }),
-    createSources: (notebookId, input, signal) =>
-      request(`/api/notebooks/${encodeURIComponent(notebookId)}/sources/batch`, {
-        method: 'POST',
-        body: input,
-        schema: sourceMetadataListSchema,
-        signal,
-      }),
-    suggestSourceOrganization: (notebookId, input, signal) =>
-      request(`/api/notebooks/${encodeURIComponent(notebookId)}/source-organization-suggestions`, {
-        method: 'POST',
-        body: input,
-        schema: sourceOrganizationResponseSchema,
-        signal,
-      }),
-    suggestExistingSourceOrganization: (notebookId, input, signal) =>
-      request(
-        `/api/notebooks/${encodeURIComponent(notebookId)}/source-organization-suggestions/existing`,
-        {
-          method: 'POST',
-          body: input,
-          schema: existingSourceOrganizationResponseSchema,
-          signal,
-        },
-      ),
-    previewFileImport: (notebookId, file, signal) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      return request(`/api/notebooks/${encodeURIComponent(notebookId)}/source-previews/file`, {
-        method: 'POST',
-        formData,
-        schema: sourcePreviewSchema,
-        signal,
-      });
-    },
-    getSource: (id, signal) =>
-      request(`/api/sources/${encodeURIComponent(id)}`, { schema: sourceDetailSchema, signal }),
-    updateSource: (id, input, signal) =>
-      request(`/api/sources/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: input,
-        schema: sourceDetailSchema,
-        signal,
-      }),
-    deleteSource: (id, signal) =>
-      request(`/api/sources/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
     getProviderCatalog: (signal) =>
       request('/api/providers', { schema: providerCatalogSchema, signal }),
     listModels: (connection, signal) =>
@@ -584,37 +419,6 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         method: 'DELETE',
         signal,
       }),
-    listChats: (notebookId, signal) =>
-      request(`/api/notebooks/${encodeURIComponent(notebookId)}/chats`, {
-        schema: chatListSchema,
-        signal,
-      }),
-    createChat: (notebookId, input, signal) =>
-      request(`/api/notebooks/${encodeURIComponent(notebookId)}/chats`, {
-        method: 'POST',
-        body: input,
-        schema: chatSchema,
-        signal,
-      }),
-    getChat: (id, signal) =>
-      request(`/api/chats/${encodeURIComponent(id)}`, { schema: chatDetailSchema, signal }),
-    updateChat: (id, input, signal) =>
-      request(`/api/chats/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: input,
-        schema: chatSchema,
-        signal,
-      }),
-    deleteChat: (id, signal) =>
-      request(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
-    regenerateMessage: (chatId, options) => streamRegenerate(chatId, { ...options, fetchImpl }),
-    selectVariant: (messageId, activeVariant, signal) =>
-      request(`/api/messages/${encodeURIComponent(messageId)}`, {
-        method: 'PATCH',
-        body: { activeVariant },
-        schema: messageSchema,
-        signal,
-      }),
     listSkills: (signal) => request('/api/skills', { schema: skillMetadataListSchema, signal }),
     createSkill: (input, signal) =>
       request('/api/skills', {
@@ -634,34 +438,6 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       }),
     deleteSkill: (id, signal) =>
       request(`/api/skills/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
-    listStarterSkills: (signal) =>
-      request('/api/skills-starter', { schema: starterSkillListSchema, signal }),
-    installStarterSkills: (starterIds, signal) =>
-      request('/api/skills-starter/install', {
-        method: 'POST',
-        body: { starterIds },
-        schema: skillMetadataListSchema,
-        signal,
-      }),
-    listPresets: (signal) => request('/api/presets', { schema: presetListSchema, signal }),
-    createPreset: (input, signal) =>
-      request('/api/presets', {
-        method: 'POST',
-        body: input,
-        schema: presetSchema,
-        signal,
-      }),
-    getPreset: (id, signal) =>
-      request(`/api/presets/${encodeURIComponent(id)}`, { schema: presetSchema, signal }),
-    updatePreset: (id, input, signal) =>
-      request(`/api/presets/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: input,
-        schema: presetSchema,
-        signal,
-      }),
-    deletePreset: (id, signal) =>
-      request(`/api/presets/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
     getAppSettings: (signal) => request('/api/app-settings', { schema: appSettingsSchema, signal }),
     updateAppSettings: (input, signal) =>
       request('/api/app-settings', {
@@ -670,7 +446,9 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: appSettingsSchema,
         signal,
       }),
-    streamMessage: (chatId, content, options) =>
-      streamChatMessage(chatId, content, { ...options, fetchImpl }),
+    getNotebookMigration: (signal) =>
+      request('/api/notebook-migration', { schema: notebookMigrationReportSchema, signal }),
+    markNotebookMigrationSeen: (signal) =>
+      request('/api/notebook-migration/seen', { method: 'POST', signal }),
   };
 }

@@ -1,9 +1,7 @@
 import {
   agentStreamEventSchema,
   apiErrorSchema,
-  streamEventSchema,
   type AgentStreamEvent,
-  type StreamEvent,
 } from '@worldbookllm/shared';
 
 import { ApiClientError } from './client.js';
@@ -13,8 +11,6 @@ export interface StreamOptions<E> {
   signal?: AbortSignal;
   fetchImpl?: typeof fetch;
 }
-
-export type StreamChatOptions = StreamOptions<StreamEvent>;
 
 interface EventSchema<E> {
   safeParse(value: unknown): { success: true; data: E } | { success: false };
@@ -132,30 +128,6 @@ async function streamSse<E extends { type: string }>(
   // that ends without one was truncated (or wasn't SSE at all) and must not
   // pass for a successful exchange.
   if (!sawTerminal) throw invalidResponse();
-}
-
-/** Sends a user message with `POST /api/chats/:id/messages`. */
-export function streamChatMessage(
-  chatId: string,
-  content: string,
-  options: StreamChatOptions,
-): Promise<void> {
-  return streamSse(
-    `/api/chats/${encodeURIComponent(chatId)}/messages`,
-    { content },
-    streamEventSchema,
-    options,
-  );
-}
-
-/** Re-runs the last assistant turn with `POST /api/chats/:id/regenerate` (no body). */
-export function streamRegenerate(chatId: string, options: StreamChatOptions): Promise<void> {
-  return streamSse(
-    `/api/chats/${encodeURIComponent(chatId)}/regenerate`,
-    undefined,
-    streamEventSchema,
-    options,
-  );
 }
 
 /**

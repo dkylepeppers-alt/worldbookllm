@@ -2,13 +2,13 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { BookSummary, GenerationControls } from '@worldbookllm/shared';
+import type { AgentGeneration, BookSummary } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { openDatabase } from '../db/database.js';
 import { SkillFileStore } from '../files/skill-files.js';
-import { PresetService } from '../services/presets.js';
+import { SettingsService } from '../services/settings.js';
 import { SkillService } from '../services/skills.js';
 import type { BookService } from '../services/books.js';
 import type { ProviderService } from '../services/providers.js';
@@ -43,8 +43,8 @@ describe('stopping a turn', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-abort-'));
     tempDirs.push(dataDir);
     const db = openDatabase(dataDir);
-    const presets = new PresetService(db);
-    presets.updateSettings({
+    const settings = new SettingsService(db);
+    settings.updateSettings({
       providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
     });
     const skills = new SkillService(db, new SkillFileStore(dataDir));
@@ -122,7 +122,7 @@ describe('stopping a turn', () => {
       db,
       books,
       skills,
-      presets,
+      settings,
       providers,
       tools as unknown as AgentToolRegistry,
       new AgentChangesetService(db, books),
@@ -146,17 +146,16 @@ describe('stopping a turn', () => {
 });
 
 describe('generation controls', () => {
-  it('never sends the default preset’s assistant prefill to the agent', async () => {
+  it('sends the agent generation settings with each request', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-prefill-'));
     tempDirs.push(dataDir);
     const db = openDatabase(dataDir);
-    const presets = new PresetService(db);
-    presets.updateSettings({
+    const settings = new SettingsService(db);
+    settings.updateSettings({
       providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
     });
-    const preset = presets.resolve(null);
-    presets.patch(preset.id, {
-      generation: { temperature: 0.4, assistantPrefill: 'Certainly! Here is' },
+    settings.updateSettings({
+      agentGeneration: { temperature: 0.4, topP: null, maxTokens: 2048, thinking: false },
     });
     const skills = new SkillService(db, new SkillFileStore(dataDir));
     const books = {
@@ -174,9 +173,9 @@ describe('generation controls', () => {
       startSession: () => ({ book: 'harbor' }),
       commitSession: async () => null,
     } as unknown as BookService;
-    const seen: GenerationControls[] = [];
+    const seen: AgentGeneration[] = [];
     const providers = {
-      createChatRequest(_config: unknown, _messages: unknown, controls: GenerationControls) {
+      createChatRequest(_config: unknown, _messages: unknown, controls: AgentGeneration) {
         seen.push(controls);
         return { url: 'http://provider.test/v1', method: 'POST', headers: {}, body: {} };
       },
@@ -192,7 +191,7 @@ describe('generation controls', () => {
       db,
       books,
       skills,
-      presets,
+      settings,
       providers,
       { definitions: () => [] } as unknown as AgentToolRegistry,
       new AgentChangesetService(db, books),
@@ -207,7 +206,7 @@ describe('generation controls', () => {
       prepared.release();
     }
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toMatchObject({ temperature: 0.4, assistantPrefill: null });
+    expect(seen[0]).toEqual({ temperature: 0.4, topP: null, maxTokens: 2048, thinking: false });
     db.close();
   });
 });
@@ -217,8 +216,8 @@ describe('restarting the server', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-pending-'));
     tempDirs.push(dataDir);
     const db = openDatabase(dataDir);
-    const presets = new PresetService(db);
-    presets.updateSettings({
+    const settings = new SettingsService(db);
+    settings.updateSettings({
       providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
     });
     const skills = new SkillService(db, new SkillFileStore(dataDir));
@@ -288,7 +287,7 @@ describe('restarting the server', () => {
       db,
       books,
       skills,
-      presets,
+      settings,
       providers,
       tools as unknown as AgentToolRegistry,
       new AgentChangesetService(db, books),
@@ -312,8 +311,8 @@ describe('restarting the server', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-restart-'));
     tempDirs.push(dataDir);
     const db = openDatabase(dataDir);
-    const presets = new PresetService(db);
-    presets.updateSettings({
+    const settings = new SettingsService(db);
+    settings.updateSettings({
       providerConfig: { source: 'custom', model: 'local', baseUrl: 'http://provider.test/v1' },
     });
     const skills = new SkillService(db, new SkillFileStore(dataDir));
@@ -323,7 +322,7 @@ describe('restarting the server', () => {
         db,
         books,
         skills,
-        presets,
+        settings,
         {} as ProviderService,
         {} as unknown as AgentToolRegistry,
         new AgentChangesetService(db, books),

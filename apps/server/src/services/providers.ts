@@ -4,7 +4,7 @@ import type {
   ProviderCatalogEntry,
   ProviderConfig,
   ProviderConnection,
-  GenerationControls,
+  AgentGeneration,
 } from '@worldbookllm/shared';
 import {
   buildChatRequest,
@@ -118,45 +118,10 @@ export class ProviderService {
     return { ok: true, detail: 'Completion endpoint reachable' };
   }
 
-  async completeChat(
-    config: ProviderConfig,
-    messages: ChatMessage[],
-    options: { temperature: number; maxTokens: number },
-    signal?: AbortSignal,
-  ): Promise<string> {
-    const apiKey = this.requireApiKey(config);
-    let request: ProviderChatRequest;
-    try {
-      request = buildChatRequest(config.source, {
-        model: config.model,
-        messages,
-        stream: false,
-        apiKey,
-        baseUrl: config.baseUrl,
-        extra: config.extra,
-        temperature: options.temperature,
-        maxTokens: options.maxTokens,
-        // Internal completions never want reasoning, but the Google builder
-        // treats an omitted effort as 'auto' (dynamic thinking on Gemini
-        // 2.5+), which can burn the small output budget before any JSON is
-        // emitted. 'min' pins Google to its smallest budget; other sources
-        // stay untouched because 'min' would *enable* thinking on Claude.
-        ...(config.source === 'makersuite' || config.source === 'vertexai'
-          ? { reasoningEffort: 'min' as const }
-          : {}),
-      });
-    } catch (error) {
-      if (error instanceof ProviderError) throw new ConfigurationError(error.message);
-      throw error;
-    }
-    const data = await this.http.fetchJson(config.source, request, signal);
-    return parseCompletionResponse(config.source, data).text;
-  }
-
   createChatRequest(
     config: ProviderConfig,
     messages: ChatMessage[],
-    controls: GenerationControls,
+    controls: AgentGeneration,
     tools?: ToolDefinition[],
   ): ProviderChatRequest {
     const apiKey = this.requireApiKey(config);
@@ -171,7 +136,6 @@ export class ProviderService {
         temperature: controls.temperature,
         topP: controls.topP ?? undefined,
         maxTokens: controls.maxTokens ?? undefined,
-        assistantPrefill: controls.assistantPrefill ?? undefined,
         ...(tools && tools.length > 0 ? { tools } : {}),
         // The thinking toggle asks the provider to reason and surface it in
         // the response. Claude requires signed thinking blocks to be replayed

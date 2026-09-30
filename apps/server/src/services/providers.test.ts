@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { CHAT_COMPLETION_SOURCES } from '@worldbookllm/providers';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { ConfigurationError } from '../errors.js';
 import { ProviderHttpClient } from '../providers/http-client.js';
@@ -101,63 +101,6 @@ describe('ProviderService', () => {
     ).resolves.toEqual({ ok: true, detail: 'Completion endpoint reachable' });
   });
 
-  it('performs a normalized non-streaming completion for internal model tasks', async () => {
-    const secrets = store();
-    secrets.add('api_key_nanogpt', 'classification-key', 'Primary');
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ choices: [{ message: { content: '{"suggestions":[]}' } }] })),
-      );
-    const service = new ProviderService(secrets, new ProviderHttpClient(fetchImpl));
-    const signal = new AbortController().signal;
-
-    await expect(
-      service.completeChat(
-        { source: 'nanogpt', model: 'gpt-4o-mini' },
-        [{ role: 'user', content: 'Classify this source.' }],
-        { temperature: 0, maxTokens: 512 },
-        signal,
-      ),
-    ).resolves.toBe('{"suggestions":[]}');
-
-    expect(fetchImpl).toHaveBeenCalledWith(
-      expect.stringContaining('/chat/completions'),
-      expect.objectContaining({
-        body: expect.stringContaining('"stream":false'),
-        signal: expect.any(AbortSignal),
-      }),
-    );
-  });
-
-  it('pins Google internal completions to the minimum reasoning effort', async () => {
-    const secrets = store();
-    secrets.add('api_key_makersuite', 'google-key', 'Primary');
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          candidates: [{ content: { parts: [{ text: '{"suggestions":[]}' }] } }],
-        }),
-      ),
-    );
-    const service = new ProviderService(secrets, new ProviderHttpClient(fetchImpl));
-
-    await expect(
-      service.completeChat(
-        { source: 'makersuite', model: 'gemini-2.5-flash' },
-        [{ role: 'user', content: 'Classify this source.' }],
-        { temperature: 0, maxTokens: 512 },
-      ),
-    ).resolves.toBe('{"suggestions":[]}');
-
-    // Without an explicit effort the Google builder falls back to 'auto'
-    // (thinkingBudget -1: dynamic thinking); 'min' turns it off entirely.
-    expect(fetchImpl).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ body: expect.stringContaining('"thinkingBudget":0') }),
-    );
-  });
-
   it('builds generation requests using the active key', () => {
     const secrets = store();
     secrets.add('api_key_nanogpt', 'generation-key', 'Primary');
@@ -169,7 +112,7 @@ describe('ProviderService', () => {
       service.createChatRequest(
         { source: 'nanogpt', model: 'gpt-4o-mini' },
         [{ role: 'user', content: 'Hello' }],
-        { temperature: 0.65, topP: null, maxTokens: null, assistantPrefill: null },
+        { temperature: 0.65, topP: null, maxTokens: null, thinking: false },
       ),
     ).toMatchObject({
       headers: { Authorization: 'Bearer generation-key' },
@@ -177,7 +120,7 @@ describe('ProviderService', () => {
     });
   });
 
-  it('passes nullable controls only when set and preserves provider prefill behavior', () => {
+  it('passes nullable controls only when set and sends no prefill', () => {
     const secrets = store();
     secrets.add('api_key_claude', 'claude-key', 'Primary');
     const service = new ProviderService(
@@ -188,7 +131,7 @@ describe('ProviderService', () => {
     const withoutNullable = service.createChatRequest(
       { source: 'claude', model: 'claude-3-5-sonnet-20241022' },
       [{ role: 'user', content: 'Hello' }],
-      { temperature: 0.4, topP: null, maxTokens: null, assistantPrefill: null },
+      { temperature: 0.4, topP: null, maxTokens: null, thinking: false },
     );
     expect(withoutNullable.body).toMatchObject({ temperature: 0.4 });
     expect(withoutNullable.body).not.toHaveProperty('top_p');
@@ -200,12 +143,12 @@ describe('ProviderService', () => {
     const withControls = service.createChatRequest(
       { source: 'claude', model: 'claude-3-5-sonnet-20241022' },
       [{ role: 'user', content: 'Hello' }],
-      { temperature: 0.4, topP: 0.85, maxTokens: 321, assistantPrefill: 'Answer: ' },
+      { temperature: 0.4, topP: 0.85, maxTokens: 321, thinking: false },
     );
     expect(withControls.body).toMatchObject({ temperature: 0.4, top_p: 0.85, max_tokens: 321 });
+    // Agent requests never carry an assistant prefill (ADR 0017).
     expect(withControls.body.messages).toEqual([
       { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
-      { role: 'assistant', content: [{ type: 'text', text: 'Answer:' }] },
     ]);
   });
 
@@ -216,7 +159,7 @@ describe('ProviderService', () => {
       secrets,
       new ProviderHttpClient(async () => Promise.reject(new Error('not called'))),
     );
-    const base = { temperature: 0.5, topP: null, maxTokens: null, assistantPrefill: null };
+    const base = { temperature: 0.5, topP: null, maxTokens: null };
 
     const off = service.createChatRequest(
       { source: 'openrouter', model: 'anthropic/claude-3.5-sonnet' },
@@ -247,7 +190,6 @@ describe('ProviderService', () => {
         temperature: 0.5,
         topP: null,
         maxTokens: 4096,
-        assistantPrefill: null,
         thinking: true,
       },
       [

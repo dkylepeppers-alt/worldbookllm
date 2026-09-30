@@ -1,11 +1,11 @@
 import type {
+  AgentGeneration,
   MaskedSecret,
   ProviderCatalogEntry,
   ProviderConfig,
   SecretState,
 } from '@worldbookllm/shared';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 
 import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
@@ -13,6 +13,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useDialogLifecycle } from '../components/useDialogLifecycle.js';
 import { ProviderConfigDialog } from '../providers/ProviderConfigDialog.js';
+import { AgentGenerationForm } from './AgentGenerationForm.js';
 
 type SettingsState =
   | { status: 'loading' }
@@ -23,6 +24,7 @@ type SettingsState =
       secrets: SecretState;
       providerConfig: ProviderConfig | null;
       agentReviewMode: boolean;
+      agentGeneration: AgentGeneration;
     };
 
 interface SecretTarget {
@@ -60,6 +62,7 @@ export function SettingsPage() {
           secrets,
           providerConfig: appSettings.providerConfig,
           agentReviewMode: appSettings.agentReviewMode,
+          agentGeneration: appSettings.agentGeneration,
         }),
       )
       .catch((error: unknown) => {
@@ -79,6 +82,7 @@ export function SettingsPage() {
         secrets,
         providerConfig: appSettings.providerConfig,
         agentReviewMode: appSettings.agentReviewMode,
+        agentGeneration: appSettings.agentGeneration,
       });
     } catch {
       setState({ status: 'error' });
@@ -182,10 +186,8 @@ export function SettingsPage() {
             Off: changes apply at once and each turn can be undone. On: each turn proposes changes
             you apply or skip file by file. A chat can override this.
           </p>
+          <AgentGenerationForm generation={state.agentGeneration} />
         </div>
-        <Link className="button-secondary" to="/agents">
-          Custom agents
-        </Link>
       </section>
 
       {mutationError === null ? null : <p role="alert">{mutationError}</p>}

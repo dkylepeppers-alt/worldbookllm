@@ -25,7 +25,7 @@ import type {
 
 import { ConfigurationError, ConflictError, NotFoundError } from '../errors.js';
 import type { BookService } from '../services/books.js';
-import type { PresetService } from '../services/presets.js';
+import type { SettingsService } from '../services/settings.js';
 import type { ProviderService } from '../services/providers.js';
 import type { SkillService } from '../services/skills.js';
 import type { CheckpointSession } from '../story/checkpoints.js';
@@ -212,6 +212,26 @@ function summarize(result: string): string {
     : firstLine;
 }
 
+/** A message from a notebook-era chat, carried over by the notebook migration (ADR 0017). */
+export type LegacyChatMessage =
+  | { role: 'user'; content: string; note: string | null; createdAt: string }
+  | {
+      role: 'assistant';
+      content: string;
+      reasoning: string | null;
+      status: 'complete' | 'interrupted' | 'error';
+      /** The provider request body the exchange recorded, shown as its one step. */
+      requestBody: Record<string, unknown> | null;
+      createdAt: string;
+    };
+
+export interface LegacyChat {
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: readonly LegacyChatMessage[];
+}
+
 export interface PreparedAgentTurn {
   chat: AgentChat;
   config: ProviderConfig;
@@ -244,7 +264,7 @@ export class AgentService {
     private readonly db: Database.Database,
     private readonly books: BookService,
     private readonly skills: SkillService,
-    private readonly presets: PresetService,
+    private readonly settings: SettingsService,
     private readonly providers: ProviderService,
     private readonly tools: AgentToolRegistry,
     private readonly changesets: AgentChangesetService,
@@ -357,6 +377,54 @@ export class AgentService {
     this.db.prepare('DELETE FROM agent_chats WHERE book = ?').run(book);
   }
 
+  /**
+   * Stores a notebook-era chat as an agent chat on the book it moved into.
+   * A response that recorded its request body keeps it as a single step, so
+   * the step inspector still shows what the model received.
+   */
+  importLegacyChat(book: string, legacy: LegacyChat): AgentChat {
+    this.books.root(book);
+    const chatId = randomUUID();
+    const insertMessage = this.db.prepare(
+      `INSERT INTO agent_messages (id, chat_id, seq, role, content, reasoning, status, note, steps_json, checkpoint_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+    );
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO agent_chats (id, book, title, agent_id, review_mode, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, NULL, ?, ?)`,
+        )
+        .run(
+          chatId,
+          book,
+          legacy.title.slice(0, 200) || 'Notebook chat',
+          legacy.createdAt,
+          legacy.updatedAt,
+        );
+      legacy.messages.forEach((message, seq) => {
+        const steps: AgentStep[] =
+          message.role === 'assistant' && message.requestBody !== null
+            ? [{ index: 0, requestBody: message.requestBody, text: message.content, toolCalls: [] }]
+            : [];
+        insertMessage.run(
+          randomUUID(),
+          chatId,
+          seq,
+          message.role,
+          message.content,
+          message.role === 'assistant' ? message.reasoning : null,
+          message.role === 'assistant' ? message.status : 'complete',
+          message.role === 'user' ? message.note : null,
+          JSON.stringify(steps),
+          message.createdAt,
+          message.createdAt,
+        );
+      });
+    })();
+    return toChat(this.chatRow(chatId));
+  }
+
   /** Validates the turn can run and records the user message and a streaming assistant message. */
   prepare(chatId: string, content: string): PreparedAgentTurn {
     if (this.active.has(chatId)) {
@@ -366,7 +434,7 @@ export class AgentService {
       );
     }
     const detail = this.getChat(chatId);
-    const settings = this.presets.getSettings();
+    const settings = this.settings.getSettings();
     const config = settings.providerConfig;
     if (!config) throw new ConfigurationError('Configure a provider before talking to the agent.');
     if (!supportsTools(config.source)) {
@@ -489,11 +557,7 @@ export class AgentService {
     try {
       // Setup stays inside the try: a failure after prepare() has already
       // stored a streaming message must be recorded, not left hanging.
-      // Presets were designed for notebook chat. An assistant prefill would be
-      // sent as a trailing assistant message on every step and can break
-      // tool calling, so the agent never uses one. Presets' role for the
-      // agent is to be revisited when the notebook era is retired.
-      const controls = { ...this.presets.resolve(null).generation, assistantPrefill: null };
+      const controls = this.settings.getSettings().agentGeneration;
       let workspace: AgentWorkspace;
       if (prepared.reviewMode) {
         staged = await this.books.stage(chat.book, this.stagingDir);

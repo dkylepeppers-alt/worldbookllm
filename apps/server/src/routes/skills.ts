@@ -1,9 +1,4 @@
-import {
-  createSkillSchema,
-  installStarterSkillsSchema,
-  patchSkillSchema,
-  resourceIdParamsSchema,
-} from '@worldbookllm/shared';
+import { createSkillSchema, patchSkillSchema, resourceIdParamsSchema } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 
 export function registerSkillRoutes(app: FastifyInstance): void {
@@ -27,12 +22,5 @@ export function registerSkillRoutes(app: FastifyInstance): void {
     const { id } = resourceIdParamsSchema.parse(request.params);
     app.services.skills.delete(id);
     return reply.status(204).send();
-  });
-
-  app.get('/api/skills-starter', () => app.services.starterSkills.list());
-
-  app.post('/api/skills-starter/install', async (request, reply) => {
-    const { starterIds } = installStarterSkillsSchema.parse(request.body);
-    return reply.status(201).send(app.services.starterSkills.install(starterIds));
   });
 }

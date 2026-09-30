@@ -16,8 +16,7 @@ import {
 test.use({ viewport: { width: 390, height: 844 } });
 
 // The provider setting is global and other journeys assume what they found
-// at their start (organization.spec.ts pastes sources with none configured),
-// so this journey puts it back when it ends.
+// at their start, so this journey puts it back when it ends.
 let previousProvider: unknown = null;
 
 test.beforeEach(async ({ request }) => {

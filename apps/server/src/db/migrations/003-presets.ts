@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import type { PortablePreset } from '@worldbookllm/shared';
 import type Database from 'better-sqlite3';
 
-const GROUNDED_DEVELOPMENT: PortablePreset = {
+// The seeded preset's shape at schema v3. Presets were retired by ADR 0017;
+// this migration still has to build databases from scratch.
+const GROUNDED_DEVELOPMENT = {
   schemaVersion: 1,
   name: 'Grounded development',
   generation: {

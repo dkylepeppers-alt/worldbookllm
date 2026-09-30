@@ -3,10 +3,10 @@ import matter from 'gray-matter';
 
 import type { BookFile, BookFileKind, BookSearchResult } from '@worldbookllm/shared';
 
-import { toFtsMatchQuery } from '../services/source-search.js';
 import type { BookFileStore } from './book-files.js';
 import { sha256 } from './book-files.js';
 import { classifyBookPath } from './book-paths.js';
+import { toFtsMatchQuery } from './fts-query.js';
 
 interface BookFileRow {
   book: string;

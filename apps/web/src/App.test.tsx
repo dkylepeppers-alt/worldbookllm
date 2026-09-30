@@ -21,7 +21,7 @@ describe('application routes', () => {
     renderRoute('/settings');
 
     expect(screen.getByRole('banner')).toBeDefined();
-    expect(screen.getByRole('link', { name: 'worldbookllm' }).getAttribute('href')).toBe('/');
+    expect(screen.getByRole('link', { name: 'worldbookllm' }).getAttribute('href')).toBe('/books');
     expect(await screen.findByRole('heading', { name: 'Provider settings' })).toBeDefined();
     expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('href')).toBe('/settings');
     expect(getComputedStyle(document.documentElement).getPropertyValue('--ink').trim()).toBe(
@@ -33,23 +33,22 @@ describe('application routes', () => {
     renderRoute('/missing-map');
 
     expect(screen.getByRole('heading', { name: 'Page not found' })).toBeDefined();
-    expect(screen.getByRole('link', { name: 'Return to notebooks' }).getAttribute('href')).toBe(
-      '/',
+    expect(screen.getByRole('link', { name: 'Return to books' }).getAttribute('href')).toBe(
+      '/books',
     );
   });
 
-  it('exposes the preset studio as a top-level route', async () => {
-    renderRoute('/presets');
+  it('opens on the book library', async () => {
+    renderRoute('/');
 
-    expect(screen.getByRole('link', { name: 'Presets' }).getAttribute('href')).toBe('/presets');
-    expect(await screen.findByRole('heading', { name: 'Preset studio' })).toBeDefined();
+    expect(await screen.findByRole('heading', { name: 'Books', level: 1 })).toBeDefined();
+    expect(screen.queryByRole('link', { name: 'Presets' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Notebooks' })).toBeNull();
   });
 
-  it('renders the normative preset schema Markdown at its offline route', () => {
-    renderRoute('/preset-schema');
+  it('no longer serves the retired notebook and preset routes', () => {
+    renderRoute('/presets');
 
-    expect(screen.getByRole('heading', { name: 'Preset schema version 1' })).toBeDefined();
-    expect(screen.getByText(/A preset must contain exactly one Sources module/)).toBeDefined();
-    expect(screen.getByText(/Unknown fields are rejected/)).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeDefined();
   });
 });

@@ -1,6 +1,6 @@
 # ADR 0009 — Native global presets and immutable exchange snapshots
 
-**Status:** accepted · 2026-07-15
+**Status:** superseded by ADR 0017 · 2026-07-15 · presets, prompt modules, and exchange snapshots are removed; agent generation settings replace them
 
 ## Context
 

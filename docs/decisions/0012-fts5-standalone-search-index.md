@@ -1,6 +1,6 @@
 # ADR 0012 — FTS5 standalone search index synchronized by services
 
-**Status:** accepted · 2026-07-17
+**Status:** accepted · the standalone-table pattern stands for the book index (ADR 0014); the `source_search` table itself was retired with notebooks by ADR 0017
 
 ## Context
 
