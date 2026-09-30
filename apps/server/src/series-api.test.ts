@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
+import { ConflictError } from './errors.js';
 
 let app: FastifyInstance;
 let dataDir: string;
@@ -134,5 +135,62 @@ describe('series (ADR 0018)', () => {
       payload: { title: 'Ebb' },
     });
     expect(notSeries.statusCode).toBe(404);
+  });
+
+  it('only links a new book to a book of the series, never to its bible', async () => {
+    await post('/api/series', { title: 'Tides' });
+    const bible = await app.inject({
+      method: 'POST',
+      url: '/api/series/tides/books',
+      payload: { title: 'Ebb', follows: 'tides' },
+    });
+    expect(bible.statusCode).toBe(409);
+  });
+
+  it('refuses to link a new book to one whose agent turn is running', async () => {
+    await post('/api/series', { title: 'Tides' });
+    await post('/api/series/tides/books', { title: 'Low Water' });
+    app.services.books.attachChatLifecycle({
+      assertIdle: (book, action) => {
+        if (book === 'low-water')
+          throw new ConflictError('generation_in_progress', `busy: ${action}`);
+      },
+      removeForBook: () => undefined,
+    });
+    const refused = await app.inject({
+      method: 'POST',
+      url: '/api/series/tides/books',
+      payload: { title: 'High Water', follows: 'low-water' },
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(existsSync(join(dataDir, 'series/tides/high-water'))).toBe(false);
+    expect(story('series/tides/low-water')).not.toContain('high-water');
+  });
+
+  it('leaves no new series behind when the move is refused', async () => {
+    await post('/api/series', { title: 'Tides' });
+    await post('/api/series/tides/books', { title: 'Low Water' });
+    const refused = await app.inject({
+      method: 'POST',
+      url: '/api/books/low-water/series',
+      payload: { newSeriesTitle: 'Another' },
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(existsSync(join(dataDir, 'series/another'))).toBe(false);
+    const books = (await app.inject({ method: 'GET', url: '/api/books' })).json<BookSummary[]>();
+    expect(books.map((book) => book.slug).sort()).toEqual(['low-water', 'tides']);
+  });
+
+  it('keeps series books and bibles out of the trash until removal is series-aware', async () => {
+    await post('/api/series', { title: 'Tides' });
+    await post('/api/series/tides/books', { title: 'Low Water' });
+    for (const slug of ['tides', 'low-water']) {
+      const trashed = await app.inject({ method: 'DELETE', url: `/api/books/${slug}` });
+      expect(trashed.statusCode).toBe(409);
+      expect(trashed.json<{ error: string }>().error).toBe('in_series');
+    }
+    const standalone = await post<BookSummary>('/api/books', { title: 'Harbor' });
+    const trashed = await app.inject({ method: 'DELETE', url: `/api/books/${standalone.slug}` });
+    expect(trashed.statusCode).toBe(204);
   });
 });

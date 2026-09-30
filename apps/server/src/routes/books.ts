@@ -83,11 +83,9 @@ export function registerBookRoutes(app: FastifyInstance): void {
   app.post('/api/books/:book/series', async (request) => {
     const { book } = bookParamsSchema.parse(request.params);
     const input = moveBookToSeriesSchema.parse(request.body);
-    const seriesId =
-      'seriesId' in input
-        ? input.seriesId
-        : (await books().createSeries({ title: input.newSeriesTitle })).slug;
-    return books().moveIntoSeries(book, seriesId);
+    return 'seriesId' in input
+      ? books().moveIntoSeries(book, input.seriesId)
+      : books().moveIntoNewSeries(book, input.newSeriesTitle);
   });
 
   app.delete('/api/books/:book', async (request, reply) => {

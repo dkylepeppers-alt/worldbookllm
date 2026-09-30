@@ -18,7 +18,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { bookSlugSchema } from '@worldbookllm/shared';
 
-import { NotFoundError } from '../errors.js';
+import { ConflictError, NotFoundError } from '../errors.js';
 import { confine, listMarkdownFiles } from './book-paths.js';
 
 export function sha256(content: string | Buffer): string {
@@ -163,6 +163,43 @@ export class BookFileStore {
   /** The absolute root of an existing book. */
   root(slug: string): string {
     return this.locate(slug).root;
+  }
+
+  /** Makes the folder for a new series; `story init` then creates its bible inside. */
+  createSeriesFolder(seriesId: string): string {
+    const folder = confine(this.seriesDir, bookSlugSchema.parse(seriesId));
+    mkdirSync(folder);
+    return folder;
+  }
+
+  /** The folder of an existing series, which new books are created inside. */
+  seriesFolder(seriesId: string): string {
+    const bible = this.locate(seriesId);
+    if (bible.kind !== 'series-bible') throw new NotFoundError(`Series ${seriesId} was not found`);
+    return dirname(bible.root);
+  }
+
+  /** Deletes a series folder that a failed operation just created. */
+  removeSeriesFolder(seriesId: string): void {
+    rmSync(confine(this.seriesDir, bookSlugSchema.parse(seriesId)), {
+      recursive: true,
+      force: true,
+    });
+    this.rescan();
+  }
+
+  /** Moves a standalone book's folder into a series folder, keeping its slug. */
+  moveIntoSeries(slug: string, seriesId: string): void {
+    const location = this.locate(slug);
+    if (location.kind !== 'book' || location.seriesId !== null) {
+      throw new ConflictError('already_in_series', `${slug} is already part of a series.`);
+    }
+    const target = join(this.seriesFolder(seriesId), slug);
+    if (existsSync(target)) {
+      throw new ConflictError('slug_taken', `${seriesId} already has a folder named ${slug}.`);
+    }
+    renameSync(location.root, target);
+    this.rescan();
   }
 
   listFiles(slug: string): BookFileStat[] {
