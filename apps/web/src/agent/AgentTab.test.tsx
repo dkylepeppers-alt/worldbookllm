@@ -1,4 +1,5 @@
 import type {
+  AgentChangeset,
   AgentChat,
   AgentChatDetail,
   AgentMessage,
@@ -7,6 +8,7 @@ import type {
   BookTree,
   Checkpoint,
   CheckpointDetail,
+  CustomAgent,
   SkillMetadata,
 } from '@worldbookllm/shared';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -52,6 +54,8 @@ const chat: AgentChat = {
   id: CHAT_ID,
   book: book.slug,
   title: 'Give Mara a scar',
+  agentId: null,
+  reviewMode: null,
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -87,6 +91,7 @@ function userMessage(seq: number, content: string): AgentMessage {
     content,
     reasoning: null,
     status: 'complete',
+    note: null,
     steps: [],
     checkpointId: null,
     createdAt: NOW,
@@ -103,6 +108,7 @@ function assistantMessage(seq: number, overrides: Partial<AgentMessage> = {}): A
     content: 'Added the scar.',
     reasoning: null,
     status: 'complete',
+    note: null,
     steps: [
       {
         index: 0,
@@ -186,7 +192,7 @@ describe('agent tab', () => {
   it('starts a chat, streams tool steps, and ends with a change summary', async () => {
     const stream = createScriptedAgentStream();
     const createAgentChat = vi.fn(() => Promise.resolve(chat));
-    let saved: AgentChatDetail = { ...chat, messages: [] };
+    let saved: AgentChatDetail = { ...chat, changesets: [], messages: [] };
     let history: Checkpoint[] = [];
     const getBookTree = vi.fn(() => Promise.resolve(tree));
     renderAt('/books/the-salt-road/agent', {
@@ -199,7 +205,7 @@ describe('agent tab', () => {
 
     await userEvent.type(await screen.findByLabelText('New chat'), 'Give Mara a scar');
     await userEvent.click(screen.getByRole('button', { name: 'Start chat' }));
-    expect(createAgentChat).toHaveBeenCalledWith('the-salt-road');
+    expect(createAgentChat).toHaveBeenCalledWith('the-salt-road', {});
     await waitFor(() =>
       expect(screen.getByTestId('location').textContent).toBe(
         `/books/the-salt-road/agent/${CHAT_ID}`,
@@ -244,6 +250,7 @@ describe('agent tab', () => {
 
     saved = {
       ...chat,
+      changesets: [],
       messages: [userMessage(0, 'Give Mara a scar'), assistantMessage(1)],
     };
     const treeLoads = getBookTree.mock.calls.length;
@@ -264,6 +271,7 @@ describe('agent tab', () => {
       getAgentChat: () =>
         Promise.resolve({
           ...chat,
+          changesets: [],
           messages: [userMessage(0, 'Give Mara a scar'), assistantMessage(1)],
         }),
       listCheckpoints: () => Promise.resolve(history),
@@ -295,6 +303,7 @@ describe('agent tab', () => {
       getAgentChat: () =>
         Promise.resolve({
           ...chat,
+          changesets: [],
           messages: [userMessage(0, 'Give Mara a scar'), assistantMessage(1)],
         }),
     });
@@ -307,7 +316,7 @@ describe('agent tab', () => {
 
   it('stops a turn and shows it as interrupted once the server records it', async () => {
     const stream = createScriptedAgentStream();
-    let saved: AgentChatDetail = { ...chat, messages: [] };
+    let saved: AgentChatDetail = { ...chat, changesets: [], messages: [] };
     renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
       getAgentChat: () => Promise.resolve(saved),
       streamAgentMessage: stream.streamAgentMessage,
@@ -321,6 +330,7 @@ describe('agent tab', () => {
 
     saved = {
       ...chat,
+      changesets: [],
       messages: [
         userMessage(0, 'Draft chapter one'),
         assistantMessage(1, {
@@ -341,7 +351,7 @@ describe('agent tab', () => {
   it('points at provider settings and keeps the draft when the server refuses the turn', async () => {
     const stream = createScriptedAgentStream();
     renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
-      getAgentChat: () => Promise.resolve({ ...chat, messages: [] }),
+      getAgentChat: () => Promise.resolve({ ...chat, changesets: [], messages: [] }),
       streamAgentMessage: stream.streamAgentMessage,
     });
     const input = await screen.findByLabelText('Message');
@@ -399,7 +409,7 @@ describe('agent tab', () => {
     const stream = createScriptedAgentStream();
     renderAt('/books/the-salt-road/agent', {
       createAgentChat: () => Promise.resolve(chat),
-      getAgentChat: () => Promise.resolve({ ...chat, messages: [] }),
+      getAgentChat: () => Promise.resolve({ ...chat, changesets: [], messages: [] }),
       streamAgentMessage: stream.streamAgentMessage,
     });
     await userEvent.type(await screen.findByLabelText('New chat'), 'Plan the book');
@@ -415,7 +425,8 @@ describe('agent tab', () => {
 
   it('refuses a chat opened under another book', async () => {
     renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
-      getAgentChat: () => Promise.resolve({ ...chat, book: 'other-book', messages: [] }),
+      getAgentChat: () =>
+        Promise.resolve({ ...chat, changesets: [], book: 'other-book', messages: [] }),
     });
     expect(
       await screen.findByRole('heading', { name: 'This chat belongs to another book' }),
@@ -431,6 +442,7 @@ describe('agent tab', () => {
       getAgentChat: () =>
         Promise.resolve({
           ...chat,
+          changesets: [],
           messages: [userMessage(0, 'Give Mara a scar'), assistantMessage(1)],
         }),
       listCheckpoints: () => Promise.resolve([]),
@@ -439,5 +451,182 @@ describe('agent tab', () => {
     const summary = await screen.findByRole('region', { name: 'Changes this turn' });
     expect(getCheckpoint).toHaveBeenCalledWith('the-salt-road', CHECKPOINT_ID, expect.anything());
     expect(within(summary).getByText('characters/mara-quill.md')).toBeDefined();
+  });
+
+  describe('review mode', () => {
+    const CHANGESET_ID = '7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+    const changeset: AgentChangeset = {
+      id: CHANGESET_ID,
+      chatId: CHAT_ID,
+      messageId: assistantMessage(1).id,
+      book: book.slug,
+      createdAt: LATER,
+      files: [
+        { path: 'characters/mara-quill.md', change: 'modified', status: 'pending' },
+        { path: 'research/tides.md', change: 'created', status: 'pending' },
+      ],
+    };
+    const proposed = {
+      ...chat,
+      reviewMode: true,
+      changesets: [changeset],
+      messages: [
+        userMessage(0, 'Give Mara a scar'),
+        assistantMessage(1, { checkpointId: null, content: 'I propose a scar.' }),
+      ],
+    };
+
+    it('applies and skips proposed files, and opens their diffs', async () => {
+      const resolveAgentChangeset = vi.fn<ApiClient['resolveAgentChangeset']>(
+        (_id, action, paths) =>
+          Promise.resolve({
+            changeset: {
+              ...changeset,
+              files: changeset.files.map((file) =>
+                paths === undefined || paths.includes(file.path)
+                  ? { ...file, status: action === 'apply' ? 'applied' : 'skipped' }
+                  : file,
+              ),
+            },
+            checkpoint: action === 'apply' ? checkpoint : null,
+          }),
+      );
+      const getBookTree = vi.fn(() => Promise.resolve(tree));
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+        getBookTree,
+        getAgentChat: () => Promise.resolve(proposed),
+        getAgentChangeset: () =>
+          Promise.resolve({
+            ...changeset,
+            files: [
+              {
+                path: 'characters/mara-quill.md',
+                change: 'modified',
+                status: 'pending',
+                before: '# Mara Quill\n',
+                after: '# Mara Quill\n\nA scar.\n',
+              },
+              {
+                path: 'research/tides.md',
+                change: 'created',
+                status: 'pending',
+                before: null,
+                after: '# Tides\n',
+              },
+            ],
+          }),
+        resolveAgentChangeset,
+      });
+
+      const card = await screen.findByRole('region', { name: 'Proposed changes' });
+      expect(within(card).getByText('Proposed 2 changes · 2 awaiting review')).toBeDefined();
+      expect(within(card).getByRole('button', { name: 'Apply all' })).toBeDefined();
+
+      await userEvent.click(within(card).getByRole('button', { name: 'new research/tides.md' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(
+        await within(dialog).findByRole('list', { name: 'Changes to research/tides.md' }),
+      ).toBeDefined();
+      // Not in the book yet, so there is nothing to open.
+      expect(within(dialog).queryByRole('link', { name: 'Open file' })).toBeNull();
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+
+      const treeLoads = getBookTree.mock.calls.length;
+      await userEvent.click(
+        within(card).getByRole('button', { name: 'Apply characters/mara-quill.md' }),
+      );
+      expect(resolveAgentChangeset).toHaveBeenCalledWith(CHANGESET_ID, 'apply', [
+        'characters/mara-quill.md',
+      ]);
+      expect(await within(card).findByText('applied')).toBeDefined();
+      await waitFor(() => expect(getBookTree.mock.calls.length).toBeGreaterThan(treeLoads));
+
+      await userEvent.click(within(card).getByRole('button', { name: 'Skip research/tides.md' }));
+      expect(resolveAgentChangeset).toHaveBeenLastCalledWith(CHANGESET_ID, 'skip', [
+        'research/tides.md',
+      ]);
+    });
+
+    it('shows a running turn’s proposal without actions until it ends', async () => {
+      const stream = createScriptedAgentStream();
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+        getAgentChat: () => Promise.resolve({ ...chat, changesets: [], messages: [] }),
+        streamAgentMessage: stream.streamAgentMessage,
+      });
+      await userEvent.type(await screen.findByLabelText('Message'), 'Propose a scar');
+      await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+      act(() => {
+        stream.emit({ type: 'step', index: 0 });
+        stream.emit({ type: 'changeset', changeset });
+      });
+      const card = screen.getByRole('region', { name: 'Proposed changes' });
+      expect(within(card).queryByRole('button', { name: /^Apply/u })).toBeNull();
+      expect(within(card).getAllByText('awaiting review')).toHaveLength(2);
+    });
+
+    it('switches the chat’s agent and review mode', async () => {
+      const agent: CustomAgent = {
+        id: '22222222-2222-4222-8222-222222222222',
+        name: 'Continuity editor',
+        description: '',
+        instructions: 'Check facts.',
+        skills: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+      };
+      const updateAgentChat = vi.fn<ApiClient['updateAgentChat']>((_id, input) =>
+        Promise.resolve({ ...chat, ...input }),
+      );
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+        getAgentChat: () => Promise.resolve({ ...chat, changesets: [], messages: [] }),
+        listCustomAgents: () => Promise.resolve([agent]),
+        updateAgentChat,
+      });
+      const toggle = await screen.findByRole('checkbox', {
+        name: /Review changes before they apply/u,
+      });
+      await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+      expect((toggle as HTMLInputElement).checked).toBe(false);
+      expect(screen.getByText('· from Settings')).toBeDefined();
+      await userEvent.click(toggle);
+      expect(updateAgentChat).toHaveBeenCalledWith(CHAT_ID, { reviewMode: true });
+      await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
+
+      const select = screen.getByRole('combobox', { name: 'Agent' });
+      await waitFor(() => expect((select as HTMLSelectElement).disabled).toBe(false));
+      await userEvent.selectOptions(select, 'Continuity editor');
+      expect(updateAgentChat).toHaveBeenLastCalledWith(CHAT_ID, { agentId: agent.id });
+    });
+
+    it('starts a chat with a chosen agent and review mode', async () => {
+      const agent: CustomAgent = {
+        id: '22222222-2222-4222-8222-222222222222',
+        name: 'Line editor',
+        description: '',
+        instructions: '',
+        skills: [],
+        createdAt: NOW,
+        updatedAt: NOW,
+      };
+      const createAgentChat = vi.fn<ApiClient['createAgentChat']>(() => Promise.resolve(chat));
+      renderAt('/books/the-salt-road/agent', {
+        listCustomAgents: () => Promise.resolve([agent]),
+        createAgentChat,
+        getAgentChat: () => new Promise(() => undefined),
+        streamAgentMessage: () => new Promise(() => undefined),
+      });
+      const select = await screen.findByRole('combobox', { name: 'Agent' });
+      await screen.findByRole('option', { name: 'Line editor' });
+      await userEvent.selectOptions(select, 'Line editor');
+      const toggle = screen.getByRole('checkbox', { name: 'Review changes before they apply' });
+      await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+      await userEvent.click(toggle);
+      await userEvent.type(screen.getByLabelText('New chat'), 'Tighten chapter one');
+      await userEvent.click(screen.getByRole('button', { name: 'Start chat' }));
+      expect(createAgentChat).toHaveBeenCalledWith('the-salt-road', {
+        agentId: agent.id,
+        reviewMode: true,
+      });
+    });
   });
 });

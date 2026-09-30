@@ -10,6 +10,7 @@ import {
   ReadOnlyBookPathError,
   StoryCommandError,
   UnsafePathError,
+  ValidationError,
 } from '../errors.js';
 
 export function installErrorHandler(app: FastifyInstance): void {
@@ -40,6 +41,10 @@ export function installErrorHandler(app: FastifyInstance): void {
 
     if (error instanceof NotFoundError) {
       return reply.status(404).send({ error: 'not_found', message: error.message });
+    }
+
+    if (error instanceof ValidationError) {
+      return reply.status(400).send({ error: 'invalid_request', message: error.message });
     }
 
     if (error instanceof InvalidImportError) {

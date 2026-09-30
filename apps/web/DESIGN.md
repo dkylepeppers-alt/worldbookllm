@@ -204,6 +204,12 @@ The book workspace's Write / Bible / Agent / Health / Project tabs are a fixed b
 - **Tool chips:** each tool call is a collapsed `<details>` row with a line border: monospace tool name, the file, query, or story command it acted on in muted text, and an uppercase status (running in blueprint, done in lichen, failed in vermilion with a vermilion border). Expanding shows the arguments and result as `pre` blocks on paper.
 - **Change summary:** a stamped card (quiet stamp shadow, ink border) after the turn's text: a "Changed N files" coordinate label, one row per file with its change kind (new / edited / deleted) as a monospace label and the path as a blueprint button that opens the diff, then Undo turn. An undone summary drops the shadow, turns the border to line grey, and strikes the paths through.
 - **Diff dialog:** a dialog sheet with a monospace line list; added lines get a faint lichen tint and a `+` mark, removed lines a faint vermilion tint and a `−` mark (screen readers hear "Added"/"Removed"), and unchanged runs fold into an uppercase "N unchanged lines" label.
+- **Proposed changes (review mode):** the same stamped card, labelled "Proposed N changes · M awaiting review". Each row keeps the change-kind and path button and adds a secondary **Apply** button and an underlined **Skip** text button; resolved rows show "applied" in lichen or strike a skipped path through. Apply all (primary) and Skip all appear when more than one file is pending. While the turn still runs the card shows its files without actions.
+- **Chat settings row:** under the chat title, an Agent select and a "Review changes before they apply" checkbox, a plain-text toggle (`.agent-review-toggle`: a 44px row with sentence-case label, not a field tag). A "· from Settings" coordinate label marks a chat following the global default.
+
+### Agents Page
+
+`/agents` reuses the preset studio layout: the Saved library list beside an editor card with Name, Description, Instructions, and a Skills fieldset (every installed skill, or a checklist of chosen ones).
 
 ## 6. Do's and Don'ts
 

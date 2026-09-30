@@ -6,6 +6,8 @@ import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 
 import { AgentService } from './agent/agent-service.js';
+import { AgentChangesetService } from './agent/changesets.js';
+import { CustomAgentService } from './agent/custom-agents.js';
 import { StorySkillsInstaller } from './agent/story-skills-installer.js';
 import { AgentToolRegistry } from './agent/tools.js';
 import { openDatabase } from './db/database.js';
@@ -62,6 +64,8 @@ function isSpaNavigation(method: string, url: string): boolean {
 export interface AppServices {
   books: BookService;
   agent: AgentService;
+  customAgents: CustomAgentService;
+  changesets: AgentChangesetService;
   storySkills: StorySkillsInstaller;
   notebookMigration: NotebookMigrationService;
   notebooks: NotebookService;
@@ -142,13 +146,18 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     skills,
   );
   const skillsRoot = join(resolveDataDir(options.dataDir), 'skills');
+  const customAgents = new CustomAgentService(db, skills);
+  const changesets = new AgentChangesetService(db, books);
   const agent = new AgentService(
     db,
     books,
     skills,
     presets,
     providers,
-    new AgentToolRegistry(books, skills, skillsRoot),
+    new AgentToolRegistry(skills, skillsRoot),
+    changesets,
+    customAgents,
+    join(resolveDataDir(options.dataDir), 'staging'),
     (error) => app.log.error(error),
   );
   const storySkills = new StorySkillsInstaller(skills, skillsRoot);
@@ -167,6 +176,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.decorate('services', {
     books,
     agent,
+    customAgents,
+    changesets,
     storySkills,
     notebookMigration: new NotebookMigrationService(db, notebooks, sources, books),
     notebooks,

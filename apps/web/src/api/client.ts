@@ -1,6 +1,16 @@
 import {
+  agentChangesetDetailSchema,
+  agentChangesetResolutionSchema,
   agentChatDetailSchema,
   agentChatSchema,
+  customAgentSchema,
+  type AgentChangesetDetail,
+  type AgentChangesetResolution,
+  type CreateAgentChatInput,
+  type CreateCustomAgentInput,
+  type CustomAgent,
+  type PatchAgentChatInput,
+  type PatchCustomAgentInput,
   storySkillsInstallResultSchema,
   type AgentChat,
   type AgentChatDetail,
@@ -158,8 +168,28 @@ export interface ApiClient {
   getCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<CheckpointDetail>;
   undoCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<Checkpoint>;
   listAgentChats(slug: string, signal?: AbortSignal): Promise<AgentChat[]>;
-  createAgentChat(slug: string, signal?: AbortSignal): Promise<AgentChat>;
+  createAgentChat(
+    slug: string,
+    input?: CreateAgentChatInput,
+    signal?: AbortSignal,
+  ): Promise<AgentChat>;
+  updateAgentChat(id: string, input: PatchAgentChatInput, signal?: AbortSignal): Promise<AgentChat>;
   getAgentChat(id: string, signal?: AbortSignal): Promise<AgentChatDetail>;
+  getAgentChangeset(id: string, signal?: AbortSignal): Promise<AgentChangesetDetail>;
+  resolveAgentChangeset(
+    id: string,
+    action: 'apply' | 'skip',
+    paths?: string[],
+    signal?: AbortSignal,
+  ): Promise<AgentChangesetResolution>;
+  listCustomAgents(signal?: AbortSignal): Promise<CustomAgent[]>;
+  createCustomAgent(input: CreateCustomAgentInput, signal?: AbortSignal): Promise<CustomAgent>;
+  updateCustomAgent(
+    id: string,
+    input: PatchCustomAgentInput,
+    signal?: AbortSignal,
+  ): Promise<CustomAgent>;
+  deleteCustomAgent(id: string, signal?: AbortSignal): Promise<void>;
   deleteAgentChat(id: string, signal?: AbortSignal): Promise<void>;
   streamAgentMessage(
     chatId: string,
@@ -262,6 +292,7 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
   const bookSearchResultListSchema = z.array(bookSearchResultSchema);
   const checkpointListSchema = z.array(checkpointSchema);
   const agentChatListSchema = z.array(agentChatSchema);
+  const customAgentListSchema = z.array(customAgentSchema);
   const bookFileWriteSchema = z.object({
     file: bookFileSchema,
     checkpoint: checkpointSchema.nullable(),
@@ -390,13 +421,44 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       }),
     listAgentChats: (slug, signal) =>
       request(`${book(slug)}/agent-chats`, { schema: agentChatListSchema, signal }),
-    createAgentChat: (slug, signal) =>
+    createAgentChat: (slug, input = {}, signal) =>
       request(`${book(slug)}/agent-chats`, {
         method: 'POST',
-        body: {},
+        body: input,
         schema: agentChatSchema,
         signal,
       }),
+    updateAgentChat: (id, input, signal) =>
+      request(`/api/agent-chats/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: input,
+        schema: agentChatSchema,
+        signal,
+      }),
+    getAgentChangeset: (id, signal) =>
+      request(`/api/agent-changesets/${encodeURIComponent(id)}`, {
+        schema: agentChangesetDetailSchema,
+        signal,
+      }),
+    resolveAgentChangeset: (id, action, paths, signal) =>
+      request(`/api/agent-changesets/${encodeURIComponent(id)}/${action}`, {
+        method: 'POST',
+        body: paths === undefined ? {} : { paths },
+        schema: agentChangesetResolutionSchema,
+        signal,
+      }),
+    listCustomAgents: (signal) => request('/api/agents', { schema: customAgentListSchema, signal }),
+    createCustomAgent: (input, signal) =>
+      request('/api/agents', { method: 'POST', body: input, schema: customAgentSchema, signal }),
+    updateCustomAgent: (id, input, signal) =>
+      request(`/api/agents/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: input,
+        schema: customAgentSchema,
+        signal,
+      }),
+    deleteCustomAgent: (id, signal) =>
+      request(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE', signal }),
     getAgentChat: (id, signal) =>
       request(`/api/agent-chats/${encodeURIComponent(id)}`, {
         schema: agentChatDetailSchema,

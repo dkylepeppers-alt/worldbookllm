@@ -108,6 +108,30 @@ describe('Provider settings', () => {
     expect(getSecrets).toHaveBeenCalledTimes(2);
   });
 
+  it('turns the agent review-mode default on', async () => {
+    let reviewing = false;
+    const settings = () => ({
+      defaultPresetId: '10000000-0000-4000-8000-000000000001',
+      providerConfig: null,
+      agentReviewMode: reviewing,
+    });
+    const updateAppSettings = vi.fn((input: { agentReviewMode?: boolean }) => {
+      reviewing = input.agentReviewMode ?? reviewing;
+      return Promise.resolve(settings());
+    });
+    renderSettings({ getAppSettings: () => Promise.resolve(settings()), updateAppSettings });
+    const toggle = await screen.findByRole('checkbox', {
+      name: "Review the agent's changes before they apply",
+    });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    await userEvent.click(toggle);
+    expect(updateAppSettings).toHaveBeenCalledWith({ agentReviewMode: true });
+    await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
+    expect(screen.getByRole('link', { name: 'Custom agents' }).getAttribute('href')).toBe(
+      '/agents',
+    );
+  });
+
   it('configures, updates, and clears the global provider', async () => {
     const updateAppSettings = vi.fn().mockResolvedValue({
       defaultPresetId: '10000000-0000-4000-8000-000000000001',

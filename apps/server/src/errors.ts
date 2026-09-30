@@ -38,6 +38,11 @@ export class ConflictError extends Error {
   }
 }
 
+/** A request that is well-formed but names something that cannot be used, such as a missing skill. */
+export class ValidationError extends Error {
+  override readonly name = 'ValidationError';
+}
+
 export class InvalidImportError extends Error {
   override readonly name = 'InvalidImportError';
 }

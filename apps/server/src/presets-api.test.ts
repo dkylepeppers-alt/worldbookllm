@@ -128,7 +128,11 @@ describe('preset API', () => {
   it('reads and updates app settings with a strict, partial body', async () => {
     const initial = await app.inject({ method: 'GET', url: '/api/app-settings' });
     expect(initial.statusCode).toBe(200);
-    expect(initial.json()).toEqual({ defaultPresetId: expect.any(String), providerConfig: null });
+    expect(initial.json()).toEqual({
+      defaultPresetId: expect.any(String),
+      providerConfig: null,
+      agentReviewMode: false,
+    });
 
     const created = await app.inject({ method: 'POST', url: '/api/presets', payload: newPreset });
     const preset = created.json<Preset>();
@@ -138,7 +142,11 @@ describe('preset API', () => {
       payload: { defaultPresetId: preset.id },
     });
     expect(update.statusCode).toBe(200);
-    expect(update.json()).toEqual({ defaultPresetId: preset.id, providerConfig: null });
+    expect(update.json()).toEqual({
+      defaultPresetId: preset.id,
+      providerConfig: null,
+      agentReviewMode: false,
+    });
 
     const providerUpdate = await app.inject({
       method: 'PATCH',
@@ -149,6 +157,17 @@ describe('preset API', () => {
     expect(providerUpdate.json()).toEqual({
       defaultPresetId: preset.id,
       providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' },
+      agentReviewMode: false,
+    });
+
+    const reviewUpdate = await app.inject({
+      method: 'PATCH',
+      url: '/api/app-settings',
+      payload: { agentReviewMode: true },
+    });
+    expect(reviewUpdate.json()).toMatchObject({
+      providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' },
+      agentReviewMode: true,
     });
 
     const empty = await app.inject({ method: 'PATCH', url: '/api/app-settings', payload: {} });
@@ -167,6 +186,7 @@ describe('preset API', () => {
     expect((await app.inject({ method: 'GET', url: '/api/app-settings' })).json()).toEqual({
       defaultPresetId: preset.id,
       providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' },
+      agentReviewMode: true,
     });
   });
 

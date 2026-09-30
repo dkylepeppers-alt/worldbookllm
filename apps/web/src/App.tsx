@@ -6,6 +6,7 @@ import './styles.css';
 
 import { AgentChatRoute } from './agent/AgentChatPage.js';
 import { AgentPage } from './agent/AgentPage.js';
+import { AgentsPage } from './agents/AgentsPage.js';
 import { ApiProvider } from './api/ApiContext.js';
 import { createApiClient, type ApiClient } from './api/client.js';
 import { BiblePage } from './books/BiblePage.js';
@@ -54,6 +55,7 @@ export function AppRoutes() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="presets" element={<PresetsPage />} />
         <Route path="skills" element={<SkillsPage />} />
+        <Route path="agents" element={<AgentsPage />} />
         <Route path="preset-schema" element={<PresetSchemaPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

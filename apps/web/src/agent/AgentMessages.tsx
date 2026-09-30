@@ -1,4 +1,4 @@
-import type { AgentMessage, Checkpoint } from '@worldbookllm/shared';
+import type { AgentChangeset, AgentMessage, Checkpoint } from '@worldbookllm/shared';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -12,6 +12,7 @@ import {
   type ToolCallView,
 } from './agent-turns.js';
 import { ChangeSummary } from './ChangeSummary.js';
+import { ProposedChanges } from './ProposedChanges.js';
 
 interface AgentMessagesProps {
   messages: AgentMessage[];
@@ -21,9 +22,15 @@ interface AgentMessagesProps {
   /** The newest checkpoint not yet undone: the only one undo can reverse. */
   latestLiveId: string | null;
   undoing: boolean;
+  /** Review mode's proposed changes, keyed by the assistant message that made them. */
+  changesets: ReadonlyMap<string, AgentChangeset>;
+  /** The changeset file being resolved (`<changeset id>:<path or *>`), while its request runs. */
+  resolving: string | null;
   onInspect: (message: AgentMessage) => void;
   onOpenDiff: (checkpoint: Checkpoint, path: string) => void;
   onUndo: (checkpoint: Checkpoint) => void;
+  onOpenProposal: (changeset: AgentChangeset, path: string) => void;
+  onResolve: (changeset: AgentChangeset, action: 'apply' | 'skip', path?: string) => void;
 }
 
 function Markdown({ children }: { children: string }) {
@@ -103,7 +110,7 @@ const STATUS_BADGES: Partial<Record<AgentMessage['status'], string>> = {
 /**
  * An agent conversation: each assistant turn shows its text and tool calls
  * step by step, with the tool calls as collapsed chips, and ends with a
- * summary of the files it changed.
+ * summary of the files it changed, or in review mode the changes it proposes.
  */
 export function AgentMessages({
   messages,
@@ -111,9 +118,13 @@ export function AgentMessages({
   checkpoints,
   latestLiveId,
   undoing,
+  changesets,
+  resolving,
   onInspect,
   onOpenDiff,
   onUndo,
+  onOpenProposal,
+  onResolve,
 }: AgentMessagesProps) {
   const ordered = [...messages].sort((left, right) => left.seq - right.seq);
   const summary = (checkpoint: Checkpoint, running = false) => (
@@ -125,6 +136,18 @@ export function AgentMessages({
       onUndo={() => onUndo(checkpoint)}
     />
   );
+  const proposal = (changeset: AgentChangeset, running = false) => {
+    const prefix = `${changeset.id}:`;
+    return (
+      <ProposedChanges
+        changeset={changeset}
+        running={running}
+        busy={resolving?.startsWith(prefix) ? resolving.slice(prefix.length) : null}
+        onOpenDiff={(path) => onOpenProposal(changeset, path)}
+        onResolve={(action, path) => onResolve(changeset, action, path)}
+      />
+    );
+  };
 
   return (
     <ol className="chat-messages agent-messages" aria-label="Messages">
@@ -141,6 +164,7 @@ export function AgentMessages({
         const checkpoint =
           message.checkpointId === null ? undefined : checkpoints.get(message.checkpointId);
         const extra = extraText(message);
+        const changeset = changesets.get(message.id);
         return (
           <li key={message.id} className="chat-message chat-message-assistant">
             <p className="coordinate-label">
@@ -151,6 +175,7 @@ export function AgentMessages({
             <Steps steps={stepsOf(message)} />
             {extra.trim() === '' ? null : <Markdown>{extra}</Markdown>}
             {checkpoint === undefined ? null : summary(checkpoint)}
+            {changeset === undefined ? null : proposal(changeset)}
             {message.steps.length === 0 ? null : (
               <div className="message-actions">
                 <button type="button" onClick={() => onInspect(message)}>
@@ -174,6 +199,7 @@ export function AgentMessages({
             <Reasoning reasoning={pending.reasoning} streaming />
             <Steps steps={pending.steps} />
             {pending.checkpoint === null ? null : summary(pending.checkpoint, true)}
+            {pending.changeset === null ? null : proposal(pending.changeset, true)}
           </li>
         </>
       )}

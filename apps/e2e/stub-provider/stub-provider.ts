@@ -17,6 +17,12 @@ export const STUB_AGENT_CHARACTER = 'Ada Brass';
 export const STUB_AGENT_INTRO = `Adding ${STUB_AGENT_CHARACTER}.`;
 export const STUB_AGENT_REPLY = `${STUB_AGENT_CHARACTER} is in the cast.`;
 
+/** A custom agent's name, read back from its system-prompt role heading. */
+function agentRole(body: ChatCompletionRequest): string | null {
+  const system = body.messages?.find((message) => message.role === 'system')?.content ?? '';
+  return /^## Your role: (.+)$/mu.exec(system)?.[1] ?? null;
+}
+
 // A message containing this marker switches the stream to a slow drip so a
 // test can exercise stop/abort behavior before the stream finishes.
 export const SLOW_MARKER = '[slow]';
@@ -117,8 +123,10 @@ function streamAgentStep(res: ServerResponse, body: ChatCompletionRequest): void
   const messages = body.messages ?? [];
   const lastUser = messages.map((message) => message.role).lastIndexOf('user');
   const toolReplied = messages.slice(lastUser + 1).some((message) => message.role === 'tool');
+  const role = agentRole(body);
+  const reply = role === null ? STUB_AGENT_REPLY : `${STUB_AGENT_REPLY} Speaking as ${role}.`;
   const chunks = toolReplied
-    ? [{ choices: [{ index: 0, delta: { content: STUB_AGENT_REPLY } }] }]
+    ? [{ choices: [{ index: 0, delta: { content: reply } }] }]
     : [
         { choices: [{ index: 0, delta: { content: STUB_AGENT_INTRO } }] },
         {

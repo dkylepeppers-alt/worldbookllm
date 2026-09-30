@@ -43,7 +43,7 @@ export function ChangeSummary({
             <button type="button" onClick={() => onOpenDiff(file.path)}>
               <span className={`change-kind change-${file.change}`}>
                 {CHANGE_LABELS[file.change]}
-              </span>
+              </span>{' '}
               <span className="change-path">{file.path}</span>
             </button>
           </li>

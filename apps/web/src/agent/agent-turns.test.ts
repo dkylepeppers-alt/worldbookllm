@@ -12,6 +12,7 @@ function message(content: string, texts: string[]): AgentMessage {
     content,
     reasoning: null,
     status: 'complete',
+    note: null,
     steps: texts.map((text, index) => ({ index, requestBody: {}, text, toolCalls: [] })),
     checkpointId: null,
     createdAt: '2026-09-30T12:00:00.000Z',

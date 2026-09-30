@@ -149,8 +149,13 @@ describe('PresetService', () => {
     expect(presets.updateSettings({ defaultPresetId: created.id })).toEqual({
       defaultPresetId: created.id,
       providerConfig: null,
+      agentReviewMode: false,
     });
-    expect(presets.getSettings()).toEqual({ defaultPresetId: created.id, providerConfig: null });
+    expect(presets.getSettings()).toEqual({
+      defaultPresetId: created.id,
+      providerConfig: null,
+      agentReviewMode: false,
+    });
     expect(presets.resolve(null)).toEqual(created);
 
     const configured = presets.updateSettings({
@@ -159,6 +164,7 @@ describe('PresetService', () => {
     expect(configured).toEqual({
       defaultPresetId: created.id,
       providerConfig: { source: 'nanogpt', model: 'gpt-4o-mini' },
+      agentReviewMode: false,
     });
     db.close();
   });

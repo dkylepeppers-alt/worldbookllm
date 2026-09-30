@@ -12,6 +12,10 @@ import { migrateToVersion3 } from './migrations/003-presets.js';
 import { migrateToVersion4 } from './migrations/004-message-variants.js';
 import { migrateToVersion5 } from './migrations/005-skills.js';
 import { migrateToVersion6 } from './migrations/006-source-organization.js';
+import { migrateToVersion7 } from './migrations/007-global-provider-settings.js';
+import { migrateToVersion8 } from './migrations/008-books.js';
+import { migrateToVersion9 } from './migrations/009-notebook-migrations.js';
+import { migrateToVersion10 } from './migrations/010-agent-chats.js';
 import { resolveDataDir } from '../env.js';
 
 const tempDirs: string[] = [];
@@ -38,13 +42,16 @@ describe('database startup', () => {
 
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
-    expect(db.pragma('user_version', { simple: true })).toBe(11);
+    expect(db.pragma('user_version', { simple: true })).toBe(12);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .pluck()
       .all();
     expect(tables).toEqual([
+      // Review mode's proposed changes (ADR 0016).
+      'agent_changeset_files',
+      'agent_changesets',
       'agent_chats',
       'agent_messages',
       'app_settings',
@@ -59,6 +66,8 @@ describe('database startup', () => {
       'book_search_docsize',
       'book_search_idx',
       'chats',
+      // Saved custom agents.
+      'custom_agents',
       'messages',
       'notebook_migrations',
       'notebooks',
@@ -157,7 +166,7 @@ describe('database startup', () => {
     openDatabase(dataDir).close();
 
     const reopened = openDatabase(dataDir);
-    expect(reopened.pragma('user_version', { simple: true })).toBe(11);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(12);
     expect(reopened.prepare('SELECT count(*) FROM notebooks').pluck().get()).toBe(0);
     reopened.close();
   });
@@ -166,15 +175,21 @@ describe('database startup', () => {
     const dataDir = makeTempDir();
     const file = join(dataDir, 'worldbookllm.db');
     const legacy = new Database(file);
+    for (const migrate of [
+      migrateToVersion1,
+      migrateToVersion2,
+      migrateToVersion3,
+      migrateToVersion4,
+      migrateToVersion5,
+      migrateToVersion6,
+      migrateToVersion7,
+      migrateToVersion8,
+      migrateToVersion9,
+      migrateToVersion10,
+    ]) {
+      migrate(legacy);
+    }
     legacy.exec(`
-      CREATE TABLE book_checkpoints (
-        id TEXT PRIMARY KEY,
-        book TEXT NOT NULL,
-        label TEXT NOT NULL,
-        actor TEXT NOT NULL CHECK (actor IN ('user', 'agent')),
-        created_at TEXT NOT NULL,
-        undone_at TEXT
-      );
       INSERT INTO book_checkpoints (id, book, label, actor, created_at, undone_at)
       VALUES ('checkpoint', 'harbor', 'Edit notes/page.md', 'user', '2026-09-30T00:00:00.000Z', NULL);
     `);
@@ -182,7 +197,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(11);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(12);
     expect(
       migrated.prepare('SELECT id, pending FROM book_checkpoints WHERE id = ?').get('checkpoint'),
     ).toEqual({ id: 'checkpoint', pending: 0 });
@@ -220,7 +235,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(11);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(12);
     expect(
       migrated
         .prepare('SELECT origin_json, conversion_notes_json FROM sources WHERE id = ?')
@@ -276,7 +291,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(11);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(12);
     expect(migrated.prepare('SELECT id, name FROM notebooks').get()).toEqual({
       id: 'notebook',
       name: 'Atlas',
@@ -336,7 +351,7 @@ describe('database startup', () => {
     legacy.close();
 
     const migrated = openDatabase(dataDir);
-    expect(migrated.pragma('user_version', { simple: true })).toBe(11);
+    expect(migrated.pragma('user_version', { simple: true })).toBe(12);
     // Seeded from the most-recently-updated notebook's configured provider.
     expect(
       migrated.prepare('SELECT provider_config_json FROM app_settings WHERE id = 1').pluck().get(),
@@ -505,13 +520,13 @@ describe('database startup', () => {
     const dataDir = makeTempDir();
     const file = join(dataDir, 'worldbookllm.db');
     const future = new Database(file);
-    future.pragma('user_version = 12');
+    future.pragma('user_version = 13');
     future.close();
 
-    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 12/u);
+    expect(() => openDatabase(dataDir)).toThrow(/newer schema version 13/u);
 
     const unchanged = new Database(file);
-    expect(unchanged.pragma('user_version', { simple: true })).toBe(12);
+    expect(unchanged.pragma('user_version', { simple: true })).toBe(13);
     unchanged.close();
   });
 });
