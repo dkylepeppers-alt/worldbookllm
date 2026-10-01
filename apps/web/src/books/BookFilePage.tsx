@@ -9,6 +9,7 @@ import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
+import { useStoredDraft } from '../drafts.js';
 import { useBook } from './book-context.js';
 import { fileHref, KIND_LABELS } from './book-sections.js';
 import { errorMessage, useLoad } from './useLoad.js';
@@ -51,12 +52,26 @@ interface FileViewProps {
   onChanged: () => void;
 }
 
+/** Unsaved edits to a file, and the version of the file they started from. */
+interface FileDraft {
+  base: string;
+  content: string;
+}
+
 function FileView({ file, onChanged }: FileViewProps) {
   const api = useApi();
   const navigate = useNavigate();
   const { slug, reload } = useBook();
-  const [mode, setMode] = useState<'read' | 'edit' | 'rename'>('read');
-  const [draft, setDraft] = useState(file.content);
+  const [stored, setStored, restored] = useStoredDraft<FileDraft | null>(
+    `book-file:${slug}:${file.path}`,
+    null,
+  );
+  const [mode, setMode] = useState<'read' | 'edit' | 'rename'>(stored === null ? 'read' : 'edit');
+  const draft = stored?.content ?? file.content;
+  // Edits restored from before the file changed on disk; saving them replaces that version.
+  const stale = stored !== null && stored.base !== file.hash;
+  const setDraft = (content: string) =>
+    setStored(content === file.content ? null : { base: stored?.base ?? file.hash, content });
   const [name, setName] = useState(file.title);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +85,7 @@ function FileView({ file, onChanged }: FileViewProps) {
     setError(null);
     try {
       await api.writeBookFile(slug, file.path, { content: draft, expectedHash: file.hash });
+      setStored(null);
       reload();
       onChanged();
     } catch (caught) {
@@ -151,7 +167,14 @@ function FileView({ file, onChanged }: FileViewProps) {
         <div className="form-error" role="alert">
           <p>{error}</p>
           {conflict ? (
-            <button type="button" className="button-secondary" onClick={onChanged}>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => {
+                setStored(null);
+                onChanged();
+              }}
+            >
               Load the version on disk
             </button>
           ) : null}
@@ -179,6 +202,16 @@ function FileView({ file, onChanged }: FileViewProps) {
       {mode === 'edit' ? (
         <form className="source-editor" onSubmit={(event) => void save(event)}>
           <label htmlFor="book-file-editor">Markdown, including frontmatter</label>
+          {stale ? (
+            <p className="change-note" role="status">
+              This file changed after you started editing it. Your unsaved edits are below; saving
+              them replaces the current version.
+            </p>
+          ) : restored && stored !== null ? (
+            <p className="change-note" role="status">
+              Your unsaved edits were restored.
+            </p>
+          ) : null}
           <textarea
             id="book-file-editor"
             value={draft}
@@ -186,14 +219,17 @@ function FileView({ file, onChanged }: FileViewProps) {
             rows={20}
           />
           <div className="dialog-actions">
-            <button type="button" className="button-secondary" onClick={() => setMode('read')}>
-              Cancel
-            </button>
             <button
-              type="submit"
-              className="button-primary"
-              disabled={busy || draft === file.content}
+              type="button"
+              className="button-secondary"
+              onClick={() => {
+                setStored(null);
+                setMode('read');
+              }}
             >
+              {stored === null ? 'Cancel' : 'Discard edits'}
+            </button>
+            <button type="submit" className="button-primary" disabled={busy || stored === null}>
               {busy ? 'Saving…' : 'Save'}
             </button>
           </div>

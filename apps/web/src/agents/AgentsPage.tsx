@@ -5,6 +5,7 @@ import { useApi } from '../api/useApi.js';
 import { errorMessage, useLoad } from '../books/useLoad.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
+import { clearDraft, useStoredDraft } from '../drafts.js';
 
 interface Draft {
   name: string;
@@ -25,12 +26,18 @@ function draftOf(agent: CustomAgent): Draft {
   };
 }
 
+function agentDraftKey(agent: CustomAgent | null): string {
+  return `agent:${agent?.id ?? 'new'}`;
+}
+
 function skillsLabel(agent: CustomAgent): string {
   if (agent.skills === null) return 'All skills';
   return `${agent.skills.length} ${agent.skills.length === 1 ? 'skill' : 'skills'}`;
 }
 
 interface EditorProps {
+  /** Where unsaved edits are kept. */
+  draftKey: string;
   initial: Draft;
   skills: readonly SkillMetadata[];
   creating: boolean;
@@ -40,8 +47,17 @@ interface EditorProps {
   onDelete: () => void;
 }
 
-function AgentEditor({ initial, skills, creating, busy, onSave, onCancel, onDelete }: EditorProps) {
-  const [draft, setDraft] = useState(initial);
+function AgentEditor({
+  draftKey,
+  initial,
+  skills,
+  creating,
+  busy,
+  onSave,
+  onCancel,
+  onDelete,
+}: EditorProps) {
+  const [draft, setDraft, restored] = useStoredDraft(draftKey, initial);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -58,6 +74,14 @@ function AgentEditor({ initial, skills, creating, busy, onSave, onCancel, onDele
   return (
     <form className="preset-card preset-editor" onSubmit={submit}>
       <h2>{creating ? 'New agent' : initial.name}</h2>
+      {restored ? (
+        <p className="change-note" role="status">
+          Your unsaved changes were restored.{' '}
+          <button type="button" className="text-button" onClick={() => setDraft(initial)}>
+            Discard them
+          </button>
+        </p>
+      ) : null}
       <label>
         Name
         <input
@@ -155,7 +179,8 @@ export function AgentsPage() {
   const [version, setVersion] = useState(0);
   const agents = useLoad((signal) => api.listCustomAgents(signal), `agents:${version}`);
   const skills = useLoad((signal) => api.listSkills(signal), 'skills');
-  const [selected, setSelected] = useState<string | 'new' | null>(null);
+  // Which agent is open, kept so the editor is still there after visiting another page.
+  const [selected, setSelected] = useStoredDraft<string | null>('agents:open', null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<CustomAgent | null>(null);
@@ -185,6 +210,7 @@ export function AgentsPage() {
         current === null
           ? await api.createCustomAgent(input)
           : await api.updateCustomAgent(current.id, input);
+      clearDraft(agentDraftKey(current));
       setSelected(saved.id);
       setVersion((value) => value + 1);
     } catch (caught) {
@@ -199,6 +225,7 @@ export function AgentsPage() {
     setBusy(true);
     try {
       await api.deleteCustomAgent(deleting.id);
+      clearDraft(agentDraftKey(deleting));
       setDeleting(null);
       setSelected(null);
       setVersion((value) => value + 1);
@@ -256,12 +283,16 @@ export function AgentsPage() {
         {selected === 'new' || current !== null ? (
           <AgentEditor
             key={current?.id ?? 'new'}
+            draftKey={agentDraftKey(current)}
             initial={current === null ? NEW_AGENT : draftOf(current)}
             skills={installed}
             creating={current === null}
             busy={busy}
             onSave={(draft) => void save(draft)}
-            onCancel={() => setSelected(null)}
+            onCancel={() => {
+              clearDraft(agentDraftKey(null));
+              setSelected(null);
+            }}
             onDelete={() => setDeleting(current)}
           />
         ) : (
