@@ -1,7 +1,9 @@
+import { useMemo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkParse from 'remark-parse';
+import { unified } from 'unified';
 
-import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
@@ -10,53 +12,57 @@ import { useLoad } from './useLoad.js';
 interface MarkdownNode {
   type: string;
   value?: string;
+  depth?: number;
   children?: MarkdownNode[];
+  position?: { start: { offset?: number } };
 }
 
-function textOf(node: MarkdownNode | undefined): string {
-  if (node === undefined) return '';
+interface ContentsEntry {
+  id: string;
+  title: string;
+}
+
+function textOf(node: MarkdownNode): string {
   if (node.type === 'text' || node.type === 'inlineCode') return node.value ?? '';
   return (node.children ?? []).map(textOf).join('');
 }
 
-function headingId(text: string): string {
-  return `reader-${text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-|-$/gu, '')}`;
-}
-
-/** The manuscript's top-level headings (chapters and matter pages), outside code fences. */
-function contentsOf(markdown: string): string[] {
-  const headings: string[] = [];
-  let fenced = false;
-  for (const line of markdown.split('\n')) {
-    if (/^\s{0,3}(```|~~~)/u.test(line)) fenced = !fenced;
-    const match = fenced ? null : /^# +(.+?)\s*#*\s*$/u.exec(line);
-    if (match?.[1]) headings.push(match[1]);
-  }
-  return headings;
+function slugOf(text: string): string {
+  return (
+    text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/^-|-$/gu, '') || 'section'
+  );
 }
 
 /**
- * Drops HTML comments outside code fences: `story export` marks its output
- * with one, and writers keep notes in them that a reader should not see.
+ * The manuscript's top-level headings (chapters and matter pages), from the
+ * same parse ReactMarkdown renders, so code blocks never yield entries.
+ * Keyed by each heading's source offset, which the rendered heading carries
+ * too; repeated titles get a numbered id.
  */
-function withoutComments(markdown: string): string {
-  return markdown
-    .split(/(^\s{0,3}(?:```|~~~)[^\n]*\n[\s\S]*?^\s{0,3}(?:```|~~~)[^\n]*$)/mu)
-    .map((part, index) => (index % 2 === 1 ? part : part.replace(/<!--[\s\S]*?-->/gu, '')))
-    .join('');
+function contentsOf(markdown: string): Map<number, ContentsEntry> {
+  const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown) as MarkdownNode;
+  const contents = new Map<number, ContentsEntry>();
+  const used = new Map<string, number>();
+  for (const node of tree.children ?? []) {
+    const offset = node.position?.start.offset;
+    if (node.type !== 'heading' || node.depth !== 1 || offset === undefined) continue;
+    const title = textOf(node);
+    const slug = slugOf(title);
+    const seen = used.get(slug) ?? 0;
+    used.set(slug, seen + 1);
+    contents.set(offset, { id: `reader-${slug}${seen === 0 ? '' : `-${seen + 1}`}`, title });
+  }
+  return contents;
 }
 
-const components: Components = {
-  h1: ({ node, children }) => (
-    <h1 id={headingId(textOf(node as MarkdownNode | undefined))}>{children}</h1>
-  ),
-};
-
-function jumpTo(heading: string) {
-  document.getElementById(headingId(heading))?.scrollIntoView({ block: 'start' });
+/** Scrolls to a heading and moves focus there, as following a link would. */
+function jumpTo(id: string) {
+  const heading = document.getElementById(id);
+  heading?.scrollIntoView({ block: 'start' });
+  heading?.focus({ preventScroll: true });
 }
 
 /**
@@ -67,18 +73,24 @@ export function ReaderPage() {
   const api = useApi();
   const { slug, tree } = useBook();
   const manuscript = useLoad(
-    async (signal) => {
-      try {
-        return await api.getManuscript(slug, signal);
-      } catch (error) {
-        // No chapters, or a story.md the CLI cannot use: nothing to read yet, not a failure.
-        if (error instanceof ApiClientError && error.code === 'story_unusable_project') {
-          return { empty: error.message };
-        }
-        throw error;
-      }
-    },
+    (signal) => api.getManuscript(slug, signal),
     `${slug}:${tree.files.map((file) => file.hash).join()}`,
+  );
+  const markdown = manuscript.status === 'ready' ? manuscript.data.markdown : '';
+  const contents = useMemo(() => contentsOf(markdown), [markdown]);
+  const components = useMemo<Components>(
+    () => ({
+      h1: ({ node, children }) => {
+        const offset = (node as MarkdownNode | undefined)?.position?.start.offset;
+        const entry = offset === undefined ? undefined : contents.get(offset);
+        return (
+          <h1 id={entry?.id} tabIndex={entry === undefined ? undefined : -1}>
+            {children}
+          </h1>
+        );
+      },
+    }),
+    [contents],
   );
 
   if (manuscript.status === 'loading')
@@ -93,35 +105,32 @@ export function ReaderPage() {
     );
   }
 
-  if ('empty' in manuscript.data) {
+  if (markdown.trim() === '') {
     return (
       <section className="book-panel reader" aria-labelledby="reader-heading">
         <h2 id="reader-heading">Reader</h2>
         <p className="empty-map">
-          Nothing to read yet. Chapter prose appears here once it is written. (
-          {manuscript.data.empty})
+          Nothing to read yet. Chapter prose appears here once the book has chapters.
         </p>
       </section>
     );
   }
 
-  const markdown = withoutComments(manuscript.data.markdown);
   const { warnings } = manuscript.data;
-  const contents = contentsOf(markdown);
   return (
     <section className="book-panel reader" aria-labelledby="reader-heading">
       <p className="coordinate-label">story export</p>
       <h2 id="reader-heading" className="visually-hidden">
         Reader
       </h2>
-      {contents.length > 1 ? (
+      {contents.size > 1 ? (
         <details className="reader-contents">
           <summary>Contents</summary>
           <ol>
-            {contents.map((heading, index) => (
-              <li key={`${index}:${heading}`}>
-                <button type="button" className="text-button" onClick={() => jumpTo(heading)}>
-                  {heading}
+            {[...contents.values()].map((entry) => (
+              <li key={entry.id}>
+                <button type="button" className="text-button" onClick={() => jumpTo(entry.id)}>
+                  {entry.title}
                 </button>
               </li>
             ))}
@@ -141,7 +150,8 @@ export function ReaderPage() {
         </details>
       ) : null}
       <article className="markdown-body reader-text">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {/* Raw HTML is skipped: export's marker comment and writers' hidden notes are not prose. */}
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} skipHtml>
           {markdown}
         </ReactMarkdown>
       </article>

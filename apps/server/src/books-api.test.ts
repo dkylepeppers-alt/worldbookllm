@@ -592,10 +592,23 @@ describe('manuscript', () => {
     expect(after).toEqual(before);
   });
 
-  it('reports a book with no chapters as an unusable project', async () => {
+  it('returns an empty manuscript for a book with no chapters', async () => {
     const book = await createBook();
     const response = await app.inject({ method: 'GET', url: `/api/books/${book.slug}/manuscript` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ markdown: '', warnings: [] });
+  });
+
+  it('still reports a book export cannot read as an error', async () => {
+    const book = await createBook();
+    expect((await addEntity(book.slug, 'chapter', 'Arrival')).statusCode).toBe(201);
+    // A chapter whose frontmatter fails to parse: export refuses rather than drop it.
+    writeFileSync(
+      join(dataDir, 'projects', book.slug, 'chapters/chapter-01.md'),
+      '---\ntitle: Arrival\ntitle: Again\n---\n\nProse.\n',
+    );
+    const response = await app.inject({ method: 'GET', url: `/api/books/${book.slug}/manuscript` });
     expect(response.statusCode).toBe(409);
-    expect(response.json<{ message: string }>().message).toContain('No chapters');
+    expect(response.json<{ message: string }>().message).toContain('Cannot export');
   });
 });

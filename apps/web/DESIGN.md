@@ -197,7 +197,7 @@ Each source row carries a **spine** — a 4px vertical bar in lichen green along
 
 ### Book Tabs
 
-The book workspace's Write / Bible / Agent / Health / Project tabs are a fixed bottom bar of five equal columns on phones and a bordered side rail from 800px, active tab marked in vermilion (inset top border on the bar, inset left border on the rail). While an agent turn runs, the Agent tab carries a small blueprint pulse dot.
+The book workspace's Write / Reader / Bible / Agent / Health / Project tabs are a fixed bottom bar of equal columns on phones (six on a book; a series bible has no Reader, so five), with label tracking tightened below 420px so all six fit, and a bordered side rail from 800px, active tab marked in vermilion (inset top border on the bar, inset left border on the rail). While an agent turn runs, the Agent tab carries a small blueprint pulse dot.
 
 ### Agent Turn
 
@@ -209,7 +209,7 @@ The book workspace's Write / Bible / Agent / Health / Project tabs are a fixed b
 
 ### Reader
 
-The Reader tab is the one screen that is all the writer's prose. The whole page sits in a single centered 68ch column: a `story export` coordinate label, a collapsible **Contents** card (line border, the manuscript's `#` headings as underlined text buttons that scroll to them), an optional card of export notes, then the manuscript in Source Serif 4 at 1.8 line height. Chapter headings are Archivo, and a `---` scene break is a short centered rule. HTML comments are not shown.
+The Reader tab is the one screen that is all the writer's prose. The whole page sits in a single centered 68ch column: a `story export` coordinate label, a collapsible **Contents** card (line border, the manuscript's `#` headings as underlined text buttons that scroll to the heading and move focus to it), an optional card of export notes, then the manuscript in Source Serif 4 at 1.8 line height. Chapter headings are Archivo, and a `---` scene break is a short centered rule. Raw HTML, including comments, is not shown.
 
 ### Story Commands Panel
 
