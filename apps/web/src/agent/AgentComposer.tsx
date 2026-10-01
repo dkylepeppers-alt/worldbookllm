@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react';
 
+import { useStoredDraft } from '../drafts.js';
+
 /** Text to add to the draft; a new `id` adds it once, after anything already typed. */
 export interface DraftAppend {
   id: number;
@@ -8,6 +10,8 @@ export interface DraftAppend {
 
 interface AgentComposerProps {
   id: string;
+  /** Where the unsent draft is kept, so it survives leaving the page or the app. */
+  draftKey: string;
   label: string;
   initialDraft?: string;
   submitLabel: string;
@@ -23,6 +27,7 @@ interface AgentComposerProps {
 
 export function AgentComposer({
   id,
+  draftKey,
   label,
   initialDraft = '',
   submitLabel,
@@ -33,7 +38,11 @@ export function AgentComposer({
   onStop,
   append = null,
 }: AgentComposerProps) {
-  const [draft, setDraft] = useState(initialDraft);
+  const [draft, setDraft] = useStoredDraft(
+    draftKey,
+    '',
+    initialDraft === '' ? undefined : initialDraft,
+  );
   const [appendedId, setAppendedId] = useState(append?.id ?? null);
   if (append !== null && append.id !== appendedId) {
     // Adjusting state from a prop during render, so the text lands in the same commit.

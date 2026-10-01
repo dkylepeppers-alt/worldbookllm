@@ -5,6 +5,7 @@ import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
+import { clearDraft, readDraft, useStoredDraft, writeDraft } from '../drafts.js';
 import { StorySkillsInstall } from '../agent/StorySkillsInstall.js';
 
 type LoadState =
@@ -26,6 +27,18 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiClientError ? error.message : fallback;
 }
 
+function skillDraftKey(id: string | null): string {
+  return `skill:${id ?? 'new'}`;
+}
+
+function draftOf(skill: SkillDetail): Draft {
+  return { name: skill.name, description: skill.description, content: skill.content };
+}
+
+function sameDraft(a: Draft, b: Draft): boolean {
+  return a.name === b.name && a.description === b.description && a.content === b.content;
+}
+
 function originLabel(skill: SkillMetadata): string {
   if (skill.origin.type === 'bundled') {
     return skill.license === null ? 'Starter' : `Starter · ${skill.license}`;
@@ -42,10 +55,21 @@ export function SkillsPage() {
   const api = useApi();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [reload, setReload] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The open editor (a skill's id, or 'new'), kept so it is still there after
+  // visiting another page. Unsaved edits are kept per skill.
+  const [open, setOpen] = useStoredDraft<string | null>('skills:open', null);
+  const selectedId = open === 'new' ? null : open;
+  const creating = open === 'new';
   const [detail, setDetail] = useState<SkillDetail | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [initialNew] = useState(() =>
+    open === 'new' ? readDraft<Draft>(skillDraftKey(null)) : undefined,
+  );
+  const [draft, setDraft] = useState<Draft | null>(() =>
+    open === 'new' ? (initialNew ?? { ...NEW_SKILL }) : null,
+  );
+  const [restored, setRestored] = useState(
+    initialNew !== undefined && !sameDraft(initialNew, NEW_SKILL),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<SkillMetadata | null>(null);
@@ -68,15 +92,31 @@ export function SkillsPage() {
     api
       .getSkill(selectedId, controller.signal)
       .then((skill) => {
+        const kept = readDraft<Draft>(skillDraftKey(skill.id));
         setDetail(skill);
-        setDraft({ name: skill.name, description: skill.description, content: skill.content });
+        setDraft(kept ?? draftOf(skill));
+        setRestored(kept !== undefined && !sameDraft(kept, draftOf(skill)));
       })
       .catch((caught: unknown) => {
-        if (!(caught instanceof DOMException && caught.name === 'AbortError'))
-          setError(errorMessage(caught, 'Could not load the skill.'));
+        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        // A skill remembered as open may have been deleted since.
+        if (caught instanceof ApiClientError && caught.status === 404) setOpen(null);
+        else setError(errorMessage(caught, 'Could not load the skill.'));
       });
     return () => controller.abort();
-  }, [api, selectedId, reload]);
+  }, [api, selectedId, reload, setOpen]);
+
+  // Keep unsaved edits per skill; an editor matching what is saved keeps nothing.
+  useEffect(() => {
+    if (draft === null) return;
+    if (creating) {
+      if (sameDraft(draft, NEW_SKILL)) clearDraft(skillDraftKey(null));
+      else writeDraft(skillDraftKey(null), draft);
+    } else if (detail !== null && detail.id === selectedId) {
+      if (sameDraft(draft, draftOf(detail))) clearDraft(skillDraftKey(detail.id));
+      else writeDraft(skillDraftKey(detail.id), draft);
+    }
+  }, [draft, creating, detail, selectedId]);
 
   const refresh = useCallback(() => setReload((value) => value + 1), []);
 
@@ -88,12 +128,14 @@ export function SkillsPage() {
     try {
       if (creating) {
         const created = await api.createSkill(draft);
-        setCreating(false);
+        clearDraft(skillDraftKey(null));
         setDraft(null);
-        setSelectedId(created.id);
+        setOpen(created.id);
       } else if (detail !== null) {
         await api.updateSkill(detail.id, draft);
+        clearDraft(skillDraftKey(detail.id));
       }
+      setRestored(false);
       refresh();
     } catch (caught) {
       setError(errorMessage(caught, 'Could not save the skill.'));
@@ -108,8 +150,9 @@ export function SkillsPage() {
     setError(null);
     try {
       await api.deleteSkill(deleting.id);
+      clearDraft(skillDraftKey(deleting.id));
       if (selectedId === deleting.id) {
-        setSelectedId(null);
+        setOpen(null);
         setDetail(null);
         setDraft(null);
       }
@@ -151,9 +194,11 @@ export function SkillsPage() {
           type="button"
           className="button-primary"
           onClick={() => {
-            setCreating(true);
-            setSelectedId(null);
-            setDraft({ ...NEW_SKILL });
+            const kept = readDraft<Draft>(skillDraftKey(null));
+            setOpen('new');
+            setDetail(null);
+            setDraft(kept ?? { ...NEW_SKILL });
+            setRestored(kept !== undefined);
           }}
         >
           New skill
@@ -174,14 +219,13 @@ export function SkillsPage() {
                     type="button"
                     className={skill.id === selectedId ? 'active' : undefined}
                     onClick={() => {
-                      setCreating(false);
                       // Drop the previous skill's editor immediately so Save
                       // and Delete can never act on A while B is loading.
                       if (skill.id !== selectedId) {
                         setDetail(null);
                         setDraft(null);
                       }
-                      setSelectedId(skill.id);
+                      setOpen(skill.id);
                     }}
                   >
                     <strong>{skill.name}</strong>
@@ -197,6 +241,21 @@ export function SkillsPage() {
         {editing && draft !== null ? (
           <form className="preset-card preset-editor" onSubmit={(event) => void save(event)}>
             <h2>{creating ? 'New skill' : (detail?.name ?? '')}</h2>
+            {restored ? (
+              <p className="change-note" role="status">
+                Your unsaved changes were restored.{' '}
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    setDraft(creating || detail === null ? { ...NEW_SKILL } : draftOf(detail));
+                    setRestored(false);
+                  }}
+                >
+                  Discard them
+                </button>
+              </p>
+            ) : null}
             {creating || detail === null ? null : (
               <p className="coordinate-label">
                 {originLabel(detail)} · updated {new Date(detail.updatedAt).toLocaleString()}
@@ -240,7 +299,8 @@ export function SkillsPage() {
                   className="button-secondary"
                   disabled={busy}
                   onClick={() => {
-                    setCreating(false);
+                    clearDraft(skillDraftKey(null));
+                    setOpen(null);
                     setDraft(null);
                   }}
                 >

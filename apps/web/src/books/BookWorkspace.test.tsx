@@ -6,7 +6,7 @@ import type {
   Checkpoint,
   StoryCommandOutcome,
 } from '@worldbookllm/shared';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -298,6 +298,69 @@ describe('book files', () => {
     ).toBeDefined();
     await userEvent.click(screen.getByRole('button', { name: 'Load the version on disk' }));
     await waitFor(() => expect(readBookFile).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps unsaved edits after leaving the file, and discards them on request', async () => {
+    const readBookFile = vi.fn(() => Promise.resolve(maraDetail));
+    const writeBookFile = vi.fn(() =>
+      Promise.resolve({ file: { ...maraDetail, hash: NEW_HASH }, checkpoint: null }),
+    );
+    const path = '/books/the-salt-road/files/characters/mara-quill.md';
+    renderAt(path, { readBookFile, writeBookFile });
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Markdown, including frontmatter' }),
+      'Tall.',
+    );
+    cleanup();
+
+    renderAt(path, { readBookFile, writeBookFile });
+    const editor = await screen.findByRole<HTMLTextAreaElement>('textbox', {
+      name: 'Markdown, including frontmatter',
+    });
+    expect(editor.value).toBe(`${maraDetail.content}Tall.`);
+    expect(screen.getByText('Your unsaved edits were restored.')).toBeDefined();
+    await userEvent.click(screen.getByRole('button', { name: 'Discard edits' }));
+    cleanup();
+
+    renderAt(path, { readBookFile, writeBookFile });
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(
+      screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Markdown, including frontmatter' })
+        .value,
+    ).toBe(maraDetail.content);
+  });
+
+  it('holds a rename until unsaved edits are saved or discarded', async () => {
+    renderAt('/books/the-salt-road/files/characters/mara-quill.md', {
+      readBookFile: () => Promise.resolve(maraDetail),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Markdown, including frontmatter' }),
+      'Tall.',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    expect(screen.getByText(/Save or discard your unsaved edits/u)).toBeDefined();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save new name' }).disabled).toBe(
+      true,
+    );
+  });
+
+  it('says when restored edits predate a change on disk', async () => {
+    const path = '/books/the-salt-road/files/characters/mara-quill.md';
+    renderAt(path, { readBookFile: () => Promise.resolve(maraDetail) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Markdown, including frontmatter' }),
+      'Tall.',
+    );
+    cleanup();
+
+    renderAt(path, { readBookFile: () => Promise.resolve({ ...maraDetail, hash: NEW_HASH }) });
+    expect(
+      await screen.findByText(/This file changed after you started editing it/u),
+    ).toBeDefined();
   });
 
   it('renames an entity and follows it to its new path', async () => {

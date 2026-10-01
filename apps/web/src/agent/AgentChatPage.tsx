@@ -14,6 +14,7 @@ import { useBook } from '../books/book-context.js';
 import { errorMessage, useLoad } from '../books/useLoad.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
+import { clearDraft } from '../drafts.js';
 import { AgentComposer } from './AgentComposer.js';
 import { AgentInspectorDialog } from './AgentInspectorDialog.js';
 import { AgentMessages } from './AgentMessages.js';
@@ -237,6 +238,7 @@ function AgentChatPage({ chatId }: { chatId: string }) {
     setDeleteBusy(true);
     try {
       await api.deleteAgentChat(chatId);
+      clearDraft(`agent-chat:${chatId}`);
       await navigate(`/books/${encodeURIComponent(slug)}/agent`);
     } catch (caught) {
       setUndoError(errorMessage(caught));
@@ -332,6 +334,7 @@ function AgentChatPage({ chatId }: { chatId: string }) {
         // (for a chat started from the Agent tab, the draft was typed there).
         key={error?.draft ?? ''}
         id="agent-message-input"
+        draftKey={`agent-chat:${chatId}`}
         label="Message"
         initialDraft={error?.draft ?? ''}
         submitLabel="Send"

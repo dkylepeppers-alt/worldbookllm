@@ -136,6 +136,7 @@ export function AgentPage() {
       <StoryCommandsPanel onAsk={draft.ask} />
       <AgentComposer
         id="agent-new-chat-input"
+        draftKey={`agent-new-chat:${slug}`}
         label={pinned.length === 0 ? 'New chat' : `New chat about ${pinned.join(', ')}`}
         submitLabel="Start chat"
         running={running}

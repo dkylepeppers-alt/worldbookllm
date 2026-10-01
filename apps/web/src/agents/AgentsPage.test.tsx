@@ -1,5 +1,5 @@
 import type { CustomAgent, SkillMetadata } from '@worldbookllm/shared';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -111,5 +111,37 @@ describe('agents page', () => {
     const dialog = screen.getByRole('dialog');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete agent' }));
     await waitFor(() => expect(deleteCustomAgent).toHaveBeenCalledWith(saved.id));
+  });
+
+  it('reopens the agent being edited with its unsaved changes after leaving the page', async () => {
+    const overrides = { listCustomAgents: () => Promise.resolve([saved]) };
+    renderAgents(overrides);
+    await userEvent.click(await screen.findByRole('button', { name: /Continuity editor/u }));
+    await userEvent.type(screen.getByLabelText('Instructions'), ' Quote the page.');
+    cleanup();
+
+    renderAgents(overrides);
+    const instructions = await screen.findByLabelText<HTMLTextAreaElement>('Instructions');
+    expect(instructions.value).toBe('Check facts against the bible. Quote the page.');
+    await userEvent.click(screen.getByRole('button', { name: 'Discard them' }));
+    expect(instructions.value).toBe('Check facts against the bible.');
+    expect(screen.queryByText(/unsaved changes were restored/u)).toBeNull();
+  });
+
+  it('keeps nothing after a save, even when the server trims the input', async () => {
+    let current = saved;
+    const updateCustomAgent = vi.fn<ApiClient['updateCustomAgent']>((_id, input) => {
+      current = { ...saved, ...input, updatedAt: '2026-09-30T13:00:00.000Z' };
+      return Promise.resolve(current);
+    });
+    renderAgents({ listCustomAgents: () => Promise.resolve([current]), updateCustomAgent });
+    await userEvent.click(await screen.findByRole('button', { name: /Continuity editor/u }));
+    await userEvent.type(screen.getByLabelText('Name'), '  ');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(updateCustomAgent).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByLabelText<HTMLInputElement>('Name').value).toBe('Continuity editor'),
+    );
+    expect(localStorage.getItem(`worldbookllm.draft.agent:${saved.id}`)).toBeNull();
   });
 });

@@ -11,7 +11,7 @@ import type {
   CustomAgent,
   SkillMetadata,
 } from '@worldbookllm/shared';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -317,6 +317,39 @@ describe('agent tab', () => {
     const steps = within(dialog).getByRole('list', { name: 'Steps' });
     expect(within(steps).getAllByRole('listitem')).toHaveLength(2);
     expect(within(dialog).getByText('edit_file · ok · 12 ms')).toBeDefined();
+  });
+
+  it('keeps an unsent message after leaving the chat, until it is sent', async () => {
+    const stream = createScriptedAgentStream();
+    const overrides = {
+      getAgentChat: () => Promise.resolve({ ...chat, changesets: [], messages: [] }),
+      streamAgentMessage: stream.streamAgentMessage,
+    };
+    renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, overrides);
+    await userEvent.type(await screen.findByLabelText('Message'), 'Check the tide tables');
+    cleanup();
+
+    renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, overrides);
+    const input = await screen.findByLabelText<HTMLTextAreaElement>('Message');
+    expect(input.value).toBe('Check the tide tables');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(input.value).toBe('');
+    cleanup();
+
+    renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, overrides);
+    expect((await screen.findByLabelText<HTMLTextAreaElement>('Message')).value).toBe('');
+  });
+
+  it('keeps a new chat’s first message when switching book tabs', async () => {
+    renderAt('/books/the-salt-road/agent');
+    await userEvent.type(await screen.findByLabelText('New chat'), 'Outline act two');
+    const tabs = screen.getByRole('navigation', { name: 'Book' });
+    await userEvent.click(within(tabs).getByRole('link', { name: 'Bible' }));
+    await waitFor(() => expect(screen.queryByLabelText('New chat')).toBeNull());
+    await userEvent.click(within(tabs).getByRole('link', { name: 'Agent' }));
+    expect((await screen.findByLabelText<HTMLTextAreaElement>('New chat')).value).toBe(
+      'Outline act two',
+    );
   });
 
   it('stops a turn and shows it as interrupted once the server records it', async () => {
