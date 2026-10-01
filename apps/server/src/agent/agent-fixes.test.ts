@@ -562,6 +562,32 @@ describe('agent edits and checkpoints', () => {
     expect(books.readFile(slug, path).content).toBe('user edit');
   });
 
+  it('leaves the file as it was when write_file content fails reindex', async () => {
+    const { books, slug } = await bootBook();
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/entities`,
+      payload: { kind: 'character', name: 'Mara Quill', options: {} },
+    });
+    const path = 'characters/mara-quill.md';
+    const before = books.readFile(slug, path);
+    const session = books.startSession(slug, 'Agent: invalid write', 'agent');
+    const registry = new AgentToolRegistry(app.services.skills, join(dataDir, 'skills'));
+    const invalid = before.content.replace(
+      /^name: .*$/mu,
+      'name: Mara Quill\narc: Starts certain,\n  ends unsure.',
+    );
+
+    const outcome = await registry.execute(
+      'write_file',
+      JSON.stringify({ path, content: invalid, expectedHash: before.hash }),
+      { workspace: new LiveWorkspace(books, session), skills: null },
+    );
+    expect(outcome).toMatchObject({ ok: false, result: expect.stringMatching(/reindex/u) });
+    expect(books.readFile(slug, path).hash).toBe(before.hash);
+    expect(await books.commitSession(session)).toBeNull();
+  });
+
   it('rejects overlapping edit_file matches as ambiguous', async () => {
     const { books, slug } = await bootBook();
     const path = 'notes/page.md';

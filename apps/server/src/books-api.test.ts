@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,9 +21,10 @@ import type {
   StoryCommandOutcome,
 } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildApp } from './app.js';
+import { StoryCli } from './story/story-cli.js';
 
 let app: FastifyInstance;
 let dataDir: string;
@@ -234,6 +243,67 @@ describe('books API', () => {
       await app.inject({ method: 'GET', url: `/api/books/${slug}/checks/validate` })
     ).json<BookCheckResult>();
     expect(validate.envelope.ok).toBe(true);
+  });
+
+  it('restores an entity file whose edit fails reindex and records no checkpoint', async () => {
+    const { slug } = await createBook();
+    await addEntity(slug, 'character', 'Mara Quill');
+    const character = await readFile(slug, 'characters/mara-quill.md');
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/files/characters/mara-quill.md`,
+      payload: {
+        content: character.content.replace(
+          'name: Mara Quill',
+          'name: Mara Quill\narc: Starts certain,\n  ends unsure.',
+        ),
+        expectedHash: character.hash,
+      },
+    });
+    expect(saved.statusCode).toBeGreaterThanOrEqual(400);
+    expect((await readFile(slug, 'characters/mara-quill.md')).hash).toBe(character.hash);
+    const checkpoints = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/checkpoints` })
+    ).json<Checkpoint[]>();
+    expect(checkpoints.map((checkpoint) => checkpoint.label)).not.toContain(
+      'Edit characters/mara-quill.md (failed)',
+    );
+  });
+
+  it('also restores registries a failed reindex had already rewritten', async () => {
+    const { slug } = await createBook();
+    await addEntity(slug, 'character', 'Mara Quill');
+    const character = await readFile(slug, 'characters/mara-quill.md');
+    const registry = await readFile(slug, 'characters/_index.md');
+    const bookDir = join(dataDir, 'projects', slug);
+    const original = StoryCli.prototype.runOrThrow;
+    const spy = vi.spyOn(StoryCli.prototype, 'runOrThrow').mockImplementation(function (
+      this: StoryCli,
+      request,
+    ) {
+      if (request.command !== 'reindex') return original.call(this, request);
+      // A reindex killed partway: one registry rewritten, one created, then the failure.
+      writeFileSync(join(bookDir, 'characters/_index.md'), '# Half written\n');
+      mkdirSync(join(bookDir, 'notes'), { recursive: true });
+      writeFileSync(join(bookDir, 'notes/stray-registry.md'), '# New registry\n');
+      return Promise.reject(new Error('story reindex timed out'));
+    });
+    try {
+      const saved = await app.inject({
+        method: 'PUT',
+        url: `/api/books/${slug}/files/characters/mara-quill.md`,
+        payload: {
+          content: character.content.replace('name: Mara Quill', 'name: Mara Venn'),
+          expectedHash: character.hash,
+        },
+      });
+      expect(saved.statusCode).toBeGreaterThanOrEqual(400);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await readFile(slug, 'characters/mara-quill.md')).hash).toBe(character.hash);
+    expect((await readFile(slug, 'characters/_index.md')).hash).toBe(registry.hash);
+    expect(existsSync(join(bookDir, 'notes/stray-registry.md'))).toBe(false);
   });
 
   it('gives books created at the same time with the same title different folders', async () => {
