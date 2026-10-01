@@ -90,6 +90,25 @@ describe('StoryCli.buildArgv', () => {
     );
   });
 
+  it('passes a server-chosen absolute --out only to commands that take one', () => {
+    expect(cli.buildArgv({ command: 'export', root: '/books/b', out: '/tmp/m.md' })).toEqual([
+      '/story.js',
+      'export',
+      '--path=/books/b',
+      '--out=/tmp/m.md',
+      '--',
+    ]);
+    expect(() => cli.buildArgv({ command: 'export', root: '/books/b', out: 'dist/m.md' })).toThrow(
+      'cannot write to that --out',
+    );
+    expect(() =>
+      cli.buildArgv({ command: 'validate', root: '/books/b', out: '/tmp/m.md' }),
+    ).toThrow('cannot write to that --out');
+    expect(() =>
+      cli.buildArgv({ command: 'export', root: '/books/b', options: { out: '/tmp/m.md' } }),
+    ).toThrow('does not accept --out');
+  });
+
   it('refuses NUL characters and --json on commands without JSON output', () => {
     expect(() => cli.buildArgv({ command: 'add', root: '/r', args: ['a\0b'] })).toThrow(/NUL/u);
     expect(() => cli.buildArgv({ command: 'add', root: '/r', json: true })).toThrow(/no --json/u);

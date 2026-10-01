@@ -160,6 +160,11 @@ export function registerBookRoutes(app: FastifyInstance): void {
     return books().check(book, command);
   });
 
+  app.get('/api/books/:book/manuscript', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return books().manuscript(book);
+  });
+
   app.get('/api/books/:book/builds', (request) => {
     const { book } = bookParamsSchema.parse(request.params);
     return books().listBuilds(book);

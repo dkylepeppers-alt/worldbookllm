@@ -184,7 +184,7 @@ describe('agent tab', () => {
       within(tabs)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['Write', 'Bible', 'Agent', 'Health', 'Project']);
+    ).toEqual(['Write', 'Reader', 'Bible', 'Agent', 'Health', 'Project']);
     expect(within(tabs).getByRole('link', { name: 'Agent' }).getAttribute('aria-current')).toBe(
       'page',
     );

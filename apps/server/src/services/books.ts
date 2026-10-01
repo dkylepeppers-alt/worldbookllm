@@ -17,6 +17,7 @@ import {
   type AddSeriesBookInput,
   type BookBuildFile,
   type BookBuildResult,
+  type BookManuscript,
   type CreateBookBuildInput,
   type CreateBookInput,
   type CreateSeriesInput,
@@ -55,6 +56,7 @@ import {
   removeBuildFile,
 } from '../story/book-builds.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
+import { exportManuscript } from '../story/book-manuscript.js';
 import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
 import type {
   CheckpointActor,
@@ -821,6 +823,11 @@ export class BookService {
       );
     }
     return { book: this.summary(slug), output: lines.join('\n') };
+  }
+
+  /** The manuscript for reading, under the book lock so it never catches a write halfway. */
+  manuscript(slug: string): Promise<BookManuscript> {
+    return this.locks.run(slug, () => exportManuscript(this.cli, this.files.root(slug)));
   }
 
   /** Builds a disposable manuscript file into the book's `dist/` with `story build`. */

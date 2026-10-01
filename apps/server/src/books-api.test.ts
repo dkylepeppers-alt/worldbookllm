@@ -563,3 +563,39 @@ describe('builds', () => {
     expect(response.json()).toMatchObject({ error: 'story_unusable_project' });
   });
 });
+
+describe('manuscript', () => {
+  it('returns chapter prose only, without frontmatter or outlines, and writes nothing', async () => {
+    const book = await createBook();
+    expect((await addEntity(book.slug, 'chapter', 'Arrival')).statusCode).toBe(201);
+    const chapter = join(dataDir, 'projects', book.slug, 'chapters/chapter-01.md');
+    writeFileSync(chapter, `${readFileSync(chapter, 'utf8')}\nMara stepped off the ferry.\n`);
+    expect((await addEntity(book.slug, 'chapter', 'The Bell')).statusCode).toBe(201);
+    const before = readdirSync(tmpdir()).filter((name) =>
+      name.startsWith('worldbookllm-manuscript-'),
+    );
+
+    const response = await app.inject({ method: 'GET', url: `/api/books/${book.slug}/manuscript` });
+    expect(response.statusCode).toBe(200);
+    const manuscript = response.json<{ markdown: string; warnings: string[] }>();
+    expect(manuscript.markdown).toContain('# Chapter 1: Arrival');
+    expect(manuscript.markdown).toContain('Mara stepped off the ferry.');
+    expect(manuscript.markdown).not.toContain('## Outline');
+    expect(manuscript.markdown).not.toContain('status:');
+    expect(manuscript.warnings.join('\n')).toContain('chapters/chapter-02.md has no prose yet');
+    expect(manuscript.warnings.join('\n')).not.toContain(dataDir);
+
+    expect(existsSync(join(dataDir, 'projects', book.slug, 'dist'))).toBe(false);
+    const after = readdirSync(tmpdir()).filter((name) =>
+      name.startsWith('worldbookllm-manuscript-'),
+    );
+    expect(after).toEqual(before);
+  });
+
+  it('reports a book with no chapters as an unusable project', async () => {
+    const book = await createBook();
+    const response = await app.inject({ method: 'GET', url: `/api/books/${book.slug}/manuscript` });
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ message: string }>().message).toContain('No chapters');
+  });
+});

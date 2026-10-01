@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
+import { isAbsolute } from 'node:path';
 
 import { storyEnvelopeSchema, type StoryEnvelope, type StoryOptions } from '@worldbookllm/shared';
 
@@ -22,6 +23,8 @@ export interface StoryRunRequest {
   cwd?: string;
   /** Target folder name for `init`/`import`, relative to `cwd`. */
   dir?: string;
+  /** Absolute output file for commands that take `--out`; set by the server, never a caller. */
+  out?: string;
   args?: readonly string[];
   options?: StoryOptions;
   json?: boolean;
@@ -107,6 +110,14 @@ export class StoryCli {
     } else {
       if (!request.root) throw new StoryCommandError(2, `story ${request.command} needs a book`);
       argv.push(`--path=${request.root}`);
+    }
+
+    if (request.out !== undefined) {
+      if (!Object.hasOwn(spec.options, 'out') || !isAbsolute(request.out)) {
+        throw new StoryCommandError(2, `story ${request.command} cannot write to that --out`);
+      }
+      assertNoNul(request.out, '--out');
+      argv.push(`--out=${request.out}`);
     }
 
     if (request.json) {

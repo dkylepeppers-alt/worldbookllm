@@ -15,6 +15,7 @@ import { BookLayout } from './books/BookLayout.js';
 import { BookLibraryPage } from './books/BookLibraryPage.js';
 import { HealthPage } from './books/HealthPage.js';
 import { ProjectPage } from './books/ProjectPage.js';
+import { ReaderPage } from './books/ReaderPage.js';
 import { SeriesPage } from './books/SeriesPage.js';
 import { WritePage } from './books/WritePage.js';
 import { AppShell } from './layout/AppShell.js';
@@ -38,6 +39,7 @@ export function AppRoutes() {
           <Route path="agent/:chatId" element={<AgentChatRoute />} />
           <Route path="health" element={<HealthPage />} />
           <Route path="project" element={<ProjectPage />} />
+          <Route path="read" element={<ReaderPage />} />
           <Route path="files/*" element={<BookFilePage />} />
         </Route>
         <Route path="settings" element={<SettingsPage />} />

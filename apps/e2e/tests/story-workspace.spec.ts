@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, test } from '@playwright/test';
@@ -73,6 +73,18 @@ test('M7 story workspace on a phone', async ({ page }) => {
     await expect(
       readFile(join(bookDir, 'characters/mara-quill.md'), 'utf8'),
     ).resolves.not.toContain('Salt-grey eyes.');
+  });
+
+  await test.step('read the manuscript without frontmatter or outline', async () => {
+    const chapter = join(bookDir, 'chapters/chapter-01.md');
+    await writeFile(chapter, `${await readFile(chapter, 'utf8')}\nMara stepped off the ferry.\n`);
+    await tabs.getByRole('link', { name: 'Reader' }).click();
+    const article = page.getByRole('article');
+    await expect(article.getByRole('heading', { name: /Arrival/u, level: 1 })).toBeVisible();
+    await expect(article).toContainText('Mara stepped off the ferry.');
+    await expect(article).not.toContainText('Outline');
+    await expect(article).not.toContainText('status:');
+    await tabs.getByRole('link', { name: 'Project' }).click();
   });
 
   await test.step('build an EPUB and download it', async () => {
