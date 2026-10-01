@@ -17,8 +17,10 @@ import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { clearDraft } from '../drafts.js';
 import { AgentComposer } from './AgentComposer.js';
 import { AgentInspectorDialog } from './AgentInspectorDialog.js';
+import { AgentQuestion } from './AgentQuestion.js';
 import { AgentMessages } from './AgentMessages.js';
 import { useAgentRunner } from './agent-runner-context.js';
+import { pendingQuestion } from './agent-turns.js';
 import { useDraftAppend } from './use-draft-append.js';
 import { AgentChatSettings } from './AgentChatSettings.js';
 import { DiffDialog, type DiffFile } from './DiffDialog.js';
@@ -269,6 +271,8 @@ function AgentChatPage({ chatId }: { chatId: string }) {
 
   const error = runner.error?.chatId === chatId ? runner.error : null;
   const busyElsewhere = runner.run !== null && run === null;
+  // While a turn runs, its question (if it asks one) shows once the turn is recorded.
+  const question = run === null ? pendingQuestion(chat.messages) : null;
 
   return (
     <section className="book-panel agent-chat" aria-labelledby="agent-chat-title">
@@ -328,6 +332,15 @@ function AgentChatPage({ chatId }: { chatId: string }) {
         </p>
       )}
 
+      {question === null ? null : (
+        <AgentQuestion
+          key={question.callId}
+          chatId={chatId}
+          question={question}
+          disabled={run !== null || watching || busyElsewhere}
+          onAnswer={(content, callId) => runner.send(chatId, content, [], callId)}
+        />
+      )}
       <StoryCommandsPanel onAsk={draft.ask} />
       <AgentComposer
         // A turn the server refused before it started gives its message back
@@ -341,7 +354,8 @@ function AgentChatPage({ chatId }: { chatId: string }) {
         running={run !== null || watching}
         stopping={run?.turn.stopping ?? (watchedId !== null && stoppingId === watchedId)}
         busy={busyElsewhere}
-        onSend={(content) => runner.send(chatId, content)}
+        // A typed message while the agent waits on a question answers it in free form.
+        onSend={(content) => runner.send(chatId, content, [], question?.callId)}
         onStop={run !== null ? runner.stop : watching ? () => void stopWatched() : undefined}
         append={draft.append}
       />

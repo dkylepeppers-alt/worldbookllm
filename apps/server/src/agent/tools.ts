@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import type { ToolDefinition } from '@worldbookllm/providers';
 import {
+  ASK_USER_TOOL,
+  askUserArgumentsSchema,
   bookFilePathSchema,
   bookSlugSchema,
   seriesSyncSchema,
@@ -116,6 +118,49 @@ export class AgentToolRegistry {
     private readonly skillsRoot: string,
   ) {
     const list: Array<AgentTool<never>> = [
+      tool(
+        ASK_USER_TOOL,
+        'Ask the writer to choose. Use this instead of listing options in prose whenever you offer a choice (premises, names, directions, which draft to keep). Ask 1-4 questions with 2-4 short options each; the app adds an "Other" choice so the writer can always answer in their own words. Your turn ends after this call, and the answer arrives as the writer\'s next message.',
+        {
+          properties: {
+            questions: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 4,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  question: { type: 'string', description: 'The full question, ending with "?".' },
+                  header: {
+                    type: 'string',
+                    description: 'A label of at most 24 characters, e.g. "Genre".',
+                  },
+                  options: {
+                    type: 'array',
+                    minItems: 2,
+                    maxItems: 4,
+                    items: {
+                      type: 'object',
+                      additionalProperties: false,
+                      properties: {
+                        label: { type: 'string', description: 'The choice, in a few words.' },
+                        description: { type: 'string', description: 'What choosing it means.' },
+                      },
+                      required: ['label'],
+                    },
+                  },
+                  multiSelect: { type: 'boolean', description: 'Let the writer pick several.' },
+                },
+                required: ['question', 'options'],
+              },
+            },
+          },
+          required: ['questions'],
+        },
+        askUserArgumentsSchema,
+        () => 'Shown to the writer. Their answer arrives as their next message; end your turn now.',
+      ),
       tool(
         'activate_skill',
         'Load the full instructions of an installed skill before doing work it covers.',

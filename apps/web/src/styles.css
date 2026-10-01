@@ -1905,3 +1905,111 @@ ol.inspector-sections {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+/* The agent's ask_user questions (ADR 0022): survey-card choices above the composer. */
+.agent-question {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  border: 1px solid var(--ink);
+  background: var(--surface);
+  padding: 1rem;
+  box-shadow: 4px 4px 0 rgb(36 87 197 / 12%);
+}
+
+.agent-question-item {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.agent-question-item legend {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 0.6rem;
+  padding: 0;
+}
+
+.agent-question-text {
+  font-weight: 600;
+}
+
+.agent-question-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.agent-question-options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+@media (min-width: 40rem) {
+  .agent-question-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.agent-question-option {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: start;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  background: var(--surface);
+  padding: 0.65rem 0.8rem;
+  text-align: left;
+}
+
+.agent-question-option small {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.agent-question-option:hover:not(:disabled) {
+  border-color: var(--blueprint);
+}
+
+.agent-question-option[aria-pressed='true'] {
+  border-color: var(--ink);
+  border-left-color: var(--vermilion);
+  box-shadow: 2px 2px 0 rgb(201 68 46 / 18%);
+}
+
+.agent-question-item textarea {
+  width: 100%;
+}
+
+.agent-question-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.agent-asked {
+  display: grid;
+  gap: 0.3rem;
+  border-left: 3px solid var(--vermilion);
+  padding: 0.2rem 0 0.2rem 0.75rem;
+  list-style: none;
+}
+
+.agent-asked ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-asked li {
+  display: grid;
+}
+
+.agent-asked-options {
+  color: var(--muted);
+  font-size: 0.9rem;
+}

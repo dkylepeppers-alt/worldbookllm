@@ -47,6 +47,7 @@ export function AgentRunnerProvider({ onBookChanged, children }: AgentRunnerProv
       chatId: string,
       content: string,
       pinnedPaths: readonly string[] = [],
+      answeringCallId?: string,
     ): Promise<'accepted' | 'rejected'> => {
       if (controllerRef.current !== null) return 'rejected';
       const controller = new AbortController();
@@ -58,6 +59,7 @@ export function AgentRunnerProvider({ onBookChanged, children }: AgentRunnerProv
       try {
         await api.streamAgentMessage(chatId, content, {
           pinnedPaths,
+          ...(answeringCallId === undefined ? {} : { answeringCallId }),
           signal: controller.signal,
           onEvent: (event) => {
             started = true;

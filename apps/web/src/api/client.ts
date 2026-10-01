@@ -230,6 +230,8 @@ interface StreamAgentMessageOptions {
   signal?: AbortSignal;
   /** Book files whose contents go to the model with this message. */
   pinnedPaths?: readonly string[];
+  /** The agent's `ask_user` call this message answers. */
+  answeringCallId?: string;
 }
 
 type CreateSecretInput = z.input<typeof createSecretSchema>;

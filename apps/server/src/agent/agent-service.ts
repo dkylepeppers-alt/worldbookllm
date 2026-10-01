@@ -22,7 +22,7 @@ import type {
   PatchAgentChatInput,
   ProviderConfig,
 } from '@worldbookllm/shared';
-import { orderSeriesBooks } from '@worldbookllm/shared';
+import { ASK_USER_TOOL, orderSeriesBooks } from '@worldbookllm/shared';
 
 import { ConfigurationError, ConflictError, NotFoundError } from '../errors.js';
 import type { BookService } from '../services/books.js';
@@ -200,6 +200,19 @@ function historyMessages(history: AgentMessage[]): ChatMessage[] {
     if (extra.trim() !== '') messages.push({ role: 'assistant', content: extra });
   }
   return messages;
+}
+
+/**
+ * The `ask_user` call the chat is waiting on: the last message is a finished
+ * turn whose last step asked. Mirrors the web app's pendingQuestion.
+ */
+function pendingAskCallId(messages: readonly AgentMessage[]): string | null {
+  const last = messages.at(-1);
+  if (last?.role !== 'assistant' || last.status !== 'complete') return null;
+  const call = last.steps
+    .at(-1)
+    ?.toolCalls.findLast((recorded) => recorded.name === ASK_USER_TOOL && recorded.ok);
+  return call?.id ?? null;
 }
 
 /** Gemma 3 on Google sources is sent no tools (see buildGoogleRequest). */
@@ -457,7 +470,12 @@ export class AgentService {
   }
 
   /** Validates the turn can run and records the user message and a streaming assistant message. */
-  prepare(chatId: string, content: string, pinnedPaths: readonly string[] = []): PreparedAgentTurn {
+  prepare(
+    chatId: string,
+    content: string,
+    pinnedPaths: readonly string[] = [],
+    answeringCallId?: string,
+  ): PreparedAgentTurn {
     if (this.active.has(chatId)) {
       throw new ConflictError(
         'generation_in_progress',
@@ -503,7 +521,13 @@ export class AgentService {
       this.db.transaction(() => {
         // Reporting a review outcome marks it told; the transaction keeps
         // that from happening unless the message that carries it is stored.
-        const parts = [this.changesets.outcomeNote(chatId), pinned].filter(
+        // Only the question the chat is waiting on can be answered; a stale
+        // tab's answer is kept as a plain message.
+        const answering =
+          answeringCallId !== undefined && pendingAskCallId(detail.messages) === answeringCallId
+            ? `The writer's message answers your ask_user call ${answeringCallId}.`
+            : null;
+        const parts = [answering, this.changesets.outcomeNote(chatId), pinned].filter(
           (part): part is string => part !== null,
         );
         note = parts.length === 0 ? null : parts.join('\n\n');
@@ -765,7 +789,18 @@ export class AgentService {
             arguments: call.arguments,
           });
           const started = Date.now();
-          const outcome = await this.tools.execute(call.name, call.arguments, toolContext);
+          // One question card at a time: a second ask_user in the same step is refused.
+          const asked = step.toolCalls.some(
+            (recorded) => recorded.name === ASK_USER_TOOL && recorded.ok,
+          );
+          const outcome =
+            asked && call.name === ASK_USER_TOOL
+              ? {
+                  ok: false,
+                  result:
+                    'Only one ask_user call is shown per step. Put every question in one call (up to 4).',
+                }
+              : await this.tools.execute(call.name, call.arguments, toolContext);
           const result = truncateResult(outcome.result);
           step.toolCalls.push({
             id: call.id,
@@ -793,6 +828,8 @@ export class AgentService {
         // interrupted turn must still show its changes and be undoable.
         persist('streaming', session?.pendingId ?? checkpointId);
         if (signal.aborted) break;
+        // A question for the writer ends the turn; their answer starts the next one.
+        if (step.toolCalls.some((call) => call.name === ASK_USER_TOOL && call.ok)) break;
       }
 
       if (signal.aborted) {
@@ -859,6 +896,7 @@ export class AgentService {
         ? 'Review mode is on: your file changes are proposed, not applied. You work on a staged copy of the book, so read_file and the story commands show your proposed versions; the writer reviews each changed file after this turn and applies or skips it. story build and export are unavailable. Tell the user what you propose.'
         : 'Your file changes apply immediately and are recorded as one undoable change for this turn. Tell the user what you changed.',
       'Ask the user before inventing canon they have not given you.',
+      'When you offer the writer a choice between options (brainstorming premises, names, directions), call ask_user rather than listing the options in prose, and ask at most 4 questions at once.',
       'When a request matches a skill below, load it with activate_skill and follow it; load its references with read_skill_file when it says to.',
       ...(agent === null || agent.instructions.trim() === ''
         ? []
