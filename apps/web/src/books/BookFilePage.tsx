@@ -97,7 +97,7 @@ function FileView({ file, onChanged }: FileViewProps) {
 
   async function rename(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (entityKind === null || file.entityId === null) return;
+    if (entityKind === null || file.entityId === null || stored !== null) return;
     setBusy(true);
     setError(null);
     try {
@@ -119,6 +119,7 @@ function FileView({ file, onChanged }: FileViewProps) {
     setBusy(true);
     try {
       await api.removeBookEntity(slug, entityKind, file.entityId);
+      setStored(null);
       reload();
       await navigate(
         `/books/${slug}/${entityKind === 'chapter' || entityKind === 'scene' ? 'write' : 'bible'}`,
@@ -248,11 +249,20 @@ function FileView({ file, onChanged }: FileViewProps) {
           <p className="dialog-copy">
             story rename updates the file name and every reference to it across the book.
           </p>
+          {stored === null ? null : (
+            <p className="change-note" role="status">
+              Save or discard your unsaved edits to this file before renaming it.
+            </p>
+          )}
           <div className="dialog-actions">
             <button type="button" className="button-danger" onClick={() => setRemoving(true)}>
               Remove
             </button>
-            <button type="submit" className="button-primary" disabled={busy || name.trim() === ''}>
+            <button
+              type="submit"
+              className="button-primary"
+              disabled={busy || stored !== null || name.trim() === ''}
+            >
               {busy ? 'Renaming…' : 'Save new name'}
             </button>
           </div>

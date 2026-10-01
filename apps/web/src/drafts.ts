@@ -1,4 +1,11 @@
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from 'react';
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 /**
  * Unsent and unsaved text, kept in this browser's localStorage so it survives
@@ -108,16 +115,22 @@ export function useStoredDraft<T>(
 
   const fallbackJson = JSON.stringify(fallback);
   const valueJson = JSON.stringify(current.value);
+  const fallbackRef = useRef(fallbackJson);
+  useEffect(() => {
+    fallbackRef.current = fallbackJson;
+  }, [fallbackJson]);
   useEffect(() => {
     if (valueJson === fallbackJson) clearDraft(key);
     else writeDraft(key, JSON.parse(valueJson));
   }, [key, valueJson, fallbackJson]);
 
   const setValue = useCallback<Dispatch<SetStateAction<T>>>((next) => {
-    setState((previous) => ({
-      ...previous,
-      value: typeof next === 'function' ? (next as (value: T) => T)(previous.value) : next,
-    }));
+    setState((previous) => {
+      const value = typeof next === 'function' ? (next as (value: T) => T)(previous.value) : next;
+      // Once a restored draft is discarded, later typing is new, not restored.
+      const restored = previous.restored && JSON.stringify(value) !== fallbackRef.current;
+      return { ...previous, value, restored };
+    });
   }, []);
 
   return [current.value, setValue, current.restored && valueJson !== fallbackJson];

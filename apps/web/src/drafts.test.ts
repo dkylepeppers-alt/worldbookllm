@@ -18,6 +18,15 @@ describe('stored drafts', () => {
     expect(second.result.current[2]).toBe(false);
   });
 
+  it('stops calling a draft restored once it is discarded', () => {
+    writeDraft('chat:c', 'Old words');
+    const { result } = renderHook(() => useStoredDraft('chat:c', ''));
+    expect(result.current[2]).toBe(true);
+    act(() => result.current[1](''));
+    act(() => result.current[1]('New words'));
+    expect(result.current[2]).toBe(false);
+  });
+
   it('loads the draft for a new key and lets an initial value win', () => {
     writeDraft('chat:b', 'For chat B');
     const { result, rerender } = renderHook(({ key }) => useStoredDraft(key, ''), {

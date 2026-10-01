@@ -61,10 +61,15 @@ export function SkillsPage() {
   const selectedId = open === 'new' ? null : open;
   const creating = open === 'new';
   const [detail, setDetail] = useState<SkillDetail | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(() =>
-    open === 'new' ? (readDraft<Draft>(skillDraftKey(null)) ?? { ...NEW_SKILL }) : null,
+  const [initialNew] = useState(() =>
+    open === 'new' ? readDraft<Draft>(skillDraftKey(null)) : undefined,
   );
-  const [restored, setRestored] = useState(false);
+  const [draft, setDraft] = useState<Draft | null>(() =>
+    open === 'new' ? (initialNew ?? { ...NEW_SKILL }) : null,
+  );
+  const [restored, setRestored] = useState(
+    initialNew !== undefined && !sameDraft(initialNew, NEW_SKILL),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<SkillMetadata | null>(null);

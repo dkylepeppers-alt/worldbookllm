@@ -331,6 +331,22 @@ describe('book files', () => {
     ).toBe(maraDetail.content);
   });
 
+  it('holds a rename until unsaved edits are saved or discarded', async () => {
+    renderAt('/books/the-salt-road/files/characters/mara-quill.md', {
+      readBookFile: () => Promise.resolve(maraDetail),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Markdown, including frontmatter' }),
+      'Tall.',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    expect(screen.getByText(/Save or discard your unsaved edits/u)).toBeDefined();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save new name' }).disabled).toBe(
+      true,
+    );
+  });
+
   it('says when restored edits predate a change on disk', async () => {
     const path = '/books/the-salt-road/files/characters/mara-quill.md';
     renderAt(path, { readBookFile: () => Promise.resolve(maraDetail) });

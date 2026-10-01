@@ -127,4 +127,21 @@ describe('agents page', () => {
     expect(instructions.value).toBe('Check facts against the bible.');
     expect(screen.queryByText(/unsaved changes were restored/u)).toBeNull();
   });
+
+  it('keeps nothing after a save, even when the server trims the input', async () => {
+    let current = saved;
+    const updateCustomAgent = vi.fn<ApiClient['updateCustomAgent']>((_id, input) => {
+      current = { ...saved, ...input, updatedAt: '2026-09-30T13:00:00.000Z' };
+      return Promise.resolve(current);
+    });
+    renderAgents({ listCustomAgents: () => Promise.resolve([current]), updateCustomAgent });
+    await userEvent.click(await screen.findByRole('button', { name: /Continuity editor/u }));
+    await userEvent.type(screen.getByLabelText('Name'), '  ');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(updateCustomAgent).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByLabelText<HTMLInputElement>('Name').value).toBe('Continuity editor'),
+    );
+    expect(localStorage.getItem(`worldbookllm.draft.agent:${saved.id}`)).toBeNull();
+  });
 });

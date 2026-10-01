@@ -71,6 +71,7 @@ describe('skills page', () => {
     expect((await screen.findByLabelText<HTMLTextAreaElement>('Description')).value).toBe(
       'Checks tides.',
     );
+    expect(screen.getByText(/unsaved changes were restored/u)).toBeDefined();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByLabelText('Description')).toBeNull();
     expect(localStorage.getItem('worldbookllm.draft.skill:new')).toBeNull();

@@ -282,7 +282,8 @@ export function AgentsPage() {
         </section>
         {selected === 'new' || current !== null ? (
           <AgentEditor
-            key={current?.id ?? 'new'}
+            // A save remounts the editor on the saved version, so nothing pre-save lingers.
+            key={current === null ? 'new' : `${current.id}:${current.updatedAt}`}
             draftKey={agentDraftKey(current)}
             initial={current === null ? NEW_AGENT : draftOf(current)}
             skills={installed}
