@@ -203,6 +203,7 @@ export const agentStreamEventSchema = z.discriminatedUnion('type', [
     summary: z.string(),
   }),
   z.strictObject({ type: z.literal('checkpoint'), checkpoint: checkpointSchema }),
+  z.strictObject({ type: z.literal('series_sync'), checkpoints: z.array(checkpointSchema) }),
   z.strictObject({ type: z.literal('changeset'), changeset: agentChangesetSchema }),
   z.strictObject({ type: z.literal('done'), message: agentMessageSchema }),
   z.strictObject({

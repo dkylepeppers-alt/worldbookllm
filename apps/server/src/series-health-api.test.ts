@@ -50,6 +50,13 @@ describe('series reads and health', () => {
     const detail = await app.inject('/api/series/tides');
     expect(detail.statusCode, detail.body).toBe(200);
     expect(detail.json()).toEqual(response.json()[0]);
+    const sequel = app.services.books.readFile('high-water', 'story.md').content;
+    await edit('high-water', 'story.md', sequel.replace('book-number: 2', 'book-number: 1'));
+    expect(
+      (await app.inject('/api/series/tides'))
+        .json()
+        .books.map((book: { slug: string }) => book.slug),
+    ).toEqual(['low-water', 'high-water']);
     expect((await app.inject('/api/series/standalone')).statusCode).toBe(404);
     expect((await app.inject('/api/series/no-such-series/drift')).statusCode).toBe(404);
     expect((await app.inject('/api/series/INVALID/health')).statusCode).toBe(400);

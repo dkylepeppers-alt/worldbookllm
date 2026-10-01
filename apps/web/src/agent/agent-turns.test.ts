@@ -1,7 +1,7 @@
 import type { AgentMessage } from '@worldbookllm/shared';
 import { describe, expect, it } from 'vitest';
 
-import { applyAgentEvent, extraText, startTurn, toolTarget } from './agent-turns.js';
+import { applyAgentEvent, extraText, startTurn, toolTarget, seriesBooksOf } from './agent-turns.js';
 
 function message(content: string, texts: string[]): AgentMessage {
   return {
@@ -22,6 +22,46 @@ function message(content: string, texts: string[]): AgentMessage {
 }
 
 describe('applyAgentEvent', () => {
+  it('retains every book affected by streamed series checkpoints', () => {
+    const checkpoint = {
+      id: '0c8f34e8-96b5-4c62-8f2e-27e6a9f14d55',
+      book: 'low-water',
+      label: 'Series push',
+      actor: 'agent' as const,
+      createdAt: '2026-09-30T00:00:00.000Z',
+      undoneAt: null,
+      files: [],
+    };
+    let turn = applyAgentEvent(startTurn('Sync canon'), {
+      type: 'series_sync',
+      checkpoints: [checkpoint],
+    });
+    turn = applyAgentEvent(turn, {
+      type: 'series_sync',
+      checkpoints: [{ ...checkpoint, book: 'high-water' }],
+    });
+    expect(turn.seriesBooks).toEqual(['low-water', 'high-water']);
+  });
+
+  it('recovers affected books from a persisted sync tool result', () => {
+    expect(
+      seriesBooksOf([
+        {
+          index: 0,
+          text: '',
+          calls: [
+            {
+              id: 'sync',
+              name: 'sync_series',
+              arguments: '{}',
+              status: 'ok',
+              result: '{"books":["tides","low-water","tides"]}',
+            },
+          ],
+        },
+      ]),
+    ).toEqual(['tides', 'low-water']);
+  });
   it('builds steps with streamed text and tool calls that settle', () => {
     let turn = startTurn('Check the cast');
     turn = applyAgentEvent(turn, { type: 'step', index: 0 });

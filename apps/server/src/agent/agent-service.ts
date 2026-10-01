@@ -29,6 +29,7 @@ import type { SettingsService } from '../services/settings.js';
 import type { ProviderService } from '../services/providers.js';
 import type { SkillService } from '../services/skills.js';
 import type { CheckpointSession } from '../story/checkpoints.js';
+import { SeriesService } from '../story/series.js';
 import type { StagedBook } from '../story/staging.js';
 import type { AgentChangesetService } from './changesets.js';
 import type { CustomAgentService } from './custom-agents.js';
@@ -611,7 +612,7 @@ export class AgentService {
       if (!session) return null;
       const checkpoint = await this.books.commitSession(session);
       if (checkpoint) emit({ type: 'checkpoint', checkpoint });
-      checkpointId = checkpoint?.id ?? null;
+      checkpointId = checkpoint?.id ?? checkpointId;
       return checkpointId;
     };
 
@@ -633,6 +634,46 @@ export class AgentService {
       }
       const toolContext: ToolContext = {
         workspace,
+        book: chat.book,
+        books: this.books,
+        syncSeries: async (input) => {
+          if (prepared.reviewMode)
+            throw new Error(
+              'Series sync is unavailable in review mode. Apply or discard proposed changes first.',
+            );
+          const seriesId = this.books.get(chat.book).seriesId;
+          if (seriesId === null) throw new Error('This chat’s book is not part of a series.');
+          // Separate a completed ordinary edit from the sync's per-book checkpoints,
+          // then rotate the live workspace so later writes have a fresh history position.
+          const preceding = await this.books.commitSession(session!);
+          if (preceding !== null) {
+            checkpointId = preceding.id;
+            emit({ type: 'checkpoint', checkpoint: preceding });
+            emit({ type: 'series_sync', checkpoints: [preceding] });
+          }
+          try {
+            const result = await new SeriesService(this.books).sync(
+              seriesId,
+              input,
+              'agent',
+              chat.book,
+            );
+            checkpointId =
+              result.checkpoints.find((checkpoint) => checkpoint.book === chat.book)?.id ??
+              checkpointId;
+            emit({ type: 'series_sync', checkpoints: result.checkpoints });
+            return {
+              checkpoints: [...(preceding === null ? [] : [preceding]), ...result.checkpoints],
+            };
+          } finally {
+            session = this.books.startSession(
+              chat.book,
+              `Agent: ${prepared.userContent.slice(0, 60)}`,
+              'agent',
+            );
+            toolContext.workspace = new LiveWorkspace(this.books, session);
+          }
+        },
         skills: prepared.agent?.skills ? new Set(prepared.agent.skills) : null,
       };
       const messages: ChatMessage[] = [
@@ -749,7 +790,7 @@ export class AgentService {
         // Point the message at the pending checkpoint as soon as it exists:
         // a restart promotes pending checkpoints to history, and the
         // interrupted turn must still show its changes and be undoable.
-        persist('streaming', session?.pendingId ?? null);
+        persist('streaming', session?.pendingId ?? checkpointId);
         if (signal.aborted) break;
       }
 
@@ -831,6 +872,21 @@ export class AgentService {
       `Title: ${summary.title}`,
       `Genre: ${summary.genre ?? 'unset'} · Status: ${summary.status ?? 'unset'}`,
       `Contents: ${counts || 'no entities yet'}`,
+      ...(summary.seriesId === null
+        ? []
+        : [
+            '',
+            '## Series',
+            `Series bible: ${summary.seriesId}`,
+            `Books in order: ${
+              new SeriesService(this.books)
+                .get(summary.seriesId)
+                .books.map((member) => `${member.slug} (${member.title})`)
+                .join(', ') || 'none yet'
+            }`,
+            'read_file, list_files, and search accept an optional book slug within this series (including the bible). Generic writes always stay on this chat’s book; use sync_series for explicit canon sync. Keep shared identity canon in the bible and book-local state in each book.',
+            ...(reviewMode ? ['sync_series is unavailable in review mode.'] : []),
+          ]),
     ].join('\n');
   }
 

@@ -5,6 +5,7 @@ import type {
   SeriesSyncInput,
   SeriesSyncResult,
 } from '@worldbookllm/shared';
+import { orderSeriesBooks } from '@worldbookllm/shared';
 
 import { ConflictError, NotFoundError } from '../errors.js';
 import type { BookService } from '../services/books.js';
@@ -27,13 +28,9 @@ export class SeriesService {
       .map((bible) => ({
         id: bible.slug,
         bible,
-        books: books
-          .filter((book) => book.kind === 'book' && book.seriesId === bible.slug)
-          .sort(
-            (a, b) =>
-              (a.bookNumber ?? Infinity) - (b.bookNumber ?? Infinity) ||
-              a.slug.localeCompare(b.slug),
-          ),
+        books: orderSeriesBooks(
+          books.filter((book) => book.kind === 'book' && book.seriesId === bible.slug),
+        ),
       }));
   }
 

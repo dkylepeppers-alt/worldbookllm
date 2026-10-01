@@ -37,6 +37,39 @@ async function history(slug: string): Promise<Checkpoint[]> {
 }
 
 describe('series (ADR 0018)', () => {
+  it('provides the explicit convert-to-series route while keeping the merged route compatible', async () => {
+    await post('/api/books', { title: 'Harbor' });
+    const response = await post<BookSummary>(
+      '/api/books/harbor/convert-to-series',
+      { title: 'Tides' },
+      200,
+    );
+    expect(response).toMatchObject({ slug: 'harbor', seriesId: 'tides' });
+  });
+
+  it('refuses detachment while an affected sibling has a running agent turn', async () => {
+    await post('/api/series', { title: 'Tides' });
+    await post('/api/series/tides/books', { title: 'Harbor' });
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/app-settings',
+      payload: {
+        providerConfig: { source: 'openai', model: 'gpt-4o', baseUrl: 'http://provider.test/v1' },
+      },
+    });
+    const chat = app.services.agent.createChat('harbor', {});
+    const prepared = app.services.agent.prepare(chat.id, 'Hold this book', []);
+    try {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/series/tides/books/harbor',
+      });
+      expect(response.statusCode).toBe(409);
+      expect(existsSync(join(dataDir, 'series/tides/harbor/story.md'))).toBe(true);
+    } finally {
+      prepared.release();
+    }
+  });
   it('removes a book to projects, cleans sibling links, and preserves files and history', async () => {
     await post('/api/series', { title: 'Tides' });
     await post('/api/series/tides/books', { title: 'Low Water', bookNumber: 1 });

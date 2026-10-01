@@ -81,6 +81,149 @@ async function boot(
 }
 
 describe('agent turns', () => {
+  it('pushes a bible alias into another book without changing its local role', async () => {
+    const { app, book } = await boot([
+      () =>
+        sse(
+          toolCall('edit-canon', 'edit_file', {
+            path: 'characters/mira.md',
+            find: 'aliases: []',
+            replace: 'aliases: [Captain]',
+          }),
+        ),
+      () =>
+        sse(
+          toolCall('push-canon', 'sync_series', {
+            direction: 'push',
+            entity: { kind: 'character', id: 'mira' },
+            books: ['harbor'],
+          }),
+        ),
+      () => sse(text('Canon pushed.')),
+    ]);
+    await app.services.books.moveIntoNewSeries(book.slug, 'Tides');
+    await app.services.books.addEntity('tides', { kind: 'character', name: 'Mira', options: {} });
+    await app.services.books.addEntity('harbor', {
+      kind: 'character',
+      name: 'Mira',
+      options: { role: 'protagonist' },
+    });
+    const chat = app.services.agent.createChat('tides', {});
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Give Mira the Captain alias and push it to Harbor.' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(app.services.books.readFile('harbor', 'characters/mira.md').frontmatter).toMatchObject({
+      aliases: ['Captain'],
+      role: 'protagonist',
+    });
+    expect(
+      app.services.agent
+        .getChat(chat.id)
+        .messages.at(-1)!
+        .steps.flatMap((step) => step.toolCalls)
+        .find((call) => call.id === 'push-canon')?.ok,
+    ).toBe(true);
+    expect(response.body).toContain('series_sync');
+  }, 30_000);
+
+  it('reads its series bible, pulls an alias, and refuses cross-book write_file', async () => {
+    const { app, book, chat } = await boot([
+      () => sse(toolCall('read', 'read_file', { book: 'tides', path: 'story.md' })),
+      () =>
+        sse(
+          toolCall('edit', 'edit_file', {
+            path: 'characters/mira.md',
+            find: 'aliases: []',
+            replace: 'aliases: [Queen]',
+          }),
+        ),
+      () =>
+        sse(
+          toolCall('sync', 'sync_series', {
+            direction: 'pull',
+            entity: { kind: 'character', id: 'mira' },
+            book: 'harbor',
+          }),
+        ),
+      () =>
+        sse(
+          toolCall('after-sync', 'write_file', {
+            path: 'notes/after-sync.md',
+            content: '# After sync',
+            expectedHash: null,
+          }),
+        ),
+      () =>
+        sse(
+          toolCall('foreign-write', 'write_file', {
+            book: 'tides',
+            path: 'notes/forbidden.md',
+            content: '# Forbidden',
+            expectedHash: null,
+          }),
+        ),
+      () => sse(text('Canon synchronized.')),
+    ]);
+    await app.services.books.moveIntoNewSeries(book.slug, 'Tides');
+    await app.services.books.addEntity(book.slug, {
+      kind: 'character',
+      name: 'Mira',
+      options: { role: 'protagonist' },
+    });
+    await app.services.books.addEntity('tides', { kind: 'character', name: 'Mira', options: {} });
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Read the bible, adopt my alias, and try a cross-book write.' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const detail = app.services.agent.getChat(chat.id);
+    const calls = detail.messages.at(-1)!.steps.flatMap((step) => step.toolCalls);
+    expect(calls.find((call) => call.id === 'read')?.result).toContain('title: Tides');
+    expect(calls.find((call) => call.id === 'sync')?.ok).toBe(true);
+    expect(calls.find((call) => call.id === 'after-sync')?.ok).toBe(true);
+    expect(app.services.books.readFile('harbor', 'notes/after-sync.md').content).toBe(
+      '# After sync',
+    );
+    expect(calls.find((call) => call.id === 'foreign-write')?.ok).toBe(false);
+    expect(app.services.books.readFile('tides', 'characters/mira.md').frontmatter).toMatchObject({
+      aliases: ['Queen'],
+      role: 'supporting',
+    });
+    for (const slug of ['tides', 'harbor'])
+      expect(
+        app.services.books.tree(slug).files.some((file) => file.path === 'notes/forbidden.md'),
+      ).toBe(false);
+    expect(app.services.agent.systemPrompt(book.slug)).toContain('Series bible: tides');
+    expect(response.body).toContain('series_sync');
+  }, 30_000);
+
+  it('refuses series sync in review mode and reads outside the current series', async () => {
+    const { app, book, chat } = await boot([
+      () => sse(toolCall('read-foreign', 'read_file', { book: 'foreign', path: 'story.md' })),
+      () => sse(toolCall('sync-review', 'sync_series', { direction: 'seed', book: 'harbor' })),
+      () => sse(text('No writes.')),
+    ]);
+    await app.services.books.moveIntoNewSeries(book.slug, 'Tides');
+    await app.services.books.create({ title: 'Foreign' });
+    app.services.agent.patchChat(chat.id, { reviewMode: true });
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Try foreign reads and sync.' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const calls = app.services.agent
+      .getChat(chat.id)
+      .messages.at(-1)!
+      .steps.flatMap((step) => step.toolCalls);
+    expect(calls.find((call) => call.id === 'read-foreign')?.ok).toBe(false);
+    expect(calls.find((call) => call.id === 'sync-review')?.result).toContain('review mode');
+    expect(app.services.books.listCheckpoints('tides')).toEqual([]);
+  }, 30_000);
   it('sends pinned files with the message and keeps them in later turns', async () => {
     const { app, book, chat, requests } = await boot([() => sse(text('Noted.'))]);
     const written = await app.inject({

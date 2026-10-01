@@ -2,13 +2,22 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ToolDefinition } from '@worldbookllm/providers';
-import { bookFilePathSchema, sha256Schema, storyOptionsSchema } from '@worldbookllm/shared';
+import {
+  bookFilePathSchema,
+  bookSlugSchema,
+  seriesSyncSchema,
+  sha256Schema,
+  storyOptionsSchema,
+  type SeriesSyncInput,
+  type SeriesSyncResult,
+} from '@worldbookllm/shared';
 import { z } from 'zod';
 
 import type { SkillService } from '../services/skills.js';
 import { confine } from '../story/book-paths.js';
 import { isStoryCommand, type StoryCommandName } from '../story/story-commands.js';
 import type { AgentWorkspace } from './workspace.js';
+import type { BookService } from '../services/books.js';
 
 /**
  * `story` commands the agent may run (ADR 0015 decision 4). Project
@@ -49,6 +58,9 @@ const SKILL_FILE_MAX_BYTES = 64 * 1024;
 
 export interface ToolContext {
   workspace: AgentWorkspace;
+  book?: string;
+  books?: BookService;
+  syncSeries?: (input: SeriesSyncInput) => Promise<SeriesSyncResult>;
   /** Skills this turn's agent may use; null allows every installed skill. */
   skills: ReadonlySet<string> | null;
 }
@@ -124,23 +136,35 @@ export class AgentToolRegistry {
       tool(
         'list_files',
         "List the book's Markdown files with their kind and title, optionally under one folder.",
-        { properties: { dir: { type: 'string', description: 'Folder prefix, e.g. characters' } } },
-        z.object({ dir: z.string().optional() }),
-        ({ dir }, context) => this.listFiles(context.workspace, dir),
+        {
+          properties: {
+            dir: { type: 'string', description: 'Folder prefix, e.g. characters' },
+            book: {
+              type: 'string',
+              description:
+                'Optional same-series book slug or bible id; default is this chat’s book.',
+            },
+          },
+        },
+        z.strictObject({ dir: z.string().optional(), book: bookSlugSchema.optional() }),
+        ({ dir, book }, context) => this.listFiles(this.readScope(context, book), dir),
       ),
       tool(
         'read_file',
         'Read a book file, frontmatter included, with the hash required to replace it safely.',
-        { properties: { path: pathParameter }, required: ['path'] },
-        z.object({ path: bookFilePathSchema }),
-        ({ path }, context) => JSON.stringify(context.workspace.readFile(path)),
+        { properties: { path: pathParameter, book: { type: 'string' } }, required: ['path'] },
+        z.strictObject({ path: bookFilePathSchema, book: bookSlugSchema.optional() }),
+        ({ path, book }, context) => JSON.stringify(this.readScope(context, book).readFile(path)),
       ),
       tool(
         'search',
         'Full-text search across the book; returns matching files with excerpts.',
-        { properties: { query: { type: 'string' } }, required: ['query'] },
-        z.object({ query: z.string().min(1).max(500) }),
-        ({ query }, context) => this.search(context.workspace, query),
+        {
+          properties: { query: { type: 'string' }, book: { type: 'string' } },
+          required: ['query'],
+        },
+        z.strictObject({ query: z.string().min(1).max(500), book: bookSlugSchema.optional() }),
+        ({ query, book }, context) => this.search(this.readScope(context, book), query),
       ),
       tool(
         'write_file',
@@ -157,7 +181,7 @@ export class AgentToolRegistry {
           },
           required: ['path', 'content', 'expectedHash'],
         },
-        z.object({
+        z.strictObject({
           path: bookFilePathSchema,
           content: z.string().max(5_000_000),
           expectedHash: sha256Schema.nullable(),
@@ -178,7 +202,7 @@ export class AgentToolRegistry {
           },
           required: ['path', 'find', 'replace'],
         },
-        z.object({ path: bookFilePathSchema, find: z.string().min(1), replace: z.string() }),
+        z.strictObject({ path: bookFilePathSchema, find: z.string().min(1), replace: z.string() }),
         ({ path, find, replace }, context) =>
           context.workspace.editFile(path, find, replace).then(() => `Edited ${path}.`),
       ),
@@ -196,15 +220,77 @@ export class AgentToolRegistry {
           },
           required: ['command'],
         },
-        z.object({
+        z.strictObject({
           command: z.string(),
           args: z.array(z.string().max(2000)).max(20).default([]),
           options: storyOptionsSchema,
         }),
         ({ command, args, options }, context) => this.runStory(context, command, args, options),
       ),
+      tool(
+        'sync_series',
+        'Push, pull, carry, or seed canon within this chat’s series. Only identity fields change; each changed book gets an undoable checkpoint. Unavailable in review mode.',
+        {
+          properties: {
+            direction: { type: 'string', enum: ['push', 'pull', 'carry', 'seed'] },
+            entity: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                kind: {
+                  type: 'string',
+                  enum: ['character', 'location', 'system', 'faction', 'artifact', 'term'],
+                },
+                id: { type: 'string' },
+              },
+              required: ['kind', 'id'],
+            },
+            book: {
+              type: 'string',
+              description: 'Source book for pull/seed, destination for carry.',
+            },
+            books: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Destination books for push.',
+            },
+          },
+          required: ['direction'],
+        },
+        seriesSyncSchema,
+        async (input, context) => {
+          if (context.syncSeries === undefined)
+            throw new Error('Series sync is unavailable in this workspace.');
+          const result = await context.syncSeries(input);
+          return JSON.stringify({
+            books: [...new Set(result.checkpoints.map((checkpoint) => checkpoint.book))],
+            checkpoints: result.checkpoints.map(({ id, book }) => ({ id, book })),
+          });
+        },
+      ),
     ] as unknown as Array<AgentTool<never>>;
     this.tools = new Map(list.map((entry) => [entry.definition.function.name, entry]));
+  }
+
+  private readScope(
+    context: ToolContext,
+    requested?: string,
+  ): Pick<AgentWorkspace, 'readFile' | 'listFiles' | 'search'> {
+    if (requested === undefined || requested === context.book) return context.workspace;
+    const books = context.books;
+    if (books === undefined || context.book === undefined)
+      throw new Error('Cross-book reads are unavailable.');
+    const own = books.get(context.book);
+    if (own.seriesId === null || books.get(requested).seriesId !== own.seriesId)
+      throw new Error('Read tools may only access this chat’s book or its series.');
+    return {
+      readFile: (path) => {
+        const file = books.readFile(requested, path);
+        return { path: file.path, hash: file.hash, content: file.content };
+      },
+      listFiles: () => books.listFiles(requested),
+      search: (query) => books.search(requested, query),
+    };
   }
 
   definitions(): ToolDefinition[] {
@@ -275,7 +361,7 @@ export class AgentToolRegistry {
     return readFileSync(absolute, 'utf8');
   }
 
-  private listFiles(workspace: AgentWorkspace, dir: string | undefined): string {
+  private listFiles(workspace: Pick<AgentWorkspace, 'listFiles'>, dir: string | undefined): string {
     const prefix = dir ? `${dir.replace(/\/+$/u, '')}/` : '';
     const files = workspace
       .listFiles()
@@ -284,7 +370,7 @@ export class AgentToolRegistry {
     return files.map((file) => `${file.path} — ${file.kind} — ${file.title}`).join('\n');
   }
 
-  private search(workspace: AgentWorkspace, query: string): string {
+  private search(workspace: Pick<AgentWorkspace, 'search'>, query: string): string {
     const results = workspace.search(query);
     if (results.length === 0) return 'No matches.';
     return results.map((hit) => `${hit.path} (${hit.title}): ${hit.excerpt}`).join('\n');
