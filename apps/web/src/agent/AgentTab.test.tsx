@@ -786,7 +786,11 @@ describe('story commands panel', () => {
     await user.click(screen.getByRole('button', { name: /^continuity/u }));
     expect(runBookCheck).toHaveBeenCalledWith('the-salt-road', 'continuity');
     const result = await screen.findByRole('region', { name: 'story continuity result' });
-    expect(result.textContent).toContain('1 error · 0 warnings');
+    expect(within(result).getByRole('status').textContent).toContain('1 error · 0 warnings');
+    // The last command is marked for sight only; the buttons are not toggles.
+    const continuityButton = screen.getByRole('button', { name: /^continuity/u });
+    expect(continuityButton.hasAttribute('data-last-run')).toBe(true);
+    expect(continuityButton.hasAttribute('aria-pressed')).toBe(false);
     expect(
       within(result).getByRole('link', { name: 'characters/mara-quill.md' }).getAttribute('href'),
     ).toBe('/books/the-salt-road/files/characters/mara-quill.md');

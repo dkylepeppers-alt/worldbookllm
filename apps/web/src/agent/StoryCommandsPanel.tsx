@@ -150,7 +150,8 @@ export function StoryCommandsPanel({ onAsk }: StoryCommandsPanelProps) {
               type="button"
               className="button-secondary"
               disabled={running !== null}
-              aria-pressed={result?.command === command}
+              // The last command run is marked for sight only: these buttons are not toggles.
+              data-last-run={result?.command === command ? '' : undefined}
               onClick={() => void run(command)}
             >
               <code>{command}</code>
@@ -167,7 +168,7 @@ export function StoryCommandsPanel({ onAsk }: StoryCommandsPanelProps) {
       )}
       {result === null ? null : (
         <section className="story-command-result" aria-label={`story ${result.command} result`}>
-          <p className="coordinate-label">
+          <p className="coordinate-label" role="status">
             story {result.command} · {result.envelope.ok ? 'ok' : `exit ${result.exitCode}`} ·{' '}
             {summaryOf(result)}
           </p>
