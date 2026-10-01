@@ -319,17 +319,12 @@ export class BookService {
         );
       }
       const label = `${current === null ? 'Create' : 'Edit'} ${path}`;
-      const reindex = needsReindex(path);
-      const root = this.files.root(slug);
       const { checkpoint } = await this.checkpoints.record(
         slug,
         label,
         actor,
-        reindex ? 'book' : { paths: [path] },
-        async () => {
-          this.files.write(slug, path, input.content);
-          if (reindex) await this.cli.runOrThrow({ command: 'reindex', root });
-        },
+        needsReindex(path) ? 'book' : { paths: [path] },
+        () => this.writeAndReindex(slug, path, input.content, current),
       );
       this.index.reconcile(slug);
       const file = this.index.get(slug, path);
@@ -671,13 +666,33 @@ export class BookService {
     content: string,
   ): Promise<void> {
     const slug = session.book;
-    const root = this.files.root(slug);
-    const reindex = needsReindex(path);
-    await session.capture(reindex ? 'book' : { paths: [path] }, async () => {
-      this.files.write(slug, path, content);
-      if (reindex) await this.cli.runOrThrow({ command: 'reindex', root });
-    });
+    const previous = this.files.readBytes(slug, path);
+    await session.capture(needsReindex(path) ? 'book' : { paths: [path] }, () =>
+      this.writeAndReindex(slug, path, content, previous),
+    );
     this.index.reconcile(slug);
+  }
+
+  /**
+   * Writes a file and reindexes when its kind feeds a registry. A failed
+   * reindex puts `previous` back (or removes a new file), so a write the
+   * story CLI rejects leaves the book as it was.
+   */
+  private async writeAndReindex(
+    slug: string,
+    path: string,
+    content: string,
+    previous: Buffer | null,
+  ): Promise<void> {
+    this.files.write(slug, path, content);
+    if (!needsReindex(path)) return;
+    try {
+      await this.cli.runOrThrow({ command: 'reindex', root: this.files.root(slug) });
+    } catch (error) {
+      if (previous === null) this.files.remove(slug, path);
+      else this.files.write(slug, path, previous);
+      throw error;
+    }
   }
 
   /**

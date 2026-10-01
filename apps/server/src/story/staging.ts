@@ -207,10 +207,19 @@ export class StagedBook {
     rmSync(this.root, { recursive: true, force: true });
   }
 
+  /** Writes a staged file; a failed reindex restores it, as on the real book. */
   private async put(path: string, content: string): Promise<void> {
     const absolute = confine(this.root, path);
+    const previous = this.bytes(path);
     mkdirSync(dirname(absolute), { recursive: true });
     writeFileSync(absolute, content);
-    if (needsReindex(path)) await this.cli.runOrThrow({ command: 'reindex', root: this.root });
+    if (!needsReindex(path)) return;
+    try {
+      await this.cli.runOrThrow({ command: 'reindex', root: this.root });
+    } catch (error) {
+      if (previous === null) rmSync(absolute, { force: true });
+      else writeFileSync(absolute, previous);
+      throw error;
+    }
   }
 }

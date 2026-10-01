@@ -236,6 +236,31 @@ describe('books API', () => {
     expect(validate.envelope.ok).toBe(true);
   });
 
+  it('restores an entity file whose edit fails reindex and records no checkpoint', async () => {
+    const { slug } = await createBook();
+    await addEntity(slug, 'character', 'Mara Quill');
+    const character = await readFile(slug, 'characters/mara-quill.md');
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/files/characters/mara-quill.md`,
+      payload: {
+        content: character.content.replace(
+          'name: Mara Quill',
+          'name: Mara Quill\narc: Starts certain,\n  ends unsure.',
+        ),
+        expectedHash: character.hash,
+      },
+    });
+    expect(saved.statusCode).toBeGreaterThanOrEqual(400);
+    expect((await readFile(slug, 'characters/mara-quill.md')).hash).toBe(character.hash);
+    const checkpoints = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/checkpoints` })
+    ).json<Checkpoint[]>();
+    expect(checkpoints.map((checkpoint) => checkpoint.label)).not.toContain(
+      'Edit characters/mara-quill.md (failed)',
+    );
+  });
+
   it('gives books created at the same time with the same title different folders', async () => {
     const created = await Promise.all([createBook('Twin'), createBook('Twin'), createBook('Twin')]);
     expect(created.map((book) => book.slug).sort()).toEqual(['twin', 'twin-2', 'twin-3']);

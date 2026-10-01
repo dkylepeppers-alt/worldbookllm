@@ -208,7 +208,7 @@ describe('review mode', () => {
         sse(
           toolCall('c2', 'write_file', {
             path: 'research/tides.md',
-            content: '# Tides\n',
+            content: '---\ntitle: Tides\nstatus: open\nsources: []\nused-in: []\n---\n\n# Tides\n',
             expectedHash: null,
           }),
         ),
