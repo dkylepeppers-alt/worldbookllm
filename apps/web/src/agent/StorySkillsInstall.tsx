@@ -10,16 +10,28 @@ interface StorySkillsInstallProps {
   once?: boolean;
 }
 
-function report(result: StorySkillsInstallResult): string {
-  const installed = result.installed.length;
-  if (installed === 0) return 'Story Skills are already installed.';
-  const skipped = result.skipped.length;
-  return `Installed ${installed} ${installed === 1 ? 'skill' : 'skills'}${
-    skipped === 0 ? '' : `; ${skipped} already present`
-  }.`;
+function count(n: number): string {
+  return `${n} ${n === 1 ? 'skill' : 'skills'}`;
 }
 
-/** Installs the pinned story-skills craft skills into the skills library. */
+function report(result: StorySkillsInstallResult): string {
+  const parts: string[] = [];
+  if (result.installed.length > 0) parts.push(`Installed ${count(result.installed.length)}`);
+  if (result.upgraded.length > 0) {
+    parts.push(`updated ${count(result.upgraded.length)} to the latest version`);
+  }
+  if (result.kept.length > 0) {
+    parts.push(`kept ${count(result.kept.length)} you edited (${result.kept.join(', ')})`);
+  }
+  if (parts.length === 0) return 'Story Skills are already installed and up to date.';
+  if (result.installed.length > 0 && result.skipped.length > 0) {
+    parts.push(`${result.skipped.length} already present`);
+  }
+  const text = parts.join('; ');
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
+/** Installs the bundled story-skills craft skills and updates unedited installs. */
 export function StorySkillsInstall({ onInstalled, once = false }: StorySkillsInstallProps) {
   const api = useApi();
   const [busy, setBusy] = useState(false);

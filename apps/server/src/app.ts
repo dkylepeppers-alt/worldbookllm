@@ -159,6 +159,22 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   });
 
+  // Installed story-skills follow the bundled package version (ADR 0021):
+  // unedited installs move to it, edited ones stay as the writer left them.
+  app.addHook('onReady', async () => {
+    try {
+      const { upgraded, kept } = storySkills.refresh();
+      if (upgraded.length > 0 || kept.length > 0) {
+        app.log.info(
+          { upgraded: upgraded.map((skill) => skill.name), kept },
+          'refreshed story-skills installs',
+        );
+      }
+    } catch (error) {
+      app.log.error(error, 'story-skills refresh failed');
+    }
+  });
+
   app.addHook('onClose', () => {
     if (db.open) db.close();
   });

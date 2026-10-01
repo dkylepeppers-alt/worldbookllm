@@ -6,8 +6,11 @@ import {
   type PatchSkill,
   type SkillDetail,
   type SkillMetadata,
+  type SkillOrigin,
   createSkillSchema,
   patchSkillSchema,
+  skillContentSchema,
+  skillDescriptionSchema,
   skillDetailSchema,
   skillMetadataSchema,
   skillOriginSchema,
@@ -250,6 +253,58 @@ export class SkillService {
     }
 
     return this.get(id);
+  }
+
+  /**
+   * Replaces an installed skill's upstream text and origin, for a story-skills
+   * upgrade. Name, id, `createdAt`, and license stay. SKILL.md is rewritten
+   * first and restored if the index update fails.
+   */
+  replaceInstalled(
+    id: string,
+    input: { description: string; content: string; origin: SkillOrigin },
+  ): SkillMetadata {
+    const current = this.get(id);
+    const description = skillDescriptionSchema.parse(input.description);
+    const content = skillContentSchema.parse(input.content);
+    const origin = skillOriginSchema.parse(input.origin);
+    const stored = this.skillFiles.write({
+      id: current.id,
+      name: current.name,
+      description,
+      content,
+      origin,
+      license: current.license,
+      createdAt: current.createdAt,
+      updatedAt: this.now(),
+    });
+    try {
+      this.db
+        .prepare(
+          'UPDATE skills SET description = ?, origin_json = ?, word_count = ?, content_hash = ?, updated_at = ? WHERE id = ?',
+        )
+        .run(
+          description,
+          JSON.stringify(origin),
+          stored.wordCount,
+          stored.contentHash,
+          stored.updatedAt,
+          id,
+        );
+    } catch (error) {
+      this.skillFiles.write({
+        id: current.id,
+        name: current.name,
+        description: current.description,
+        content: current.content,
+        origin: current.origin,
+        license: current.license,
+        createdAt: current.createdAt,
+        updatedAt: current.updatedAt,
+      });
+      throw error;
+    }
+    return mapSkill(this.getRow(id));
   }
 
   private assertFileIdentity(row: SkillRow, file: ReadSkillFile): void {

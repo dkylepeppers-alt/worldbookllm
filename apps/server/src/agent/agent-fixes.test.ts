@@ -438,6 +438,98 @@ describe('story-skills installer recovery', () => {
     db.close();
   });
 
+  function setup() {
+    const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-skills-'));
+    const v1 = mkdtempSync(join(tmpdir(), 'worldbookllm-skill-v1-'));
+    const v2 = mkdtempSync(join(tmpdir(), 'worldbookllm-skill-v2-'));
+    tempDirs.push(dataDir, v1, v2);
+    sourceWith(v1);
+    mkdirSync(join(v2, 'alpha/references'), { recursive: true });
+    writeFileSync(
+      join(v2, 'alpha/SKILL.md'),
+      '---\nname: alpha\ndescription: Newer alpha skill.\n---\n\n# Alpha v2\n',
+    );
+    writeFileSync(join(v2, 'alpha/references/a.md'), 'reference A v2\n');
+    writeFileSync(join(v2, 'alpha/references/c.md'), 'reference C\n');
+    const db = openDatabase(dataDir);
+    const skills = new SkillService(db, new SkillFileStore(dataDir));
+    const root = join(dataDir, 'skills');
+    return {
+      db,
+      skills,
+      root,
+      first: new StorySkillsInstaller(skills, root, v1, 'story-skills@1.0.0'),
+      second: new StorySkillsInstaller(skills, root, v2, 'story-skills@2.0.0'),
+    };
+  }
+
+  it('moves an unedited install to a newer version, keeping files the writer added', () => {
+    const { db, skills, root, first, second } = setup();
+    const [installed] = first.install().installed;
+    writeFileSync(join(root, 'alpha/references/mine.md'), 'my notes\n');
+
+    const result = second.refresh();
+    expect(result.upgraded.map((skill) => skill.name)).toEqual(['alpha']);
+    expect(result.kept).toEqual([]);
+    const detail = skills.get(installed!.id);
+    expect(detail.content).toContain('# Alpha v2');
+    expect(detail.description).toBe('Newer alpha skill.');
+    expect(detail.origin).toEqual({
+      type: 'story-skills',
+      package: 'story-skills@2.0.0',
+      skillId: 'alpha',
+    });
+    expect(readFileSync(join(root, 'alpha/references/a.md'), 'utf8')).toBe('reference A v2\n');
+    expect(existsSync(join(root, 'alpha/references/b.md'))).toBe(false);
+    expect(readFileSync(join(root, 'alpha/references/c.md'), 'utf8')).toBe('reference C\n');
+    expect(readFileSync(join(root, 'alpha/references/mine.md'), 'utf8')).toBe('my notes\n');
+
+    expect(second.refresh()).toMatchObject({ upgraded: [], kept: [], skipped: ['alpha'] });
+    db.close();
+  });
+
+  it('keeps an install the writer edited on its version', () => {
+    const { db, skills, first, second } = setup();
+    const [installed] = first.install().installed;
+    skills.patch(installed!.id, { content: '# Alpha\n\nMy version.\n' });
+    expect(second.refresh()).toMatchObject({ upgraded: [], kept: ['alpha'] });
+    expect(skills.get(installed!.id).origin).toMatchObject({ package: 'story-skills@1.0.0' });
+
+    const other = setup();
+    const [otherSkill] = other.first.install().installed;
+    writeFileSync(join(other.root, 'alpha/references/b.md'), 'edited B\n');
+    expect(other.second.install()).toMatchObject({ upgraded: [], kept: ['alpha'] });
+    expect(other.skills.get(otherSkill!.id).content).toContain('# Alpha\n');
+    expect(readFileSync(join(other.root, 'alpha/references/a.md'), 'utf8')).toBe('reference A\n');
+    db.close();
+    other.db.close();
+  });
+
+  it('records a baseline for installs made before baselines existed', () => {
+    const { db, skills, root, first, second } = setup();
+    const [installed] = first.install().installed;
+    rmSync(join(root, 'alpha/.story-skills.json'));
+    first.refresh();
+    expect(second.refresh().upgraded.map((skill) => skill.name)).toEqual(['alpha']);
+    expect(skills.get(installed!.id).content).toContain('# Alpha v2');
+
+    const edited = setup();
+    const [legacy] = edited.first.install().installed;
+    rmSync(join(edited.root, 'alpha/.story-skills.json'));
+    edited.skills.patch(legacy!.id, { content: '# Alpha\n\nMine.\n' });
+    edited.first.refresh();
+    expect(edited.second.refresh()).toMatchObject({ upgraded: [], kept: ['alpha'] });
+    db.close();
+    edited.db.close();
+  });
+
+  it('refreshes without re-adding skills the writer has not installed', () => {
+    const { db, skills, second } = setup();
+    expect(second.refresh()).toEqual({ installed: [], skipped: [], upgraded: [], kept: [] });
+    expect(skills.list()).toEqual([]);
+    db.close();
+  });
+
   it('does not repair a legacy bundled skill from the starter catalog', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-skills-'));
     const sourceDir = mkdtempSync(join(tmpdir(), 'worldbookllm-skill-src-'));

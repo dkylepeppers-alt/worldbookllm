@@ -471,7 +471,7 @@ describe('agent tab', () => {
 
   it('offers to install Story Skills when none are installed', async () => {
     const installStorySkills = vi.fn(() =>
-      Promise.resolve({ installed: [storySkill], skipped: [] }),
+      Promise.resolve({ installed: [storySkill], skipped: [], upgraded: [], kept: [] }),
     );
     renderAt('/books/the-salt-road/agent', {
       listSkills: () => Promise.resolve([]),

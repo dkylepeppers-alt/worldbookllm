@@ -10,6 +10,12 @@ updates:
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
     groups:
+      # story-skills is exact-pinned (ADR 0014) and installed skills follow it
+      # (ADR 0021). A group of its own keeps its updates from waiting on, or
+      # being blocked by, unrelated packages in minor-and-patch.
+      story-skills:
+        patterns:
+          - 'story-skills'
       # @eslint/js is versioned with eslint core; bump them together so the
       # recommended rules never lag the linter (including across majors).
       eslint:
