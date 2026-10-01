@@ -1914,7 +1914,7 @@ ol.inspector-sections {
   border: 1px solid var(--ink);
   background: var(--surface);
   padding: 1rem;
-  box-shadow: 4px 4px 0 rgb(201 68 46 / 16%);
+  box-shadow: 4px 4px 0 rgb(36 87 197 / 12%);
 }
 
 .agent-question-item {

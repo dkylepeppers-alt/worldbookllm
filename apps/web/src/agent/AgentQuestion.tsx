@@ -1,7 +1,7 @@
 import type { AskUserQuestion } from '@worldbookllm/shared';
 import { useState } from 'react';
 
-import { useStoredDraft } from '../drafts.js';
+import { clearDraft, useStoredDraft } from '../drafts.js';
 import {
   composeAnswer,
   emptyAnswers,
@@ -28,10 +28,8 @@ interface AgentQuestionProps {
 export function AgentQuestion({ chatId, question, disabled, onAnswer }: AgentQuestionProps) {
   const { callId, questions } = question;
   const fallback = emptyAnswers(questions);
-  const [answers, setAnswers] = useStoredDraft<QuestionAnswer[]>(
-    `agent-question:${chatId}:${callId}`,
-    fallback,
-  );
+  const draftKey = `agent-question:${chatId}:${callId}`;
+  const [answers, setAnswers] = useStoredDraft<QuestionAnswer[]>(draftKey, fallback);
   const [sending, setSending] = useState(false);
   const quick = questions.length === 1 && questions[0]?.multiSelect !== true;
   const complete = questions.every((_, index) => isAnswered(answers[index]));
@@ -41,7 +39,11 @@ export function AgentQuestion({ chatId, question, disabled, onAnswer }: AgentQue
     if (locked) return;
     setSending(true);
     const outcome = await onAnswer(composeAnswer(questions, next), callId);
-    if (outcome === 'accepted') setAnswers(fallback);
+    if (outcome === 'accepted') {
+      // The card unmounts once the turn starts, so clear the stored draft directly.
+      clearDraft(draftKey);
+      setAnswers(fallback);
+    }
     setSending(false);
   }
 

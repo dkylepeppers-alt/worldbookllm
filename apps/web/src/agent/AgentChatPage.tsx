@@ -354,7 +354,8 @@ function AgentChatPage({ chatId }: { chatId: string }) {
         running={run !== null || watching}
         stopping={run?.turn.stopping ?? (watchedId !== null && stoppingId === watchedId)}
         busy={busyElsewhere}
-        onSend={(content) => runner.send(chatId, content)}
+        // A typed message while the agent waits on a question answers it in free form.
+        onSend={(content) => runner.send(chatId, content, [], question?.callId)}
         onStop={run !== null ? runner.stop : watching ? () => void stopWatched() : undefined}
         append={draft.append}
       />

@@ -202,6 +202,19 @@ function historyMessages(history: AgentMessage[]): ChatMessage[] {
   return messages;
 }
 
+/**
+ * The `ask_user` call the chat is waiting on: the last message is a finished
+ * turn whose last step asked. Mirrors the web app's pendingQuestion.
+ */
+function pendingAskCallId(messages: readonly AgentMessage[]): string | null {
+  const last = messages.at(-1);
+  if (last?.role !== 'assistant' || last.status !== 'complete') return null;
+  const call = last.steps
+    .at(-1)
+    ?.toolCalls.findLast((recorded) => recorded.name === ASK_USER_TOOL && recorded.ok);
+  return call?.id ?? null;
+}
+
 /** Gemma 3 on Google sources is sent no tools (see buildGoogleRequest). */
 function googleModelWithoutTools(config: ProviderConfig): boolean {
   return (
@@ -508,10 +521,12 @@ export class AgentService {
       this.db.transaction(() => {
         // Reporting a review outcome marks it told; the transaction keeps
         // that from happening unless the message that carries it is stored.
+        // Only the question the chat is waiting on can be answered; a stale
+        // tab's answer is kept as a plain message.
         const answering =
-          answeringCallId === undefined
-            ? null
-            : `The writer's message answers your ask_user call ${answeringCallId}.`;
+          answeringCallId !== undefined && pendingAskCallId(detail.messages) === answeringCallId
+            ? `The writer's message answers your ask_user call ${answeringCallId}.`
+            : null;
         const parts = [answering, this.changesets.outcomeNote(chatId), pinned].filter(
           (part): part is string => part !== null,
         );
@@ -774,7 +789,18 @@ export class AgentService {
             arguments: call.arguments,
           });
           const started = Date.now();
-          const outcome = await this.tools.execute(call.name, call.arguments, toolContext);
+          // One question card at a time: a second ask_user in the same step is refused.
+          const asked = step.toolCalls.some(
+            (recorded) => recorded.name === ASK_USER_TOOL && recorded.ok,
+          );
+          const outcome =
+            asked && call.name === ASK_USER_TOOL
+              ? {
+                  ok: false,
+                  result:
+                    'Only one ask_user call is shown per step. Put every question in one call (up to 4).',
+                }
+              : await this.tools.execute(call.name, call.arguments, toolContext);
           const result = truncateResult(outcome.result);
           step.toolCalls.push({
             id: call.id,

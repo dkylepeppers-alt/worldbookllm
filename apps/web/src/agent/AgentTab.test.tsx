@@ -442,6 +442,34 @@ describe('agent tab', () => {
       );
     });
 
+    it('links a typed reply to the waiting question, and forgets an answer once sent', async () => {
+      const streamAgentMessage = vi.fn<ApiClient['streamAgentMessage']>(() => Promise.resolve());
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+        getAgentChat: () =>
+          Promise.resolve(
+            asked({ questions: [genre, { question: 'Who tells it?', options: genre.options }] }),
+          ),
+        streamAgentMessage,
+      });
+      const card = await screen.findByRole('region', { name: 'The agent asks' });
+      await userEvent.click(within(card).getAllByRole('button', { name: /Dark fantasy/u })[0]!);
+      await userEvent.click(within(card).getAllByRole('button', { name: /Cozy mystery/u })[1]!);
+      await userEvent.click(within(card).getByRole('button', { name: 'Send answer' }));
+      await waitFor(() =>
+        expect(
+          localStorage.getItem(`worldbookllm.draft.agent-question:${CHAT_ID}:call_q`),
+        ).toBeNull(),
+      );
+
+      await userEvent.type(screen.getByLabelText('Message'), 'Something stranger');
+      await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+      expect(streamAgentMessage).toHaveBeenLastCalledWith(
+        CHAT_ID,
+        'Something stranger',
+        expect.objectContaining({ answeringCallId: 'call_q' }),
+      );
+    });
+
     it('keeps a half-picked answer after leaving the chat', async () => {
       const overrides = {
         getAgentChat: () =>

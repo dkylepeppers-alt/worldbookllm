@@ -792,6 +792,73 @@ describe('ask_user', () => {
     expect(String(messages.at(-1)?.content)).toContain('Invalid arguments for ask_user');
   });
 
+  it('links only an answer to the question the chat is waiting on', async () => {
+    const { app, chat, requests } = await boot([
+      () => sse(toolCall('call_q', 'ask_user', question)),
+      () => sse(text('Noted.')),
+    ]);
+    const send = (content: string, answeringCallId: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/agent-chats/${chat.id}/messages`,
+        payload: { content, answeringCallId },
+      });
+    await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Brainstorm.' },
+    });
+    await send('Wrong call', 'call_old');
+    expect(String((requests[1]?.messages as Array<{ content: unknown }>).at(-1)?.content)).toBe(
+      'Wrong call',
+    );
+    // The question was answered (as plain text) above, so it is no longer pending.
+    await send('Too late', 'call_q');
+    expect(String((requests[2]?.messages as Array<{ content: unknown }>).at(-1)?.content)).toBe(
+      'Too late',
+    );
+  });
+
+  it('shows one question card per step, refusing a second ask_user call', async () => {
+    const twoQuestions = {
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'call_a',
+                type: 'function',
+                function: { name: 'ask_user', arguments: JSON.stringify(question) },
+              },
+              {
+                index: 1,
+                id: 'call_b',
+                type: 'function',
+                function: { name: 'ask_user', arguments: JSON.stringify(question) },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const { app, chat, requests } = await boot([() => sse(twoQuestions)]);
+    await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Brainstorm.' },
+    });
+    expect(requests).toHaveLength(1);
+    const detail = (
+      await app.inject({ method: 'GET', url: `/api/agent-chats/${chat.id}` })
+    ).json<AgentChatDetail>();
+    expect(detail.messages[1]?.steps[0]?.toolCalls).toMatchObject([
+      { id: 'call_a', ok: true },
+      { id: 'call_b', ok: false, result: expect.stringContaining('Only one ask_user') },
+    ]);
+  });
+
   it('tells the agent to ask with choices instead of listing them', async () => {
     const { app, chat, requests } = await boot([() => sse(text('Hello.'))]);
     await app.inject({
