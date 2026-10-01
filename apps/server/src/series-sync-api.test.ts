@@ -156,6 +156,10 @@ describe('atomic series sync', () => {
       'Oxford comma, always.',
     );
     await sync({ direction: 'carry', entity: styleSheet, book: 'high-water' }, 409);
+    await sync(
+      { direction: 'push', entity: { kind: 'style-sheet', id: 'foo' }, books: ['low-water'] },
+      400,
+    );
   }, 30_000);
 
   it('rolls back every touched book and creates no checkpoints if one validate fails', async () => {
