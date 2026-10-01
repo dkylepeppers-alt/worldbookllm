@@ -86,6 +86,18 @@ test('M7 agent tab on a phone', async ({ page }) => {
     await expect(access(characterFile)).rejects.toThrow();
   });
 
+  await test.step('run a story check from the panel and hand it to the agent', async () => {
+    await page.getByText('Story commands', { exact: true }).click();
+    await page.getByRole('button', { name: /^validate/u }).click();
+    const result = page.getByRole('region', { name: 'story validate result' });
+    await expect(result).toContainText('story validate');
+    await result.getByRole('button', { name: 'Ask the agent about this' }).click();
+    await expect(page.getByRole('textbox', { name: 'Message' })).toHaveValue(
+      /^I ran `story validate`/u,
+    );
+    await page.getByRole('textbox', { name: 'Message' }).fill('');
+  });
+
   await test.step('stop a slow turn', async () => {
     await page
       .getByRole('textbox', { name: 'Message' })

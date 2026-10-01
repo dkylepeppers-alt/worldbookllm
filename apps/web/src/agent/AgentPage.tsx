@@ -7,6 +7,8 @@ import { errorMessage, useLoad } from '../books/useLoad.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { AgentComposer } from './AgentComposer.js';
 import { useAgentRunner } from './agent-runner-context.js';
+import { useDraftAppend } from './use-draft-append.js';
+import { StoryCommandsPanel } from './StoryCommandsPanel.js';
 import { StorySkillsInstall } from './StorySkillsInstall.js';
 
 function formatChatTime(value: string): string {
@@ -60,6 +62,7 @@ export function AgentPage() {
   const [review, setReview] = useState<boolean | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const draft = useDraftAppend('agent-new-chat-input');
   const running = runner.run !== null;
   const agentList = agents.status === 'ready' ? agents.data : [];
   const agentNames = new Map(agentList.map((agent) => [agent.id, agent.name]));
@@ -130,6 +133,7 @@ export function AgentPage() {
           </button>
         </p>
       )}
+      <StoryCommandsPanel onAsk={draft.ask} />
       <AgentComposer
         id="agent-new-chat-input"
         label={pinned.length === 0 ? 'New chat' : `New chat about ${pinned.join(', ')}`}
@@ -137,6 +141,7 @@ export function AgentPage() {
         running={running}
         busy={creating}
         onSend={start}
+        append={draft.append}
       />
       {running ? (
         <p className="change-note">

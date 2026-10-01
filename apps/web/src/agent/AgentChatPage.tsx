@@ -18,8 +18,10 @@ import { AgentComposer } from './AgentComposer.js';
 import { AgentInspectorDialog } from './AgentInspectorDialog.js';
 import { AgentMessages } from './AgentMessages.js';
 import { useAgentRunner } from './agent-runner-context.js';
+import { useDraftAppend } from './use-draft-append.js';
 import { AgentChatSettings } from './AgentChatSettings.js';
 import { DiffDialog, type DiffFile } from './DiffDialog.js';
+import { StoryCommandsPanel } from './StoryCommandsPanel.js';
 
 const WATCH_POLL_MS = 2000;
 
@@ -79,6 +81,7 @@ function AgentChatPage({ chatId }: { chatId: string }) {
   const [resolved, setResolved] = useState<ReadonlyMap<string, AgentChangeset>>(new Map());
   const [resolving, setResolving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const draft = useDraftAppend('agent-message-input');
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [older, setOlder] = useState<ReadonlyMap<string, Checkpoint>>(new Map());
   // The watched turn's assistant message this screen asked the server to stop.
@@ -323,6 +326,7 @@ function AgentChatPage({ chatId }: { chatId: string }) {
         </p>
       )}
 
+      <StoryCommandsPanel onAsk={draft.ask} />
       <AgentComposer
         // A turn the server refused before it started gives its message back
         // (for a chat started from the Agent tab, the draft was typed there).
@@ -336,6 +340,7 @@ function AgentChatPage({ chatId }: { chatId: string }) {
         busy={busyElsewhere}
         onSend={(content) => runner.send(chatId, content)}
         onStop={run !== null ? runner.stop : watching ? () => void stopWatched() : undefined}
+        append={draft.append}
       />
 
       <div className="agent-chat-footer">
