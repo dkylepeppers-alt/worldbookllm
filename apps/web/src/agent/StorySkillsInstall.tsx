@@ -18,7 +18,7 @@ function report(result: StorySkillsInstallResult): string {
   const parts: string[] = [];
   if (result.installed.length > 0) parts.push(`Installed ${count(result.installed.length)}`);
   if (result.upgraded.length > 0) {
-    parts.push(`updated ${count(result.upgraded.length)} to the latest version`);
+    parts.push(`updated ${count(result.upgraded.length)} to the bundled version`);
   }
   if (result.kept.length > 0) {
     parts.push(`kept ${count(result.kept.length)} you edited (${result.kept.join(', ')})`);

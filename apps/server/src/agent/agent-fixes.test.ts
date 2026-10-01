@@ -1,10 +1,19 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { AgentGeneration, BookSummary } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { openDatabase } from '../db/database.js';
 import { SkillFileStore } from '../files/skill-files.js';
@@ -521,6 +530,65 @@ describe('story-skills installer recovery', () => {
     expect(edited.second.refresh()).toMatchObject({ upgraded: [], kept: ['alpha'] });
     db.close();
     edited.db.close();
+  });
+
+  it('keeps a pre-baseline install whose reference file was edited', () => {
+    const { db, root, first, second } = setup();
+    first.install();
+    rmSync(join(root, 'alpha/.story-skills.json'));
+    writeFileSync(join(root, 'alpha/references/b.md'), 'edited B\n');
+    first.refresh();
+    expect(second.refresh()).toMatchObject({ upgraded: [], kept: ['alpha'] });
+    expect(readFileSync(join(root, 'alpha/references/a.md'), 'utf8')).toBe('reference A\n');
+    db.close();
+  });
+
+  it('leaves an install newer than the bundled version alone', () => {
+    const { db, skills, second, first } = setup();
+    const [installed] = second.install().installed;
+    expect(first.refresh()).toMatchObject({ upgraded: [], kept: [], skipped: ['alpha'] });
+    expect(skills.get(installed!.id).content).toContain('# Alpha v2');
+    db.close();
+  });
+
+  it('refuses baseline paths outside the skill’s references folder', () => {
+    const { db, skills, root, first, second } = setup();
+    const [installed] = first.install().installed;
+    const outside = join(root, 'outside.md');
+    writeFileSync(outside, 'not a reference\n');
+    const baselinePath = join(root, 'alpha/.story-skills.json');
+    const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as {
+      references: Record<string, string>;
+    };
+    baseline.references['references/../../outside.md'] = createHash('sha256')
+      .update('not a reference\n')
+      .digest('hex');
+    writeFileSync(baselinePath, JSON.stringify(baseline));
+
+    expect(second.refresh()).toMatchObject({ upgraded: [], kept: ['alpha'] });
+    expect(readFileSync(outside, 'utf8')).toBe('not a reference\n');
+    expect(skills.get(installed!.id).origin).toMatchObject({ package: 'story-skills@1.0.0' });
+    db.close();
+  });
+
+  it('leaves the old version whole when the upgrade fails part way', () => {
+    const { db, skills, root, first, second } = setup();
+    const [installed] = first.install().installed;
+    const replace = vi.spyOn(skills, 'replaceInstalled').mockImplementationOnce(() => {
+      throw new Error('disk full');
+    });
+    expect(() => second.refresh()).toThrow('disk full');
+    replace.mockRestore();
+    expect(skills.get(installed!.id).content).toContain('# Alpha\n');
+    expect(readFileSync(join(root, 'alpha/references/a.md'), 'utf8')).toBe('reference A\n');
+    expect(readFileSync(join(root, 'alpha/references/b.md'), 'utf8')).toBe('reference B\n');
+    expect(readdirSync(join(root, 'alpha')).sort()).toEqual([
+      '.story-skills.json',
+      'SKILL.md',
+      'references',
+    ]);
+    expect(second.refresh().upgraded.map((skill) => skill.name)).toEqual(['alpha']);
+    db.close();
   });
 
   it('refreshes without re-adding skills the writer has not installed', () => {
