@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 
 import {
+  ASK_MARKER,
   SLOW_MARKER,
+  STUB_ASK_OPTIONS,
+  STUB_ASK_REPLY,
   STUB_AGENT_CHARACTER,
   STUB_AGENT_REPLY,
   STUB_MODEL_ID,
@@ -96,6 +99,20 @@ test('M7 agent tab on a phone', async ({ page }) => {
       /^I ran `story validate`/u,
     );
     await page.getByRole('textbox', { name: 'Message' }).fill('');
+  });
+
+  await test.step('answer the agent’s question by tapping a choice', async () => {
+    await page.getByRole('textbox', { name: 'Message' }).fill(`${ASK_MARKER} brainstorm a premise`);
+    await page.getByRole('button', { name: 'Send' }).click();
+    const card = page.getByRole('region', { name: 'The agent asks' });
+    await expect(card.getByText('Which mood should the premise have?')).toBeVisible();
+    await expect(card.getByRole('button', { name: /Other/u })).toBeVisible();
+    await card.getByRole('button', { name: new RegExp(STUB_ASK_OPTIONS[0], 'u') }).click();
+    await expect(page.getByText(STUB_ASK_REPLY)).toBeVisible();
+    await expect(card).toBeHidden();
+    await expect(
+      page.getByRole('list', { name: 'Messages' }).getByText(STUB_ASK_OPTIONS[0], { exact: true }),
+    ).toBeVisible();
   });
 
   await test.step('stop a slow turn', async () => {

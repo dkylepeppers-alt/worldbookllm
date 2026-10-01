@@ -4,7 +4,12 @@ import type {
   AgentStreamEvent,
   Checkpoint,
 } from '@worldbookllm/shared';
-import { bookSlugSchema } from '@worldbookllm/shared';
+import {
+  ASK_USER_TOOL,
+  askUserArgumentsSchema,
+  bookSlugSchema,
+  type AskUserQuestion,
+} from '@worldbookllm/shared';
 
 export interface ToolCallView {
   id: string;
@@ -192,4 +197,74 @@ export function prettyArguments(argumentsJson: string): string {
   } catch {
     return argumentsJson;
   }
+}
+
+/** The questions an `ask_user` call asked, or null when its arguments do not parse. */
+export function questionsOf(call: { name: string; arguments: string }): AskUserQuestion[] | null {
+  if (call.name !== ASK_USER_TOOL) return null;
+  try {
+    const parsed = askUserArgumentsSchema.safeParse(JSON.parse(call.arguments));
+    return parsed.success ? parsed.data.questions : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface PendingQuestion {
+  callId: string;
+  questions: AskUserQuestion[];
+}
+
+/**
+ * The question the agent is waiting on: the chat's last message is a finished
+ * turn whose last step asked the writer with `ask_user`.
+ */
+export function pendingQuestion(messages: readonly AgentMessage[]): PendingQuestion | null {
+  const last = [...messages].sort((left, right) => left.seq - right.seq).at(-1);
+  if (last?.role !== 'assistant' || last.status !== 'complete') return null;
+  const calls = last.steps.at(-1)?.toolCalls ?? [];
+  for (const call of [...calls].reverse()) {
+    if (!call.ok) continue;
+    const questions = questionsOf(call);
+    if (questions !== null) return { callId: call.id, questions };
+  }
+  return null;
+}
+
+/** The writer's answer to one question: the options picked, and any written answer. */
+export interface QuestionAnswer {
+  selected: string[];
+  other: boolean;
+  text: string;
+}
+
+export function emptyAnswers(questions: readonly AskUserQuestion[]): QuestionAnswer[] {
+  return questions.map(() => ({ selected: [], other: false, text: '' }));
+}
+
+function answerValues(answer: QuestionAnswer | undefined): string[] {
+  if (answer === undefined) return [];
+  const written = answer.other ? answer.text.trim() : '';
+  return [...answer.selected, ...(written === '' ? [] : [written])];
+}
+
+export function isAnswered(answer: QuestionAnswer | undefined): boolean {
+  return answerValues(answer).length > 0;
+}
+
+/**
+ * The message that answers the questions: the answer alone for one question,
+ * otherwise one labelled line per question.
+ */
+export function composeAnswer(
+  questions: readonly AskUserQuestion[],
+  answers: readonly QuestionAnswer[],
+): string {
+  if (questions.length === 1) return answerValues(answers[0]).join(', ');
+  return questions
+    .map(
+      (question, index) =>
+        `**${question.header === undefined ? question.question : `${question.header}:`}** ${answerValues(answers[index]).join(', ')}`,
+    )
+    .join('\n');
 }

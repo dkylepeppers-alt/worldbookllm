@@ -173,6 +173,37 @@ export const patchAgentChatSchema = z
 /** How many files one message can pin for the model to read up front. */
 export const AGENT_MAX_PINNED_PATHS = 5;
 
+/**
+ * The agent's `ask_user` tool (ADR 0022): up to four questions, each with two
+ * to four choices. The app always adds an "Other" choice for a written answer.
+ */
+export const ASK_USER_TOOL = 'ask_user';
+
+const askUserOptionSchema = z.strictObject({
+  label: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(200).optional(),
+});
+
+const askUserQuestionSchema = z.strictObject({
+  question: z.string().trim().min(1).max(300),
+  /** A short label for the question, e.g. "Genre". */
+  header: z.string().trim().min(1).max(24).optional(),
+  options: z
+    .array(askUserOptionSchema)
+    .min(2)
+    .max(4)
+    .refine(
+      (options) =>
+        new Set(options.map((option) => option.label.toLowerCase())).size === options.length,
+      { message: 'Option labels repeat' },
+    ),
+  multiSelect: z.boolean().optional(),
+});
+
+export const askUserArgumentsSchema = z.strictObject({
+  questions: z.array(askUserQuestionSchema).min(1).max(4),
+});
+
 export const sendAgentMessageSchema = z.strictObject({
   content: z.string().trim().min(1).max(100_000),
   /** Book files whose current contents go to the model with this message. */
@@ -181,6 +212,8 @@ export const sendAgentMessageSchema = z.strictObject({
     .max(AGENT_MAX_PINNED_PATHS)
     .refine((paths) => new Set(paths).size === paths.length, { message: 'Pinned paths repeat' })
     .optional(),
+  /** The `ask_user` call this message answers, so the model can connect the two. */
+  answeringCallId: z.string().min(1).max(200).optional(),
 });
 
 export const agentChatParamsSchema = z.strictObject({ id: z.uuid() });
@@ -243,3 +276,5 @@ export type AgentChangeset = z.infer<typeof agentChangesetSchema>;
 export type AgentChangesetDetail = z.infer<typeof agentChangesetDetailSchema>;
 export type AgentChangesetResolution = z.infer<typeof agentChangesetResolutionSchema>;
 export type StorySkillsInstallResult = z.infer<typeof storySkillsInstallResultSchema>;
+export type AskUserArguments = z.infer<typeof askUserArgumentsSchema>;
+export type AskUserQuestion = AskUserArguments['questions'][number];

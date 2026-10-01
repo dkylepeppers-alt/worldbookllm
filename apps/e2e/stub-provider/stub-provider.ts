@@ -17,6 +17,12 @@ function agentRole(body: ChatCompletionRequest): string | null {
   return /^## Your role: (.+)$/mu.exec(system)?.[1] ?? null;
 }
 
+// A message containing this marker makes the agent ask with ask_user instead;
+// the writer's answer (sent with the ask_user note) gets STUB_ASK_REPLY.
+export const ASK_MARKER = '[ask]';
+export const STUB_ASK_OPTIONS = ['Tidal gothic', 'Harbor noir'] as const;
+export const STUB_ASK_REPLY = 'Answer received.';
+
 // A message containing this marker switches the stream to a slow drip so a
 // test can exercise stop/abort behavior before the stream finishes.
 export const SLOW_MARKER = '[slow]';
@@ -113,34 +119,68 @@ function streamAgentStep(res: ServerResponse, body: ChatCompletionRequest): void
   const toolReplied = messages.slice(lastUser + 1).some((message) => message.role === 'tool');
   const role = agentRole(body);
   const reply = role === null ? STUB_AGENT_REPLY : `${STUB_AGENT_REPLY} Speaking as ${role}.`;
-  const chunks = toolReplied
-    ? [{ choices: [{ index: 0, delta: { content: reply } }] }]
-    : [
-        { choices: [{ index: 0, delta: { content: STUB_AGENT_INTRO } }] },
-        {
-          choices: [
-            {
-              index: 0,
-              delta: {
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: 'stub_call_1',
-                    type: 'function',
-                    function: {
-                      name: 'run_story',
-                      arguments: JSON.stringify({
-                        command: 'add',
-                        args: ['character', STUB_AGENT_CHARACTER],
-                      }),
+  const userText = messages[lastUser]?.content ?? '';
+  const chunks = userText.includes('answers your ask_user call')
+    ? [{ choices: [{ index: 0, delta: { content: STUB_ASK_REPLY } }] }]
+    : userText.includes(ASK_MARKER) && !toolReplied
+      ? [
+          {
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'stub_ask_1',
+                      type: 'function',
+                      function: {
+                        name: 'ask_user',
+                        arguments: JSON.stringify({
+                          questions: [
+                            {
+                              header: 'Mood',
+                              question: 'Which mood should the premise have?',
+                              options: STUB_ASK_OPTIONS.map((label) => ({ label })),
+                            },
+                          ],
+                        }),
+                      },
                     },
-                  },
-                ],
+                  ],
+                },
               },
+            ],
+          },
+        ]
+      : toolReplied
+        ? [{ choices: [{ index: 0, delta: { content: reply } }] }]
+        : [
+            { choices: [{ index: 0, delta: { content: STUB_AGENT_INTRO } }] },
+            {
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: 'stub_call_1',
+                        type: 'function',
+                        function: {
+                          name: 'run_story',
+                          arguments: JSON.stringify({
+                            command: 'add',
+                            args: ['character', STUB_AGENT_CHARACTER],
+                          }),
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
             },
-          ],
-        },
-      ];
+          ];
   res.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',
     'cache-control': 'no-cache',

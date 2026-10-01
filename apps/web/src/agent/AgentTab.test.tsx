@@ -352,6 +352,141 @@ describe('agent tab', () => {
     );
   });
 
+  describe('questions from the agent', () => {
+    function askingTurn(args: unknown): AgentMessage {
+      return assistantMessage(1, {
+        content: 'A few directions.',
+        steps: [
+          {
+            index: 0,
+            requestBody: {},
+            text: 'A few directions.',
+            toolCalls: [
+              {
+                id: 'call_q',
+                name: 'ask_user',
+                arguments: JSON.stringify(args),
+                ok: true,
+                result: 'Shown to the writer.',
+                durationMs: 1,
+              },
+            ],
+          },
+        ],
+      });
+    }
+    const genre = {
+      header: 'Genre',
+      question: 'Which genre should the book lean into?',
+      options: [{ label: 'Dark fantasy' }, { label: 'Cozy mystery', description: 'Low stakes.' }],
+    };
+    const asked = (args: unknown): AgentChatDetail => ({
+      ...chat,
+      changesets: [],
+      messages: [userMessage(0, 'Brainstorm a premise.'), askingTurn(args)],
+    });
+
+    it('sends a picked option as the answer to the call', async () => {
+      const streamAgentMessage = vi.fn<ApiClient['streamAgentMessage']>(() => Promise.resolve());
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+        getAgentChat: () => Promise.resolve(asked({ questions: [genre] })),
+        streamAgentMessage,
+      });
+      const card = await screen.findByRole('region', { name: 'The agent asks' });
+      expect(within(card).getByText('Which genre should the book lean into?')).toBeDefined();
+      expect(within(card).getByRole('button', { name: /Other/u })).toBeDefined();
+      await userEvent.click(within(card).getByRole('button', { name: /Cozy mystery/u }));
+      expect(streamAgentMessage).toHaveBeenCalledWith(
+        CHAT_ID,
+        'Cozy mystery',
+        expect.objectContaining({ answeringCallId: 'call_q' }),
+      );
+      // History shows what was asked, read-only.
+      const history = screen.getByRole('list', { name: 'Messages' });
+      expect(within(history).getByText('Asked you')).toBeDefined();
+    });
+
+    it('answers several questions, with choices and words of the writer’s own', async () => {
+      const streamAgentMessage = vi.fn<ApiClient['streamAgentMessage']>(() => Promise.resolve());
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+        getAgentChat: () =>
+          Promise.resolve(
+            asked({
+              questions: [
+                { ...genre, multiSelect: true },
+                {
+                  question: 'Who tells it?',
+                  options: [{ label: 'Mara' }, { label: 'The lighthouse' }],
+                },
+              ],
+            }),
+          ),
+        streamAgentMessage,
+      });
+      const card = await screen.findByRole('region', { name: 'The agent asks' });
+      const send = within(card).getByRole('button', { name: 'Send answer' });
+      await userEvent.click(within(card).getByRole('button', { name: /Dark fantasy/u }));
+      await userEvent.click(within(card).getByRole('button', { name: /Cozy mystery/u }));
+      expect((send as HTMLButtonElement).disabled).toBe(true);
+      const others = within(card).getAllByRole('button', { name: /Other/u });
+      await userEvent.click(others[1]!);
+      await userEvent.type(
+        within(card).getByRole('textbox', { name: 'Your answer: Who tells it?' }),
+        'The tide',
+      );
+      await userEvent.click(send);
+      expect(streamAgentMessage).toHaveBeenCalledWith(
+        CHAT_ID,
+        '**Genre:** Dark fantasy, Cozy mystery\n**Who tells it?** The tide',
+        expect.objectContaining({ answeringCallId: 'call_q' }),
+      );
+    });
+
+    it('keeps a half-picked answer after leaving the chat', async () => {
+      const overrides = {
+        getAgentChat: () =>
+          Promise.resolve(
+            asked({ questions: [genre, { question: 'Who tells it?', options: genre.options }] }),
+          ),
+      };
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, overrides);
+      const card = await screen.findByRole('region', { name: 'The agent asks' });
+      await userEvent.click(within(card).getAllByRole('button', { name: /Dark fantasy/u })[0]!);
+      cleanup();
+
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, overrides);
+      const again = await screen.findByRole('region', { name: 'The agent asks' });
+      expect(
+        within(again)
+          .getAllByRole('button', { name: /Dark fantasy/u })[0]!
+          .getAttribute('aria-pressed'),
+      ).toBe('true');
+    });
+
+    it('shows no choices once the question is answered, or for a malformed call', async () => {
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+        getAgentChat: () =>
+          Promise.resolve({
+            ...asked({ questions: [genre] }),
+            messages: [
+              ...asked({ questions: [genre] }).messages,
+              userMessage(2, 'Dark fantasy'),
+              assistantMessage(3),
+            ],
+          }),
+      });
+      await screen.findByRole('list', { name: 'Messages' });
+      expect(screen.queryByRole('region', { name: 'The agent asks' })).toBeNull();
+      cleanup();
+
+      renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+        getAgentChat: () => Promise.resolve(asked({ questions: [{ question: 'Pick?' }] })),
+      });
+      await screen.findByRole('list', { name: 'Messages' });
+      expect(screen.queryByRole('region', { name: 'The agent asks' })).toBeNull();
+    });
+  });
+
   it('stops a turn and shows it as interrupted once the server records it', async () => {
     const stream = createScriptedAgentStream();
     let saved: AgentChatDetail = { ...chat, changesets: [], messages: [] };

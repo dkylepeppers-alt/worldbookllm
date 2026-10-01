@@ -30,6 +30,7 @@ export interface AgentRunnerValue {
     chatId: string,
     content: string,
     pinnedPaths?: readonly string[],
+    answeringCallId?: string,
   ): Promise<'accepted' | 'rejected'>;
   stop(): void;
 }

@@ -139,12 +139,19 @@ async function streamSse<E extends { type: string }>(
 export function streamAgentMessage(
   chatId: string,
   content: string,
-  options: StreamOptions<AgentStreamEvent> & { pinnedPaths?: readonly string[] },
+  options: StreamOptions<AgentStreamEvent> & {
+    pinnedPaths?: readonly string[];
+    answeringCallId?: string;
+  },
 ): Promise<void> {
-  const { pinnedPaths, ...streamOptions } = options;
+  const { pinnedPaths, answeringCallId, ...streamOptions } = options;
   return streamSse(
     `/api/agent-chats/${encodeURIComponent(chatId)}/messages`,
-    pinnedPaths === undefined || pinnedPaths.length === 0 ? { content } : { content, pinnedPaths },
+    {
+      content,
+      ...(pinnedPaths === undefined || pinnedPaths.length === 0 ? {} : { pinnedPaths }),
+      ...(answeringCallId === undefined ? {} : { answeringCallId }),
+    },
     agentStreamEventSchema,
     streamOptions,
   );

@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import {
   extraText,
   prettyArguments,
+  questionsOf,
   stepsOf,
   seriesBooksOf,
   toolTarget,
@@ -51,7 +52,29 @@ const STATUS_LABELS: Record<ToolCallView['status'], string> = {
   failed: 'failed',
 };
 
+/** An `ask_user` call as the questions it asked; the writer's answer is the next message. */
+function AskedQuestions({ call }: { call: ToolCallView }) {
+  const questions = call.status === 'failed' ? null : questionsOf(call);
+  if (questions === null) return null;
+  return (
+    <li className="agent-asked">
+      <p className="coordinate-label">Asked you</p>
+      <ul>
+        {questions.map((question, index) => (
+          <li key={index}>
+            <span className="agent-question-text">{question.question}</span>
+            <span className="agent-asked-options">
+              {question.options.map((option) => option.label).join(' · ')} · Other
+            </span>
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
 function ToolChip({ call }: { call: ToolCallView }) {
+  if (call.status !== 'failed' && questionsOf(call) !== null) return <AskedQuestions call={call} />;
   const target = toolTarget(call.arguments);
   return (
     <li>
