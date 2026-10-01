@@ -464,6 +464,14 @@ export type BookImportPreview = z.infer<typeof bookImportPreviewSchema>;
 export type CreateBookImportInput = z.infer<typeof createBookImportSchema>;
 export type BookImportResult = z.infer<typeof bookImportResultSchema>;
 export type ManuscriptImportResult = z.infer<typeof manuscriptImportResultSchema>;
+export const bookManuscriptSchema = z.strictObject({
+  /** The manuscript as `story export` assembles it: chapter prose and matter pages only. */
+  markdown: z.string(),
+  /** What the CLI warned about, such as chapters with no prose yet. */
+  warnings: z.array(z.string()),
+});
+
+export type BookManuscript = z.infer<typeof bookManuscriptSchema>;
 export type BookBuildFormat = z.infer<typeof bookBuildFormatSchema>;
 export type CreateBookBuildInput = z.infer<typeof createBookBuildSchema>;
 export type BookBuildFile = z.infer<typeof bookBuildFileSchema>;

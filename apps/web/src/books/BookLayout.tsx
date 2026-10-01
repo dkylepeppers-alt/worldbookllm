@@ -5,11 +5,12 @@ import { AgentRunnerProvider } from '../agent/agent-runner.js';
 import { useAgentRunner } from '../agent/agent-runner-context.js';
 import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
-import { BookContext } from './book-context.js';
+import { BookContext, useBook } from './book-context.js';
 import { useLoad } from './useLoad.js';
 
 const TABS = [
   { to: 'write', label: 'Write' },
+  { to: 'read', label: 'Reader', booksOnly: true },
   { to: 'bible', label: 'Bible' },
   { to: 'agent', label: 'Agent' },
   { to: 'health', label: 'Health' },
@@ -79,9 +80,12 @@ function useImportReport() {
 /** The tab bar; the Agent tab carries a pulse while a turn runs. */
 function BookTabs() {
   const { run } = useAgentRunner();
+  const { tree } = useBook();
+  // A series bible has no chapters, so nothing to read.
+  const tabs = TABS.filter((tab) => !('booksOnly' in tab) || tree.book.kind === 'book');
   return (
     <nav className="book-tabs" aria-label="Book">
-      {TABS.map((tab) => (
+      {tabs.map((tab) => (
         <NavLink
           key={tab.to}
           to={tab.to}

@@ -29,6 +29,7 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     listCheckpoints: () => Promise.resolve([]),
     getCheckpoint: unused,
     undoCheckpoint: unused,
+    getManuscript: unused,
     listBuilds: () => Promise.resolve([]),
     createBuild: unused,
     removeBuild: unused,

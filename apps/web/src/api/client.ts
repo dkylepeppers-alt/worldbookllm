@@ -7,6 +7,7 @@ import {
   appSettingsSchema,
   bookBuildFileSchema,
   bookBuildResultSchema,
+  bookManuscriptSchema,
   bookCheckResultSchema,
   bookConflictSchema,
   type BookConflict,
@@ -48,6 +49,7 @@ import {
   type AppSettings,
   type BookBuildFile,
   type BookBuildResult,
+  type BookManuscript,
   type BookCheckCommand,
   type BookCheckResult,
   type BookEntityKind,
@@ -164,6 +166,8 @@ export interface ApiClient {
   listCheckpoints(slug: string, signal?: AbortSignal): Promise<Checkpoint[]>;
   getCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<CheckpointDetail>;
   undoCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<Checkpoint>;
+  /** The manuscript as `story export` assembles it, for the Reader tab. */
+  getManuscript(slug: string, signal?: AbortSignal): Promise<BookManuscript>;
   listBuilds(slug: string, signal?: AbortSignal): Promise<BookBuildFile[]>;
   createBuild(
     slug: string,
@@ -418,6 +422,8 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: checkpointSchema,
         signal,
       }),
+    getManuscript: (slug, signal) =>
+      request(`${book(slug)}/manuscript`, { schema: bookManuscriptSchema, signal }),
     listBuilds: (slug, signal) =>
       request(`${book(slug)}/builds`, { schema: z.array(bookBuildFileSchema), signal }),
     createBuild: (slug, input, signal) =>
