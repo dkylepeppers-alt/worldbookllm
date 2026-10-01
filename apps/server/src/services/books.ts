@@ -349,6 +349,8 @@ export class BookService {
       return free;
     });
     this.files.rescan();
+    // The style sheet is series-wide, so a new book starts from the bible's.
+    this.copyStyleSheet(seriesId, slug);
     return this.summary(slug);
   }
 
@@ -375,9 +377,19 @@ export class BookService {
           this.files.removeSeriesFolder(seriesId);
           throw error;
         }
+        // The new bible adopts the book's style sheet as the series'.
+        this.copyStyleSheet(slug, seriesId);
       }),
     );
     return this.summary(slug);
+  }
+
+  /** Copies one project's style sheet over another's, for a project the caller just created. */
+  private copyStyleSheet(from: string, to: string): void {
+    const sheet = this.files.readBytes(from, 'style-sheet.md');
+    if (sheet === null) return;
+    this.files.write(to, 'style-sheet.md', sheet);
+    this.index.reconcile(to);
   }
 
   /** Runs `story init` for a new series' bible. Caller holds the create lock. */

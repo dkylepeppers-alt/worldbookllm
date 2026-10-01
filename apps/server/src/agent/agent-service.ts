@@ -889,7 +889,7 @@ export class AgentService {
                 .map((member) => `${member.slug} (${member.title})`)
                 .join(', ') || 'none yet'
             }`,
-            'read_file, list_files, and search accept an optional book slug within this series (including the bible). Generic writes always stay on this chat’s book; use sync_series for explicit canon sync. Keep shared identity canon in the bible and book-local state in each book.',
+            'read_file, list_files, and search accept an optional book slug within this series (including the bible). Generic writes always stay on this chat’s book; use sync_series for explicit canon sync. Keep shared identity canon in the bible and book-local state in each book. The style sheet is series-wide: change it in the bible, then push it to the books.',
             ...(reviewMode ? ['sync_series is unavailable in review mode.'] : []),
           ]),
     ].join('\n');

@@ -136,6 +136,35 @@ describe('Series screen', () => {
     await user.click(await screen.findByRole('button', { name: 'Push mira to low-water' }));
     expect(await screen.findByText('No canon drift in existing book copies.')).toBeTruthy();
   });
+  it('shows style sheet drift by name and pulls the book’s style sheet into the bible', async () => {
+    const user = userEvent.setup();
+    let pulled = false;
+    const styleSheet = { kind: 'style-sheet', id: 'style-sheet' } as const;
+    const client = createTestClient({
+      getSeries: async () => series,
+      getSeriesHealth: async () => ({
+        ...health,
+        drift: pulled ? [] : [{ entity: styleSheet, book: 'low-water', fields: ['watch-words'] }],
+      }),
+      syncSeries: async (_id, input) => {
+        expect(input).toEqual({ direction: 'pull', entity: styleSheet, book: 'low-water' });
+        pulled = true;
+        return { checkpoints: [] };
+      },
+    });
+    render(
+      <ApiProvider client={client}>
+        <MemoryRouter initialEntries={['/series/tides']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </ApiProvider>,
+    );
+    const drift = await screen.findByRole('list', { name: 'Canon drift' });
+    expect(drift.textContent).toContain('Style sheet');
+    expect(drift.textContent).toContain('watch-words');
+    await user.click(screen.getByRole('button', { name: 'Pull style-sheet from low-water' }));
+    expect(await screen.findByText('No canon drift in existing book copies.')).toBeTruthy();
+  });
   it('is reachable from the library and shows books, drift, and check findings', async () => {
     const user = userEvent.setup();
     const client = createTestClient({

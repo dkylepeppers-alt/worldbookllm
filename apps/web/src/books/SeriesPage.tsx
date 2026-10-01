@@ -112,16 +112,19 @@ function SeriesHealthView({
   return (
     <>
       <h2>Canon drift</h2>
-      <p>Only identity fields are compared. Book-local state is left alone.</p>
+      <p>
+        Only identity fields are compared, and book-local state is left alone. The style sheet is
+        shared by the whole series and is compared as a whole file.
+      </p>
       {health.drift.length === 0 ? (
         <p>No canon drift in existing book copies.</p>
       ) : (
         <ul className="entry-list" aria-label="Canon drift">
           {health.drift.map((row) => (
             <li key={`${row.entity.kind}:${row.entity.id}:${row.book}`}>
-              <strong>{row.entity.id}</strong>
+              <strong>{row.entity.kind === 'style-sheet' ? 'Style sheet' : row.entity.id}</strong>
               <span>
-                {row.entity.kind} · {row.book}
+                {row.entity.kind === 'style-sheet' ? row.book : `${row.entity.kind} · ${row.book}`}
               </span>
               <span>{row.fields.map((field) => field.replace(/^body:/u, '')).join(', ')}</span>
               <div className="field-action">

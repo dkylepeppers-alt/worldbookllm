@@ -123,6 +123,45 @@ describe('atomic series sync', () => {
     expect(app.services.books.tree('tides').files.some((file) => file.kind === 'arc')).toBe(false);
   }, 30_000);
 
+  it('keeps the style sheet as series canon: whole-file drift, push, and pull', async () => {
+    const styleSheet = { kind: 'style-sheet', id: 'style-sheet' };
+    const bible = app.services.books.readFile('tides', 'style-sheet.md');
+    await app.services.books.writeFile('tides', 'style-sheet.md', {
+      content: bible.content.replace('watch-words: []', 'watch-words:\n  - "suddenly"'),
+      expectedHash: bible.hash,
+    });
+    const drift = (await app.inject({ method: 'GET', url: '/api/series/tides/drift' })).json<
+      Array<{ entity: unknown; book: string; fields: string[] }>
+    >();
+    expect(drift.filter((row) => row.book === 'low-water')).toEqual([
+      { entity: styleSheet, book: 'low-water', fields: ['watch-words'] },
+    ]);
+
+    await sync({ direction: 'push', entity: styleSheet, books: ['low-water', 'high-water'] });
+    const canon = app.services.books.readFile('tides', 'style-sheet.md').content;
+    for (const book of ['low-water', 'high-water']) {
+      expect(app.services.books.readFile(book, 'style-sheet.md').content).toBe(canon);
+    }
+    expect((await app.inject({ method: 'GET', url: '/api/series/tides/drift' })).json()).toEqual(
+      [],
+    );
+
+    const local = app.services.books.readFile('low-water', 'style-sheet.md');
+    await app.services.books.writeFile('low-water', 'style-sheet.md', {
+      content: `${local.content}\nOxford comma, always.\n`,
+      expectedHash: local.hash,
+    });
+    await sync({ direction: 'pull', entity: styleSheet, book: 'low-water' });
+    expect(app.services.books.readFile('tides', 'style-sheet.md').content).toContain(
+      'Oxford comma, always.',
+    );
+    await sync({ direction: 'carry', entity: styleSheet, book: 'high-water' }, 409);
+    await sync(
+      { direction: 'push', entity: { kind: 'style-sheet', id: 'foo' }, books: ['low-water'] },
+      400,
+    );
+  }, 30_000);
+
   it('rolls back every touched book and creates no checkpoints if one validate fails', async () => {
     await copy('low-water');
     await copy('high-water', 'not-a-role');
