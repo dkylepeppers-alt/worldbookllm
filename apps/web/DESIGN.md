@@ -207,6 +207,10 @@ The book workspace's Write / Bible / Agent / Health / Project tabs are a fixed b
 - **Proposed changes (review mode):** the same stamped card, labelled "Proposed N changes · M awaiting review". Each row keeps the change-kind and path button and adds a secondary **Apply** button and an underlined **Skip** text button; resolved rows show "applied" in lichen or strike a skipped path through. Apply all (primary) and Skip all appear when more than one file is pending. While the turn still runs the card shows its files without actions.
 - **Chat settings row:** under the chat title, an Agent select and a "Review changes before they apply" checkbox, a plain-text toggle (`.agent-review-toggle`: a 44px row with sentence-case label, not a field tag). A "· from Settings" coordinate label marks a chat following the global default.
 
+### Story Commands Panel
+
+A native `<details>` card (1px ink border, 3px radius, no shadow) above the Agent tab's message box, collapsed by default and remembered per browser. The summary is an uppercase Archivo label. Inside it, a grid of secondary buttons: the command name in monospace, with a one-line description beneath. The last command run is marked with a blueprint inset rule. The result follows as a coordinate label (`story <command> · ok/exit N · counts`), then the `story next` actions or the findings as an entry list (with file links), then raw data in a nested `<details>`. **Ask the agent about this** (primary) adds a summary of the result to the draft, and **Clear** (text button) removes the result.
+
 ### Agents Page
 
 `/agents` reuses the preset studio layout: the Saved library list beside an editor card with Name, Description, Instructions, and a Skills fieldset (every installed skill, or a checklist of chosen ones).

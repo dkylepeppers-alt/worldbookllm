@@ -1,5 +1,11 @@
 import { useState, type FormEvent } from 'react';
 
+/** Text to add to the draft; a new `id` adds it once, after anything already typed. */
+export interface DraftAppend {
+  id: number;
+  text: string;
+}
+
 interface AgentComposerProps {
   id: string;
   label: string;
@@ -12,6 +18,7 @@ interface AgentComposerProps {
   /** Resolves 'rejected' when the message was not accepted, so the draft is restored. */
   onSend: (content: string) => Promise<'accepted' | 'rejected'>;
   onStop?: () => void;
+  append?: DraftAppend | null;
 }
 
 export function AgentComposer({
@@ -24,8 +31,15 @@ export function AgentComposer({
   busy = false,
   onSend,
   onStop,
+  append = null,
 }: AgentComposerProps) {
   const [draft, setDraft] = useState(initialDraft);
+  const [appendedId, setAppendedId] = useState(append?.id ?? null);
+  if (append !== null && append.id !== appendedId) {
+    // Adjusting state from a prop during render, so the text lands in the same commit.
+    setAppendedId(append.id);
+    setDraft((current) => (current.trim() === '' ? append.text : `${current}\n\n${append.text}`));
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

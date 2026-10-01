@@ -741,3 +741,68 @@ describe('agent tab', () => {
     });
   });
 });
+
+describe('story commands panel', () => {
+  const continuity = {
+    command: 'continuity' as const,
+    exitCode: 1,
+    envelope: {
+      apiVersion: 'story/v2',
+      command: 'continuity',
+      ok: false,
+      data: { checked: 3 },
+      diagnostics: [
+        {
+          severity: 'error',
+          file: 'characters/mara-quill.md',
+          message: 'Mara is in two places in chapter 2',
+          code: 'location-conflict',
+          check: 'continuity',
+          chapter: null,
+        },
+      ],
+    },
+  };
+
+  it('runs a check without an agent turn and hands the result to the composer', async () => {
+    localStorage.removeItem('worldbookllm.storyCommands.open');
+    const runBookCheck = vi.fn(() => Promise.resolve(continuity));
+    renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+      getAgentChat: () =>
+        Promise.resolve({ ...chat, messages: [], changesets: [] } satisfies AgentChatDetail),
+      runBookCheck,
+    });
+    const user = userEvent.setup();
+
+    const summary = await screen.findByText('Story commands', { selector: 'summary' });
+    const panel = summary.closest('details');
+    expect(panel?.open).toBe(false);
+    await user.click(summary);
+    expect(panel?.open).toBe(true);
+    expect(localStorage.getItem('worldbookllm.storyCommands.open')).toBe('true');
+    // A standalone book has no series links to check.
+    expect(screen.queryByRole('button', { name: /^series/u })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /^continuity/u }));
+    expect(runBookCheck).toHaveBeenCalledWith('the-salt-road', 'continuity');
+    const result = await screen.findByRole('region', { name: 'story continuity result' });
+    expect(within(result).getByRole('status').textContent).toContain('1 error · 0 warnings');
+    // The last command is marked for sight only; the buttons are not toggles.
+    const continuityButton = screen.getByRole('button', { name: /^continuity/u });
+    expect(continuityButton.hasAttribute('data-last-run')).toBe(true);
+    expect(continuityButton.hasAttribute('aria-pressed')).toBe(false);
+    expect(
+      within(result).getByRole('link', { name: 'characters/mara-quill.md' }).getAttribute('href'),
+    ).toBe('/books/the-salt-road/files/characters/mara-quill.md');
+
+    const composer = screen.getByLabelText<HTMLTextAreaElement>('Message');
+    await user.type(composer, 'Before that:');
+    await user.click(within(result).getByRole('button', { name: 'Ask the agent about this' }));
+    expect(composer.value).toBe(
+      'Before that:\n\nI ran `story continuity`: 1 error · 0 warnings.\n' +
+        '- error: characters/mara-quill.md: Mara is in two places in chapter 2\n' +
+        'Please fix these.',
+    );
+    localStorage.removeItem('worldbookllm.storyCommands.open');
+  });
+});
