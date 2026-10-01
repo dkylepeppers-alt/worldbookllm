@@ -15,6 +15,9 @@ import {
   type Checkpoint,
   type CheckpointDetail,
   type AddSeriesBookInput,
+  type BookBuildFile,
+  type BookBuildResult,
+  type CreateBookBuildInput,
   type CreateBookInput,
   type CreateSeriesInput,
   type CreateBookImportInput,
@@ -45,6 +48,12 @@ import {
   suggestImportKind,
 } from '../story/book-import.js';
 import { sha256 } from '../story/book-files.js';
+import {
+  builtFileName,
+  listBuildFiles,
+  readBuildFile,
+  removeBuildFile,
+} from '../story/book-builds.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
 import type {
@@ -53,6 +62,12 @@ import type {
   CheckpointSession,
 } from '../story/checkpoints.js';
 import { KeyedMutex } from '../story/keyed-mutex.js';
+import {
+  discardStagedProject,
+  promoteStagedProject,
+  stageProjectFiles,
+  unpackProjectZip,
+} from '../story/project-zip.js';
 import { StagedBook, type StagedChange } from '../story/staging.js';
 import { assertWritablePath, needsReindex } from '../story/write-rules.js';
 import type { StoryCli, StoryRunResult } from '../story/story-cli.js';
@@ -61,6 +76,9 @@ import { convertUpload } from './converters/index.js';
 
 /** Lock key for book creation; the NUL byte keeps it apart from every book slug. */
 const CREATE_LOCK = '\0create';
+
+/** `story build` gets longer than other commands: an EPUB or DOCX of a long book takes a while. */
+const BUILD_TIMEOUT_MS = 120_000;
 
 /** Agent chats tied to a book. Attached after both services exist (they refer to each other). */
 export interface BookChatLifecycle {
@@ -731,6 +749,124 @@ export class BookService {
     } finally {
       rmSync(workDir, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * Creates a new book from a zipped story-skills project (ADR 0020). The
+   * project is unpacked into a hidden folder beside the books, its series
+   * links are dropped (it arrives as a standalone book), its registries are
+   * regenerated, and it is validated; only then is the folder renamed into
+   * place. An archive the CLI cannot use as a project is rejected whole.
+   */
+  async importProject(bytes: Buffer, fileName: string): Promise<ManuscriptImportResult> {
+    const archive = await unpackProjectZip(bytes);
+    const story = archive.files.find((file) => file.path === 'story.md');
+    const notes: string[] = [];
+    let storyText = story?.data.toString('utf8') ?? '';
+    const storyFields = parseFrontmatter(storyText).frontmatter;
+    if (
+      story !== undefined &&
+      ['series', 'series-title', 'book-number', 'follows', 'precedes'].some(
+        (key) => storyFields?.[key] !== undefined,
+      )
+    ) {
+      storyText = removeSeriesLinks(storyText);
+      story.data = Buffer.from(storyText, 'utf8');
+      notes.push('Removed its series links: it was imported as a standalone book.');
+    }
+    const title =
+      stringField(storyFields, 'title') ??
+      (fileName.replace(/\.zip$/iu, '').trim() || 'Imported project');
+
+    const { slug, validation } = await this.locks.run(CREATE_LOCK, async () => {
+      const staging = stageProjectFiles(this.files.projectsDir, archive.files);
+      try {
+        // Missing or stale registries are regenerated. A project whose files do
+        // not parse cannot be reindexed; it is still imported, and validation
+        // below names the files to fix.
+        const reindex = await this.cli.run({ command: 'reindex', root: staging });
+        if (reindex.exitCode !== 0) {
+          const reason = (reindex.stderr.trim() || reindex.stdout.trim()).split('\n')[0];
+          notes.push(`story reindex could not regenerate the registries: ${reason}`);
+        }
+        const result = await this.cli.run({ command: 'validate', root: staging, json: true });
+        if (result.exitCode !== 0 && result.exitCode !== 1) {
+          const message =
+            result.envelope?.diagnostics.find((entry) => entry.severity === 'error')?.message ??
+            (result.stderr.trim() || result.stdout.trim() || 'story validate failed');
+          throw new InvalidImportError(`The archive is not a usable story project: ${message}`);
+        }
+        const free = this.freeSlug(title);
+        promoteStagedProject(staging, this.files.projectsDir, free);
+        return { slug: free, validation: result.envelope };
+      } catch (error) {
+        discardStagedProject(staging);
+        throw error;
+      }
+    });
+
+    const errors = validation?.diagnostics.filter((entry) => entry.severity === 'error') ?? [];
+    const warnings = validation?.diagnostics.filter((entry) => entry.severity === 'warning') ?? [];
+    const lines = [
+      `Imported ${archive.files.length} ${archive.files.length === 1 ? 'file' : 'files'} from ${fileName}.`,
+      ...notes,
+      errors.length === 0 && warnings.length === 0
+        ? 'story validate found no problems.'
+        : `story validate found ${errors.length} ${errors.length === 1 ? 'error' : 'errors'} and ${warnings.length} ${warnings.length === 1 ? 'warning' : 'warnings'}; see the Health tab.`,
+    ];
+    if (archive.skipped.length > 0) {
+      lines.push(
+        `Skipped ${archive.skipped.length}:`,
+        ...archive.skipped.map((entry) => `- ${entry}`),
+      );
+    }
+    return { book: this.summary(slug), output: lines.join('\n') };
+  }
+
+  /** Builds a disposable manuscript file into the book's `dist/` with `story build`. */
+  async build(slug: string, input: CreateBookBuildInput): Promise<BookBuildResult> {
+    const options: StoryOptions = { format: input.format };
+    if (input.shunn) options.shunn = true;
+    if (input.trim !== undefined) options.trim = input.trim;
+    if (input.stamp !== undefined) options.stamp = input.stamp;
+    return this.locks.run(slug, async () => {
+      const root = this.files.root(slug);
+      const result = await this.cli.run({
+        command: 'build',
+        root,
+        options,
+        timeoutMs: BUILD_TIMEOUT_MS,
+      });
+      const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n');
+      // Exit 1 after a build means its warnings include ones story.md promotes
+      // to errors; the file is written all the same, so it is returned with them.
+      const name = builtFileName(result.stdout);
+      const file =
+        result.exitCode === 0 || result.exitCode === 1
+          ? listBuildFiles(root).find((entry) => entry.name === name)
+          : undefined;
+      if (file === undefined) {
+        throw new StoryCommandError(
+          result.exitCode === 0 ? 1 : result.exitCode,
+          output || 'story build finished but wrote no file to dist/',
+        );
+      }
+      return { file, output };
+    });
+  }
+
+  /** Under the book lock, so a listing never sees a build half-written or a file mid-delete. */
+  listBuilds(slug: string): Promise<BookBuildFile[]> {
+    return this.locks.run(slug, () => listBuildFiles(this.files.root(slug)));
+  }
+
+  /** A build file's bytes, for download. */
+  readBuild(slug: string, name: string): Promise<Buffer> {
+    return this.locks.run(slug, () => readBuildFile(this.files.root(slug), name));
+  }
+
+  async removeBuild(slug: string, name: string): Promise<void> {
+    await this.locks.run(slug, () => removeBuildFile(this.files.root(slug), name));
   }
 
   /** The book's root folder, for callers that confine paths themselves. */

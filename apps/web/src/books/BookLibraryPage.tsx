@@ -85,7 +85,9 @@ export function BookLibraryPage() {
     setError(null);
     try {
       const result = await api.importManuscript(file);
-      await navigate(`/books/${result.book.slug}`);
+      await navigate(`/books/${result.book.slug}/write`, {
+        state: { importReport: result.output },
+      });
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -152,10 +154,10 @@ export function BookLibraryPage() {
           </button>
         </div>
         <label className="button-secondary file-button">
-          {busy === 'import' ? 'Importing…' : 'Import a manuscript (.md or .txt)'}
+          {busy === 'import' ? 'Importing…' : 'Import a manuscript or project (.md, .txt, .zip)'}
           <input
             type="file"
-            accept=".md,.markdown,.txt,text/markdown,text/plain"
+            accept=".md,.markdown,.txt,.zip,text/markdown,text/plain,application/zip"
             onChange={(event) => void handleImport(event)}
             disabled={busy !== null}
           />
@@ -173,7 +175,9 @@ export function BookLibraryPage() {
       ) : null}
       {books.status === 'ready' ? (
         books.data.length === 0 ? (
-          <p className="empty-map">No books yet. Create one or import a manuscript.</p>
+          <p className="empty-map">
+            No books yet. Create one, or import a manuscript or a zipped project.
+          </p>
         ) : (
           <LibraryGroupsView books={books.data} />
         )

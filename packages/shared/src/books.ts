@@ -372,7 +372,90 @@ export const bookImportResultSchema = z.strictObject({
 
 export const manuscriptImportResultSchema = z.strictObject({
   book: bookSummarySchema,
-  /** The CLI's import report: chapter and word counts, plus entity candidates to review. */
+  /**
+   * What the import did: for a manuscript, the CLI's report (chapter and word
+   * counts, entity candidates to review); for a project zip, the files kept and
+   * skipped and what validation found.
+   */
+  output: z.string(),
+});
+
+/** `story build --format` values (story-skills 0.18.0). */
+export const BOOK_BUILD_FORMATS = [
+  'markdown',
+  'epub',
+  'docx',
+  'shunn',
+  'html',
+  'print',
+  'narration',
+  'metadata',
+  'fountain',
+  'twee',
+  'ink',
+] as const;
+
+export const bookBuildFormatSchema = z.enum(BOOK_BUILD_FORMATS);
+
+/** `story build --format print --trim` sizes. */
+export const PRINT_TRIM_SIZES = ['5x8', '5.25x8', '5.5x8.5', '6x9', 'a5'] as const;
+
+export const createBookBuildSchema = z
+  .strictObject({
+    format: bookBuildFormatSchema,
+    /** Shunn manuscript formatting; docx only. */
+    shunn: z.boolean().optional(),
+    /** Print trim size; print only. */
+    trim: z.enum(PRINT_TRIM_SIZES).optional(),
+    /** Build label printed at the top of an HTML review copy; html only. */
+    stamp: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .refine((value) => !value.includes('\0'), { message: 'The stamp cannot contain NUL' })
+      .optional(),
+  })
+  .superRefine((input, context) => {
+    const only = (key: 'shunn' | 'trim' | 'stamp', format: string) => {
+      if (input[key] !== undefined && input[key] !== false && input.format !== format) {
+        context.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `${key} applies only to ${format} builds`,
+        });
+      }
+    };
+    only('shunn', 'docx');
+    only('trim', 'print');
+    only('stamp', 'html');
+  });
+
+/** A file name directly inside a book's `dist/` folder. */
+export const bookBuildFileNameSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine(
+    (name) =>
+      !name.startsWith('.') && !name.includes('/') && !name.includes('\\') && !name.includes('\0'),
+    { message: 'Build files are named without slashes or a leading dot' },
+  );
+
+export const bookBuildParamsSchema = z.strictObject({
+  book: bookSlugSchema,
+  file: bookBuildFileNameSchema,
+});
+
+export const bookBuildFileSchema = z.strictObject({
+  name: bookBuildFileNameSchema,
+  size: z.number().int().nonnegative(),
+  updatedAt: z.iso.datetime(),
+});
+
+export const bookBuildResultSchema = z.strictObject({
+  file: bookBuildFileSchema,
+  /** The CLI's report, including any warnings it printed. */
   output: z.string(),
 });
 
@@ -381,3 +464,7 @@ export type BookImportPreview = z.infer<typeof bookImportPreviewSchema>;
 export type CreateBookImportInput = z.infer<typeof createBookImportSchema>;
 export type BookImportResult = z.infer<typeof bookImportResultSchema>;
 export type ManuscriptImportResult = z.infer<typeof manuscriptImportResultSchema>;
+export type BookBuildFormat = z.infer<typeof bookBuildFormatSchema>;
+export type CreateBookBuildInput = z.infer<typeof createBookBuildSchema>;
+export type BookBuildFile = z.infer<typeof bookBuildFileSchema>;
+export type BookBuildResult = z.infer<typeof bookBuildResultSchema>;

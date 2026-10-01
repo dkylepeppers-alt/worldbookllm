@@ -26,6 +26,7 @@ All from the repo root (pnpm 10, Node ≥ 24):
 - ESLint flat config + Prettier at the root only — don't add per-package configs.
 - User data lives in `data/` (gitignored): books as `.md` files on disk are the source of truth; SQLite is a rebuildable index (ADR 0003, ADR 0014). Never design features that hide the writer's content from them.
 - Architecture decisions get an ADR in `docs/decisions/`.
+- Open pull requests ready for review, never as drafts.
 
 ## Design context
 
