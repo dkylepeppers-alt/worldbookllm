@@ -324,7 +324,7 @@ export class BookService {
         label,
         actor,
         needsReindex(path) ? 'book' : { paths: [path] },
-        () => this.writeAndReindex(slug, path, input.content, current),
+        () => this.writeAndReindex(slug, path, input.content),
       );
       this.index.reconcile(slug);
       const file = this.index.get(slug, path);
@@ -666,31 +666,32 @@ export class BookService {
     content: string,
   ): Promise<void> {
     const slug = session.book;
-    const previous = this.files.readBytes(slug, path);
     await session.capture(needsReindex(path) ? 'book' : { paths: [path] }, () =>
-      this.writeAndReindex(slug, path, content, previous),
+      this.writeAndReindex(slug, path, content),
     );
     this.index.reconcile(slug);
   }
 
   /**
    * Writes a file and reindexes when its kind feeds a registry. A failed
-   * reindex puts `previous` back (or removes a new file), so a write the
-   * story CLI rejects leaves the book as it was.
+   * reindex, even one killed after rewriting some registries, restores every
+   * Markdown file in the book, so a rejected write leaves the book as it was.
    */
-  private async writeAndReindex(
-    slug: string,
-    path: string,
-    content: string,
-    previous: Buffer | null,
-  ): Promise<void> {
+  private async writeAndReindex(slug: string, path: string, content: string): Promise<void> {
+    const before = needsReindex(path) ? this.files.snapshot(slug) : null;
     this.files.write(slug, path, content);
-    if (!needsReindex(path)) return;
+    if (before === null) return;
     try {
       await this.cli.runOrThrow({ command: 'reindex', root: this.files.root(slug) });
     } catch (error) {
-      if (previous === null) this.files.remove(slug, path);
-      else this.files.write(slug, path, previous);
+      for (const [file, bytes] of this.files.snapshot(slug)) {
+        const previous = before.get(file);
+        if (previous === undefined) this.files.remove(slug, file);
+        else if (!previous.equals(bytes)) this.files.write(slug, file, previous);
+      }
+      for (const [file, bytes] of before) {
+        if (this.files.readBytes(slug, file) === null) this.files.write(slug, file, bytes);
+      }
       throw error;
     }
   }

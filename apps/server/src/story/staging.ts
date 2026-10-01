@@ -207,19 +207,33 @@ export class StagedBook {
     rmSync(this.root, { recursive: true, force: true });
   }
 
-  /** Writes a staged file; a failed reindex restores it, as on the real book. */
+  /** Writes a staged file; a failed reindex restores every Markdown file, as on the real book. */
   private async put(path: string, content: string): Promise<void> {
     const absolute = confine(this.root, path);
-    const previous = this.bytes(path);
+    const before = needsReindex(path) ? this.markdown() : null;
     mkdirSync(dirname(absolute), { recursive: true });
     writeFileSync(absolute, content);
-    if (!needsReindex(path)) return;
+    if (before === null) return;
     try {
       await this.cli.runOrThrow({ command: 'reindex', root: this.root });
     } catch (error) {
-      if (previous === null) rmSync(absolute, { force: true });
-      else writeFileSync(absolute, previous);
+      for (const [file, bytes] of this.markdown()) {
+        const previous = before.get(file);
+        if (previous === undefined) rmSync(join(this.root, file), { force: true });
+        else if (!previous.equals(bytes)) writeFileSync(join(this.root, file), previous);
+      }
+      for (const [file, bytes] of before) {
+        const target = join(this.root, file);
+        mkdirSync(dirname(target), { recursive: true });
+        if (this.bytes(file) === null) writeFileSync(target, bytes);
+      }
       throw error;
     }
+  }
+
+  private markdown(): Map<string, Buffer> {
+    return new Map(
+      listMarkdownFiles(this.root).map((file) => [file, readFileSync(join(this.root, file))]),
+    );
   }
 }
