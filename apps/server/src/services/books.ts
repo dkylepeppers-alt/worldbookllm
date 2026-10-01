@@ -169,6 +169,7 @@ export class BookService {
               before: before.get(book)!,
               after: this.files.snapshot(book),
             })),
+            { structural: true },
           );
         } catch (error) {
           if (moved) this.files.moveIntoSeries(slug, seriesId);
@@ -413,8 +414,13 @@ export class BookService {
     this.files.moveIntoSeries(slug, seriesId);
     this.checkCache.delete(slug);
     const story = this.files.readBytes(slug, 'story.md')?.toString('utf8') ?? '';
-    await this.checkpoints.record(slug, `Join series ${seriesId}`, 'user', 'book', () =>
-      this.files.write(slug, 'story.md', setFrontmatterField(story, 'series', seriesId)),
+    await this.checkpoints.record(
+      slug,
+      `Join series ${seriesId}`,
+      'user',
+      'book',
+      () => this.files.write(slug, 'story.md', setFrontmatterField(story, 'series', seriesId)),
+      { structural: true },
     );
     this.index.reconcile(slug);
   }

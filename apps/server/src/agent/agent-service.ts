@@ -22,6 +22,7 @@ import type {
   PatchAgentChatInput,
   ProviderConfig,
 } from '@worldbookllm/shared';
+import { orderSeriesBooks } from '@worldbookllm/shared';
 
 import { ConfigurationError, ConflictError, NotFoundError } from '../errors.js';
 import type { BookService } from '../services/books.js';
@@ -878,10 +879,14 @@ export class AgentService {
             '',
             '## Series',
             `Series bible: ${summary.seriesId}`,
+            // Listed from the library, not the bible, so a series whose bible folder is missing still works.
             `Books in order: ${
-              new SeriesService(this.books)
-                .get(summary.seriesId)
-                .books.map((member) => `${member.slug} (${member.title})`)
+              orderSeriesBooks(
+                this.books
+                  .list()
+                  .filter((book) => book.kind === 'book' && book.seriesId === summary.seriesId),
+              )
+                .map((member) => `${member.slug} (${member.title})`)
                 .join(', ') || 'none yet'
             }`,
             'read_file, list_files, and search accept an optional book slug within this series (including the bible). Generic writes always stay on this chat’s book; use sync_series for explicit canon sync. Keep shared identity canon in the bible and book-local state in each book.',

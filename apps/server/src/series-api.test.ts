@@ -102,6 +102,32 @@ describe('series (ADR 0018)', () => {
     ).toBe(409);
   }, 30_000);
 
+  it('refuses to undo series moves from history, since undo cannot move folders back', async () => {
+    const harbor = await post<BookSummary>('/api/books', { title: 'Harbor' });
+    await post(`/api/books/${harbor.slug}/series`, { newSeriesTitle: 'Tides' }, 200);
+    await post('/api/series/tides/books', { title: 'High Water', follows: 'harbor' });
+    const undo = async (book: string, label: string) => {
+      const row = (await history(book)).find((entry) => entry.label === label);
+      expect(row, `${book}: ${label}`).toBeDefined();
+      return app.inject({
+        method: 'POST',
+        url: `/api/books/${book}/checkpoints/${row!.id}/undo`,
+      });
+    };
+
+    await app.inject({ method: 'DELETE', url: '/api/series/tides/books/high-water' });
+    for (const book of ['high-water', 'harbor']) {
+      const refused = await undo(book, 'Leave series tides: high-water');
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json()).toMatchObject({ error: 'checkpoint_structural' });
+    }
+    expect(story('projects/high-water')).not.toMatch(/^series:/mu);
+
+    const joined = await undo('harbor', 'Join series tides');
+    expect(joined.json()).toMatchObject({ error: 'checkpoint_structural' });
+    expect(story('series/tides/harbor')).toMatch(/^series: tides$/mu);
+  }, 30_000);
+
   it('reports duplicate disk slugs without exposing server paths or opening the later copy', async () => {
     await post('/api/series', { title: 'Tides' });
     await post('/api/series/tides/books', { title: 'Harbor' });

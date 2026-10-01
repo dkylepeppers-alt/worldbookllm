@@ -194,7 +194,8 @@ export function mergeIdentity(kind: SeriesEntityKind, source: string, target: st
 /** New copies have fresh safe local defaults, never source-book references or state. */
 export function carryIdentity(kind: SeriesEntityKind, source: string, id: string): string {
   const canon = matter(source);
-  const defaults: Record<string, unknown> = { id };
+  // Entity ids are filenames in story-skills; frontmatter never carries one.
+  const defaults: Record<string, unknown> = {};
   if (kind === 'character') Object.assign(defaults, { role: 'supporting', status: 'alive' });
   if (kind === 'faction' || kind === 'artifact') defaults.status = 'active';
   const title = String(canon.data.name ?? canon.data.term ?? id);

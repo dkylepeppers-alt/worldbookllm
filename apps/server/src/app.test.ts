@@ -125,7 +125,7 @@ describe('server data API', () => {
     expect(response.json()).toMatchObject({ id: chat.id, book: book.slug });
 
     const db = new Database(join(dataDir, 'worldbookllm.db'), { readonly: true });
-    expect(db.pragma('user_version', { simple: true })).toBe(14);
+    expect(db.pragma('user_version', { simple: true })).toBe(15);
     db.close();
   });
 

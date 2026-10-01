@@ -42,12 +42,11 @@ describe('series identity contract', () => {
     expect(result).toContain('## Timeline\nKeep me');
   });
 
-  it('carries identity without source-book state or references', () => {
+  it('carries identity without source-book state, references, or an id field', () => {
     const content =
       '---\nid: mira\nname: Mira\naliases: [Captain]\nrole: antagonist\nstatus: dead\nlocations: [old-city]\ncustom: secret\n---\n# Mira\n\n## Appearance\nGreen eyes.\n\n## Timeline\nLocal history.\n';
     const result = carryIdentity('character', content, 'mira');
     expect(parseFrontmatter(result).frontmatter).toEqual({
-      id: 'mira',
       name: 'Mira',
       aliases: ['Captain'],
       role: 'supporting',

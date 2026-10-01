@@ -81,6 +81,20 @@ async function boot(
 }
 
 describe('agent turns', () => {
+  it('still runs a turn on a series book whose bible folder is missing', async () => {
+    const { app, book, chat, requests } = await boot([() => sse(text('Still here.'))]);
+    await app.services.books.moveIntoNewSeries(book.slug, 'Tides');
+    rmSync(join(dataDir, 'series/tides/series-bible'), { recursive: true, force: true });
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Hello.' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(app.services.agent.getChat(chat.id).messages.at(-1)?.content).toBe('Still here.');
+    expect(JSON.stringify(requests[0])).toContain('Books in order: harbor (Harbor)');
+  }, 30_000);
+
   it('pushes a bible alias into another book without changing its local role', async () => {
     const { app, book } = await boot([
       () =>
