@@ -218,6 +218,10 @@ export const agentStreamEventSchema = z.discriminatedUnion('type', [
 export const storySkillsInstallResultSchema = z.strictObject({
   installed: z.array(skillMetadataSchema),
   skipped: z.array(z.string()),
+  /** Unedited installs moved to the bundled story-skills version. */
+  upgraded: z.array(skillMetadataSchema),
+  /** Installs from an older version kept as they are because the writer edited them. */
+  kept: z.array(z.string()),
 });
 
 export function encodeAgentSseEvent(event: AgentStreamEvent): string {

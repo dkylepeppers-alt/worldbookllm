@@ -471,7 +471,7 @@ describe('agent tab', () => {
 
   it('offers to install Story Skills when none are installed', async () => {
     const installStorySkills = vi.fn(() =>
-      Promise.resolve({ installed: [storySkill], skipped: [] }),
+      Promise.resolve({ installed: [storySkill], skipped: [], upgraded: [], kept: [] }),
     );
     renderAt('/books/the-salt-road/agent', {
       listSkills: () => Promise.resolve([]),
@@ -482,6 +482,29 @@ describe('agent tab', () => {
     expect(installStorySkills).toHaveBeenCalled();
     expect(await within(notice).findByText('Installed 1 skill.')).toBeDefined();
     expect(within(notice).queryByRole('button', { name: 'Install Story Skills' })).toBeNull();
+  });
+
+  it.each([
+    [
+      { installed: [], skipped: [], upgraded: [storySkill], kept: ['scene-craft', 'voice-style'] },
+      'Updated 1 skill to the bundled version; kept 2 skills you edited (scene-craft, voice-style).',
+    ],
+    [
+      { installed: [storySkill], skipped: ['scene-craft'], upgraded: [], kept: [] },
+      'Installed 1 skill; 1 already present.',
+    ],
+    [
+      { installed: [], skipped: ['scene-craft'], upgraded: [], kept: [] },
+      'Story Skills are already installed and up to date.',
+    ],
+  ])('reports what a Story Skills install did', async (result, report) => {
+    renderAt('/books/the-salt-road/agent', {
+      listSkills: () => Promise.resolve([]),
+      installStorySkills: () => Promise.resolve(result),
+    });
+    const notice = await screen.findByRole('region', { name: 'Story Skills' });
+    await userEvent.click(within(notice).getByRole('button', { name: 'Install Story Skills' }));
+    expect(await within(notice).findByText(report)).toBeDefined();
   });
 
   it('gives a new chat’s refused first message back in the chat’s composer', async () => {
