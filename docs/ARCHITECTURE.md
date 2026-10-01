@@ -93,6 +93,16 @@ M7 replaces notebooks with [story-skills](https://github.com/danjdewhurst/story-
 - **The notebook migration** (ADR 0017) runs as the server becomes ready: each notebook not yet moved becomes a book, its sources research notes with their provenance, and its chats agent chats that keep each exchange's recorded request body. The move is resumable and retried at each start until it finishes, always in the same book. Once all have moved, `data/notebooks/` is renamed to `data/notebooks.migrated/` (with a timestamp suffix if that name is taken). The library shows the report, including that folder's name, until the writer dismisses it.
 - **Custom agents** (ADR 0016) are saved at `/agents`: a name, instructions added to the system prompt under `## Your role`, and an optional skill subset that the skill catalog and `activate_skill` respect. A chat picks one when it starts, or the default agent.
 
+## Series and shared canon
+
+Series live under `data/series/<id>/`: books are sibling projects and `series-bible/` holds shared canon (ADR 0018). Every project keeps its globally unique slug; the bible uses the series id. `BookFileStore` resolves each slug to its current folder, so converting or detaching a book preserves its indexed files, chats, and history. The library reports duplicate on-disk slugs rather than opening a later copy.
+
+`SeriesService` reads membership from those folders and compares entity copies by kind and id. `series-fields.ts` pins the identity/book-local boundary to story-skills 0.18.0; unknown frontmatter and unnamed sections remain local. The Series overview combines identity drift with `story series` and each project's `story links` result.
+
+Push and pull copy only identity fields. Carry creates a missing copy with fresh local defaults; seed adds missing bible entries from a book without replacing existing canon. A sync acquires the normal book locks in slug order, snapshots every changed book, runs `reindex` and `validate`, then records one checkpoint per changed book with a shared label. A failure restores every touched book, including its registries, and records no sync checkpoints. Undo remains per book, from Project history.
+
+A series chat may pass a same-series slug to `read_file`, `list_files`, or `search`, including the bible. Generic writes stay on the chat's own book. `sync_series` is the only cross-book write tool and is unavailable in review mode. Ordinary edits before a sync finish their checkpoint; later edits use a fresh checkpoint session. The turn summary links to each changed book's history.
+
 ## Production serving and installability (PWA)
 
 In production, `apps/server` serves the built `apps/web/dist` directly — one process, one port, as ADR 0002 always intended (see ADR 0010 for why this took a follow-up decision to actually implement, and for the installable-PWA work bundled with it). Client-side routes that aren't real files (e.g. `/books/:slug/write`) fall back to `index.html` so React Router can handle them; `/api/*` paths that don't match a route still return the same JSON 404 shape as always.
@@ -124,3 +134,4 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0015 — Tool-calling agent loop running story-skills](decisions/0015-tool-calling-agent-loop.md)
 - [0016 — Review mode staging and saved custom agents](decisions/0016-review-mode-staging-and-custom-agents.md)
 - [0017 — Retire notebooks and presets](decisions/0017-retire-notebooks-and-presets.md)
+- [0018 — Series books and the series bible](decisions/0018-series-books-and-the-series-bible.md)
