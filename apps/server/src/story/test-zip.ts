@@ -6,6 +6,8 @@ export interface TestZipEntry {
   data?: string | Buffer;
   store?: boolean;
   symlink?: boolean;
+  /** Name bytes written without the UTF-8 flag, as older tools write CP437 names. */
+  legacyName?: Buffer;
 }
 
 /** Writes a minimal zip archive for tests (the inverse of project-zip's reader). */
@@ -14,7 +16,8 @@ export function makeZip(entries: readonly TestZipEntry[]): Buffer {
   const centrals: Buffer[] = [];
   let offset = 0;
   for (const entry of entries) {
-    const name = Buffer.from(entry.name, 'utf8');
+    const name = entry.legacyName ?? Buffer.from(entry.name, 'utf8');
+    const flags = entry.legacyName ? 0 : 0x800;
     const data = Buffer.from(entry.data ?? '');
     const body = entry.store ? data : deflateRawSync(data);
     const method = entry.store ? 0 : 8;
@@ -23,7 +26,7 @@ export function makeZip(entries: readonly TestZipEntry[]): Buffer {
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(0x800, 6);
+    local.writeUInt16LE(flags, 6);
     local.writeUInt16LE(method, 8);
     local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(body.length, 18);
@@ -35,7 +38,7 @@ export function makeZip(entries: readonly TestZipEntry[]): Buffer {
     central.writeUInt32LE(0x02014b50, 0);
     central.writeUInt16LE((3 << 8) | 20, 4);
     central.writeUInt16LE(20, 6);
-    central.writeUInt16LE(0x800, 8);
+    central.writeUInt16LE(flags, 8);
     central.writeUInt16LE(method, 10);
     central.writeUInt32LE(crc, 16);
     central.writeUInt32LE(body.length, 20);

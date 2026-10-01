@@ -353,6 +353,20 @@ describe('project zip import', () => {
     expect(readdirSync(join(dataDir, 'projects'))).toEqual([slug]);
   });
 
+  it('imports a project whose registries cannot be rebuilt, and says why', async () => {
+    const response = await upload(
+      'unparsable.zip',
+      makeZip([
+        { name: 'story.md', data: '---\ntitle: Unparsable\n---\n' },
+        { name: 'characters/bram.md', data: '---\nname: Bram\nname: Bram again\n---\n' },
+      ]),
+    );
+    expect(response.statusCode).toBe(201);
+    const result = response.json<ManuscriptImportResult>();
+    expect(result.output).toContain('story reindex could not regenerate the registries');
+    expect(result.output).toMatch(/story validate found [1-9]\d* errors?/u);
+  });
+
   it('imports a project with validation errors and says so', async () => {
     const response = await upload(
       'broken.zip',

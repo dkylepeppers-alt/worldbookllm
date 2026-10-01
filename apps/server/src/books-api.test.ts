@@ -530,6 +530,28 @@ describe('builds', () => {
     }
   });
 
+  it('returns the file when story.md promotes a build warning to an error', async () => {
+    const book = await createBook();
+    expect((await addEntity(book.slug, 'chapter', 'Arrival')).statusCode).toBe(201);
+    const story = join(dataDir, 'projects', book.slug, 'story.md');
+    writeFileSync(
+      story,
+      readFileSync(story, 'utf8').replace(
+        /^---\n/u,
+        '---\nseverity:\n  - warning: empty-chapter\n    level: error\n',
+      ),
+    );
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/books/${book.slug}/builds`,
+      payload: { format: 'markdown' },
+    });
+    expect(response.statusCode).toBe(201);
+    const result = response.json<BookBuildResult>();
+    expect(result.file.name).toBe('the-salt-road.md');
+    expect(result.output).toContain('empty-chapter');
+  });
+
   it('reports a book with nothing to build as an unusable project', async () => {
     const book = await createBook('Empty');
     const response = await app.inject({

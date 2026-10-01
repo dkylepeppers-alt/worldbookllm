@@ -30,9 +30,9 @@ import {
   type WriteBookFileInput,
 } from '@worldbookllm/shared';
 
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { ConflictError, InvalidImportError, NotFoundError, StoryCommandError } from '../errors.js';
 import type { BookFileStore } from '../story/book-files.js';
@@ -48,8 +48,12 @@ import {
   suggestImportKind,
 } from '../story/book-import.js';
 import { sha256 } from '../story/book-files.js';
-import { buildFilePath, builtFileName, listBuildFiles } from '../story/book-builds.js';
-import { confine } from '../story/book-paths.js';
+import {
+  builtFileName,
+  listBuildFiles,
+  readBuildFile,
+  removeBuildFile,
+} from '../story/book-builds.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
 import type {
@@ -58,7 +62,12 @@ import type {
   CheckpointSession,
 } from '../story/checkpoints.js';
 import { KeyedMutex } from '../story/keyed-mutex.js';
-import { unpackProjectZip } from '../story/project-zip.js';
+import {
+  discardStagedProject,
+  promoteStagedProject,
+  stageProjectFiles,
+  unpackProjectZip,
+} from '../story/project-zip.js';
 import { StagedBook, type StagedChange } from '../story/staging.js';
 import { assertWritablePath, needsReindex } from '../story/write-rules.js';
 import type { StoryCli, StoryRunResult } from '../story/story-cli.js';
@@ -750,7 +759,7 @@ export class BookService {
    * place. An archive the CLI cannot use as a project is rejected whole.
    */
   async importProject(bytes: Buffer, fileName: string): Promise<ManuscriptImportResult> {
-    const archive = unpackProjectZip(bytes);
+    const archive = await unpackProjectZip(bytes);
     const story = archive.files.find((file) => file.path === 'story.md');
     const notes: string[] = [];
     let storyText = story?.data.toString('utf8') ?? '';
@@ -770,15 +779,16 @@ export class BookService {
       (fileName.replace(/\.zip$/iu, '').trim() || 'Imported project');
 
     const { slug, validation } = await this.locks.run(CREATE_LOCK, async () => {
-      const staging = mkdtempSync(join(this.files.projectsDir, '.import-'));
+      const staging = stageProjectFiles(this.files.projectsDir, archive.files);
       try {
-        for (const file of archive.files) {
-          const target = confine(staging, file.path);
-          mkdirSync(dirname(target), { recursive: true });
-          writeFileSync(target, file.data, { mode: 0o600 });
+        // Missing or stale registries are regenerated. A project whose files do
+        // not parse cannot be reindexed; it is still imported, and validation
+        // below names the files to fix.
+        const reindex = await this.cli.run({ command: 'reindex', root: staging });
+        if (reindex.exitCode !== 0) {
+          const reason = (reindex.stderr.trim() || reindex.stdout.trim()).split('\n')[0];
+          notes.push(`story reindex could not regenerate the registries: ${reason}`);
         }
-        // Stale or missing registries are regenerated; a project reindex refuses still fails below.
-        await this.cli.run({ command: 'reindex', root: staging });
         const result = await this.cli.run({ command: 'validate', root: staging, json: true });
         if (result.exitCode !== 0 && result.exitCode !== 1) {
           const message =
@@ -787,10 +797,10 @@ export class BookService {
           throw new InvalidImportError(`The archive is not a usable story project: ${message}`);
         }
         const free = this.freeSlug(title);
-        renameSync(staging, join(this.files.projectsDir, free));
+        promoteStagedProject(staging, this.files.projectsDir, free);
         return { slug: free, validation: result.envelope };
       } catch (error) {
-        rmSync(staging, { recursive: true, force: true });
+        discardStagedProject(staging);
         throw error;
       }
     });
@@ -821,38 +831,42 @@ export class BookService {
     if (input.stamp !== undefined) options.stamp = input.stamp;
     return this.locks.run(slug, async () => {
       const root = this.files.root(slug);
-      const result = await this.cli.runOrThrow({
+      const result = await this.cli.run({
         command: 'build',
         root,
         options,
         timeoutMs: BUILD_TIMEOUT_MS,
       });
+      const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n');
+      // Exit 1 after a build means its warnings include ones story.md promotes
+      // to errors; the file is written all the same, so it is returned with them.
       const name = builtFileName(result.stdout);
       const file =
-        listBuildFiles(root).find((entry) => entry.name === name) ?? listBuildFiles(root)[0];
+        result.exitCode === 0 || result.exitCode === 1
+          ? listBuildFiles(root).find((entry) => entry.name === name)
+          : undefined;
       if (file === undefined) {
-        throw new StoryCommandError(1, 'story build finished but wrote no file to dist/');
+        throw new StoryCommandError(
+          result.exitCode === 0 ? 1 : result.exitCode,
+          output || 'story build finished but wrote no file to dist/',
+        );
       }
-      return {
-        file,
-        output: [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n'),
-      };
+      return { file, output };
     });
   }
 
-  listBuilds(slug: string): BookBuildFile[] {
-    return listBuildFiles(this.files.root(slug));
+  /** Under the book lock, so a listing never sees a build half-written or a file mid-delete. */
+  listBuilds(slug: string): Promise<BookBuildFile[]> {
+    return this.locks.run(slug, () => listBuildFiles(this.files.root(slug)));
   }
 
   /** A build file's bytes, for download. */
-  readBuild(slug: string, name: string): Buffer {
-    return readFileSync(buildFilePath(this.files.root(slug), name));
+  readBuild(slug: string, name: string): Promise<Buffer> {
+    return this.locks.run(slug, () => readBuildFile(this.files.root(slug), name));
   }
 
   async removeBuild(slug: string, name: string): Promise<void> {
-    await this.locks.run(slug, () => {
-      rmSync(buildFilePath(this.files.root(slug), name));
-    });
+    await this.locks.run(slug, () => removeBuildFile(this.files.root(slug), name));
   }
 
   /** The book's root folder, for callers that confine paths themselves. */

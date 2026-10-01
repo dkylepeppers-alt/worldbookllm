@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { BookBuildFile } from '@worldbookllm/shared';
@@ -24,7 +24,7 @@ export function buildContentType(name: string): string {
 }
 
 /** The absolute path of `dist/<name>` in a book, refusing anything but a plain file there. */
-export function buildFilePath(root: string, name: string): string {
+function buildFilePath(root: string, name: string): string {
   const path = confine(root, `${DIST}/${name}`);
   let isFile = false;
   try {
@@ -34,6 +34,14 @@ export function buildFilePath(root: string, name: string): string {
   }
   if (!isFile) throw new NotFoundError(`Build file ${name} was not found`);
   return path;
+}
+
+export function readBuildFile(root: string, name: string): Buffer {
+  return readFileSync(buildFilePath(root, name));
+}
+
+export function removeBuildFile(root: string, name: string): void {
+  rmSync(buildFilePath(root, name));
 }
 
 /** Files directly in the book's `dist/`, newest first. Symlinks and dot-files are skipped. */
@@ -48,13 +56,18 @@ export function listBuildFiles(root: string): BookBuildFile[] {
   }
   return readdirSync(dist, { withFileTypes: true })
     .filter((entry) => entry.isFile() && !entry.name.startsWith('.'))
-    .map((entry) => {
-      const stats = lstatSync(join(dist, entry.name));
-      return {
-        name: entry.name,
-        size: stats.size,
-        updatedAt: new Date(stats.mtimeMs).toISOString(),
-      };
+    .flatMap((entry) => {
+      let stats;
+      try {
+        stats = lstatSync(join(dist, entry.name));
+      } catch (error) {
+        // Removed since the directory was read (by the agent's own story build, say).
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+        throw error;
+      }
+      return [
+        { name: entry.name, size: stats.size, updatedAt: new Date(stats.mtimeMs).toISOString() },
+      ];
     })
     .sort(
       (left, right) =>

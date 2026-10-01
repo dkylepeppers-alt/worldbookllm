@@ -171,9 +171,9 @@ export function registerBookRoutes(app: FastifyInstance): void {
     return reply.status(201).send(await books().build(book, input));
   });
 
-  app.get('/api/books/:book/builds/:file', (request, reply) => {
+  app.get('/api/books/:book/builds/:file', async (request, reply) => {
     const { book, file } = bookBuildParamsSchema.parse(request.params);
-    const bytes = books().readBuild(book, file);
+    const bytes = await books().readBuild(book, file);
     // Downloads only: a built HTML review copy must never run as a page of this origin.
     return reply
       .header('content-type', buildContentType(file))

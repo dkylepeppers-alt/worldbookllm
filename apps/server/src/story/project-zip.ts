@@ -1,13 +1,32 @@
-import { crc32, inflateRawSync } from 'node:zlib';
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { promisify } from 'node:util';
+import { crc32, inflateRaw } from 'node:zlib';
 
 import { InvalidImportError } from '../errors.js';
+import { confine } from './book-paths.js';
+
+const inflate = promisify(inflateRaw);
 
 /** Limits for a project archive; the upload itself is capped at 25 MiB by the route. */
 export const PROJECT_ZIP_LIMITS = {
   maxEntries: 5_000,
   maxFileBytes: 25 * 1024 * 1024,
   maxTotalBytes: 100 * 1024 * 1024,
+  /** Inflating and checking every kept entry must finish within this. */
+  maxProcessingMs: 30_000,
 } as const;
+
+/** CP437, the encoding zip names use without the UTF-8 flag: characters for bytes 0x80–0xFF. */
+const CP437_HIGH =
+  'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u00a0';
+
+function decodeCp437(bytes: Buffer): string {
+  let text = '';
+  for (const byte of bytes)
+    text += byte < 0x80 ? String.fromCharCode(byte) : CP437_HIGH[byte - 0x80];
+  return text;
+}
 
 /** Files a story-skills project is made of: Markdown, plain notes, and cover images. */
 const KEPT_EXTENSIONS = new Set(['md', 'txt', 'jpg', 'jpeg', 'png', 'gif', 'webp']);
@@ -82,8 +101,9 @@ function listEntries(bytes: Buffer): ZipEntry[] {
     const localOffset = bytes.readUInt32LE(at + 42);
     const nameEnd = at + 46 + nameLength;
     if (nameEnd > end) throw invalid('The zip archive is damaged.');
-    // Bit 11: the name is UTF-8. Older tools write CP437; its ASCII range is all a project uses.
-    const name = bytes.toString(flags & 0x800 ? 'utf8' : 'latin1', at + 46, nameEnd);
+    // Bit 11: the name is UTF-8; without it, the zip format's CP437.
+    const rawName = bytes.subarray(at + 46, nameEnd);
+    const name = flags & 0x800 ? rawName.toString('utf8') : decodeCp437(rawName);
     if (flags & 0x1) throw invalid('Encrypted zip archives are not supported.');
     if (compressedSize === 0xffffffff || size === 0xffffffff || localOffset === 0xffffffff) {
       throw invalid('ZIP64 archives are not supported.');
@@ -105,7 +125,7 @@ function listEntries(bytes: Buffer): ZipEntry[] {
 }
 
 /** Decompresses one entry, never producing more than its declared size, and checks its CRC. */
-function readEntry(bytes: Buffer, entry: ZipEntry): Buffer {
+async function readEntry(bytes: Buffer, entry: ZipEntry): Promise<Buffer> {
   const at = entry.localOffset;
   if (at + 30 > bytes.length || bytes.readUInt32LE(at) !== LOCAL_SIGNATURE) {
     throw invalid(`The zip archive is damaged at ${entry.name}.`);
@@ -119,7 +139,8 @@ function readEntry(bytes: Buffer, entry: ZipEntry): Buffer {
     data = raw;
   } else if (entry.method === 8) {
     try {
-      data = inflateRawSync(raw, { maxOutputLength: Math.max(1, entry.size) });
+      // Async: inflating runs on the libuv pool, off the request thread.
+      data = await inflate(raw, { maxOutputLength: Math.max(1, entry.size) });
     } catch {
       throw invalid(`${entry.name} could not be decompressed.`);
     }
@@ -172,7 +193,10 @@ export interface ProjectArchive {
  * types are skipped and reported. An entry whose path could escape the
  * project rejects the whole archive.
  */
-export function unpackProjectZip(bytes: Buffer): ProjectArchive {
+export async function unpackProjectZip(
+  bytes: Buffer,
+  deadlineMs: number = PROJECT_ZIP_LIMITS.maxProcessingMs,
+): Promise<ProjectArchive> {
   const entries = listEntries(bytes);
   const files: Array<{ entry: ZipEntry; segments: string[] }> = [];
   for (const entry of entries) {
@@ -185,21 +209,18 @@ export function unpackProjectZip(bytes: Buffer): ProjectArchive {
 
   const roots = new Set(
     files
-      .filter(({ segments }) => segments.at(-1) === 'story.md')
+      .filter(({ segments }) => segments.at(-1) === 'story.md' && !isNoise(segments))
       .map(({ segments }) => segments.slice(0, -1).join('/')),
   );
-  let root: string;
-  if (roots.has('')) {
-    root = '';
-  } else if (roots.size === 1) {
-    root = [...roots][0]!;
-    if (root.includes('/')) {
-      throw invalid('Zip the book folder itself: story.md must be at the top of the archive.');
-    }
-  } else if (roots.size === 0) {
+  if (roots.size === 0) {
     throw invalid('The archive is not a story-skills project: it has no story.md.');
-  } else {
+  }
+  if (roots.size > 1) {
     throw invalid('The archive holds several books. Import them one zip at a time.');
+  }
+  const root = [...roots][0]!;
+  if (root.includes('/')) {
+    throw invalid('Zip the book folder itself: story.md must be at the top of the archive.');
   }
 
   const kept: Array<{ entry: ZipEntry; path: string }> = [];
@@ -210,7 +231,7 @@ export function unpackProjectZip(bytes: Buffer): ProjectArchive {
     const inside = root === '' ? segments : segments[0] === root ? segments.slice(1) : null;
     const path = inside?.join('/') ?? '';
     const skip = (reason: string) => skipped.push(`${entry.name} (${reason})`);
-    if (segments.some((segment) => segment.startsWith('.') || segment === '__MACOSX')) {
+    if (isNoise(segments)) {
       continue; // Hidden files and resource forks are tool noise, not the writer's content.
     } else if (inside === null || inside.length === 0) {
       skip('outside the book folder');
@@ -234,8 +255,47 @@ export function unpackProjectZip(bytes: Buffer): ProjectArchive {
     }
   }
 
-  return {
-    files: kept.map(({ entry, path }) => ({ path, data: readEntry(bytes, entry) })),
-    skipped,
-  };
+  const started = Date.now();
+  const unpacked: ProjectArchiveFile[] = [];
+  for (const { entry, path } of kept) {
+    unpacked.push({ path, data: await readEntry(bytes, entry) });
+    if (Date.now() - started > deadlineMs) {
+      throw invalid(`The archive took more than ${deadlineMs / 1000}s to unpack.`);
+    }
+  }
+  return { files: unpacked, skipped };
+}
+
+/** Dot-entries and macOS resource forks, at any depth. */
+function isNoise(segments: readonly string[]): boolean {
+  return segments.some((segment) => segment.startsWith('.') || segment === '__MACOSX');
+}
+
+/**
+ * Writes an unpacked project into a new hidden folder under `parentDir`
+ * (dot-prefixed, so no book scan picks it up) and returns that folder.
+ * Removes it again if any write fails.
+ */
+export function stageProjectFiles(parentDir: string, files: readonly ProjectArchiveFile[]): string {
+  const staging = mkdtempSync(join(parentDir, '.import-'));
+  try {
+    for (const file of files) {
+      const target = confine(staging, file.path);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, file.data, { mode: 0o600 });
+    }
+    return staging;
+  } catch (error) {
+    discardStagedProject(staging);
+    throw error;
+  }
+}
+
+/** Moves a staged project into place as `parentDir/<slug>`. */
+export function promoteStagedProject(staging: string, parentDir: string, slug: string): void {
+  renameSync(staging, confine(parentDir, slug));
+}
+
+export function discardStagedProject(staging: string): void {
+  rmSync(staging, { recursive: true, force: true });
 }
