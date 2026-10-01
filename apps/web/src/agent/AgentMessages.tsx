@@ -1,11 +1,13 @@
 import type { AgentChangeset, AgentMessage, Checkpoint } from '@worldbookllm/shared';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Link } from 'react-router-dom';
 
 import {
   extraText,
   prettyArguments,
   stepsOf,
+  seriesBooksOf,
   toolTarget,
   type PendingTurn,
   type StepView,
@@ -122,6 +124,23 @@ function PinnedFiles({ paths }: { paths: readonly string[] }) {
   );
 }
 
+function SeriesChanges({ books }: { books: readonly string[] }) {
+  if (books.length === 0) return null;
+  return (
+    <section className="change-summary" aria-label="Series changes this turn">
+      <h3>Books changed this turn</h3>
+      <ul>
+        {books.map((book) => (
+          <li key={book}>
+            <Link to={`/books/${book}/project`}>{book} · history and undo</Link>
+          </li>
+        ))}
+      </ul>
+      <p>Series sync can be undone separately in each changed book.</p>
+    </section>
+  );
+}
+
 export function AgentMessages({
   messages,
   pending,
@@ -186,6 +205,7 @@ export function AgentMessages({
             <Steps steps={stepsOf(message)} />
             {extra.trim() === '' ? null : <Markdown>{extra}</Markdown>}
             {checkpoint === undefined ? null : summary(checkpoint)}
+            <SeriesChanges books={seriesBooksOf(stepsOf(message))} />
             {changeset === undefined ? null : proposal(changeset)}
             {message.steps.length === 0 ? null : (
               <div className="message-actions">
@@ -211,6 +231,7 @@ export function AgentMessages({
             <Reasoning reasoning={pending.reasoning} streaming />
             <Steps steps={pending.steps} />
             {pending.checkpoint === null ? null : summary(pending.checkpoint, true)}
+            <SeriesChanges books={pending.seriesBooks} />
             {pending.changeset === null ? null : proposal(pending.changeset, true)}
           </li>
         </>

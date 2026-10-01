@@ -188,6 +188,8 @@ database — copy `worldbookllm.db`, `worldbookllm.db-wal`, and `worldbookllm.db
 The Markdown files are always safe to copy directly at any time — they are never
 partially written (writes are atomic, temp-file-then-rename).
 
+Include `data/series/` in backups: each `series/<id>/` contains its `series-bible/` and the sibling book folders. Backing up only `data/projects/` omits both series books and their shared canon. Stop the app for a consistent whole-series backup; atomic individual file writes do not make a live copy of a multi-book sync a single snapshot.
+
 ## Upgrading
 
 ```bash

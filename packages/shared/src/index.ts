@@ -6,6 +6,8 @@ export interface HealthStatus {
 
 export * from './api-errors.js';
 export * from './books.js';
+export * from './series.js';
+export * from './series-order.js';
 export * from './agent.js';
 export * from './notebook-migration.js';
 export * from './provider-config.js';

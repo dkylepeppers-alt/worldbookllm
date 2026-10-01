@@ -37,6 +37,22 @@ export function ProjectPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trashing, setTrashing] = useState(false);
+  const [removingSeries, setRemovingSeries] = useState(false);
+  async function removeSeries() {
+    if (tree.book.seriesId === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.removeSeriesBook(tree.book.seriesId, slug);
+      reload();
+      history.reload();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+      setRemovingSeries(false);
+    }
+  }
 
   const latestLive =
     history.status === 'ready'
@@ -85,6 +101,11 @@ export function ProjectPage() {
       </ul>
 
       <SeriesSection />
+      {tree.book.seriesId === null ? null : (
+        <p>
+          <Link to={`/series/${tree.book.seriesId}`}>Series overview</Link>
+        </p>
+      )}
 
       <h3>History</h3>
       {error === null ? null : (
@@ -130,13 +151,31 @@ export function ProjectPage() {
       ) : null}
 
       <h3>Remove</h3>
+      {tree.book.kind === 'book' && tree.book.seriesId !== null ? (
+        <button className="button-secondary" onClick={() => setRemovingSeries(true)}>
+          Remove book from series
+        </button>
+      ) : null}
+      {removingSeries ? (
+        <ConfirmDialog
+          title={`Remove ${tree.book.title} from its series?`}
+          confirmLabel="Move to standalone books"
+          busy={busy}
+          busyLabel="Moving…"
+          onCancel={() => setRemovingSeries(false)}
+          onConfirm={() => void removeSeries()}
+        >
+          The book moves to data/projects/. Its files and history stay intact, and its series links
+          are removed.
+        </ConfirmDialog>
+      ) : null}
       {tree.book.seriesId === null ? (
         <button type="button" className="button-danger" onClick={() => setTrashing(true)}>
           Move book to trash
         </button>
       ) : (
         <p>
-          Books in a series and series bibles cannot be moved to trash yet. Their folders stay in
+          Remove a book from its series before moving it to trash. The series bible stays in
           data/series/.
         </p>
       )}

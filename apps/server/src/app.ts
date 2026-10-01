@@ -17,6 +17,7 @@ import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { registerBookRoutes } from './routes/books.js';
+import { registerSeriesRoutes } from './routes/series.js';
 import { registerProviderRoutes } from './routes/providers.js';
 import { registerSecretRoutes } from './routes/secrets.js';
 import { registerSettingsRoutes } from './routes/settings.js';
@@ -32,6 +33,7 @@ import { BookFileStore } from './story/book-files.js';
 import { BookIndex } from './story/book-index.js';
 import { CheckpointService } from './story/checkpoints.js';
 import { StoryCli } from './story/story-cli.js';
+import { SeriesService } from './story/series.js';
 
 /**
  * True for a request the SPA fallback should answer with index.html: a
@@ -51,6 +53,7 @@ function isSpaNavigation(method: string, url: string): boolean {
 
 interface AppServices {
   books: BookService;
+  series: SeriesService;
   agent: AgentService;
   customAgents: CustomAgentService;
   changesets: AgentChangesetService;
@@ -129,6 +132,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.decorate('services', {
     books,
+    series: new SeriesService(books),
     agent,
     customAgents,
     changesets,
@@ -172,6 +176,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.get('/api/health', () => ({ status: 'ok' }));
 
   registerBookRoutes(app);
+  registerSeriesRoutes(app);
   registerAgentRoutes(app);
   registerSecretRoutes(app);
   registerProviderRoutes(app);

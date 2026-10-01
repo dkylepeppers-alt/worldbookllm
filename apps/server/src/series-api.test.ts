@@ -37,6 +37,113 @@ async function history(slug: string): Promise<Checkpoint[]> {
 }
 
 describe('series (ADR 0018)', () => {
+  it('provides the explicit convert-to-series route while keeping the merged route compatible', async () => {
+    await post('/api/books', { title: 'Harbor' });
+    const response = await post<BookSummary>(
+      '/api/books/harbor/convert-to-series',
+      { title: 'Tides' },
+      200,
+    );
+    expect(response).toMatchObject({ slug: 'harbor', seriesId: 'tides' });
+  });
+
+  it('refuses detachment while an affected sibling has a running agent turn', async () => {
+    await post('/api/series', { title: 'Tides' });
+    await post('/api/series/tides/books', { title: 'Harbor' });
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/app-settings',
+      payload: {
+        providerConfig: { source: 'openai', model: 'gpt-4o', baseUrl: 'http://provider.test/v1' },
+      },
+    });
+    const chat = app.services.agent.createChat('harbor', {});
+    const prepared = app.services.agent.prepare(chat.id, 'Hold this book', []);
+    try {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/series/tides/books/harbor',
+      });
+      expect(response.statusCode).toBe(409);
+      expect(existsSync(join(dataDir, 'series/tides/harbor/story.md'))).toBe(true);
+    } finally {
+      prepared.release();
+    }
+  });
+  it('removes a book to projects, cleans sibling links, and preserves files and history', async () => {
+    await post('/api/series', { title: 'Tides' });
+    await post('/api/series/tides/books', { title: 'Low Water', bookNumber: 1 });
+    await post('/api/series/tides/books', {
+      title: 'High Water',
+      follows: 'low-water',
+      bookNumber: 2,
+    });
+    await app.services.books.writeFile('high-water', 'notes/keep.md', {
+      content: '# Keep this\n',
+      expectedHash: null,
+    });
+    const removal = await app.inject({
+      method: 'DELETE',
+      url: '/api/series/tides/books/high-water',
+    });
+    expect(removal.statusCode, removal.body).toBe(200);
+    expect(removal.json()).toMatchObject({ slug: 'high-water', seriesId: null });
+    expect(existsSync(join(dataDir, 'projects/high-water/story.md'))).toBe(true);
+    expect(app.services.books.readFile('high-water', 'notes/keep.md').content).toBe(
+      '# Keep this\n',
+    );
+    expect(story('projects/high-water')).not.toMatch(/^series:|^follows:|^book-number:/mu);
+    expect(app.services.books.get('low-water').precedes).toEqual([]);
+    expect((await history('high-water')).some((row) => row.label === 'Create notes/keep.md')).toBe(
+      true,
+    );
+    expect(
+      (await app.inject({ method: 'DELETE', url: '/api/series/tides/books/tides' })).statusCode,
+    ).toBe(409);
+  }, 30_000);
+
+  it('refuses to undo series moves from history, since undo cannot move folders back', async () => {
+    const harbor = await post<BookSummary>('/api/books', { title: 'Harbor' });
+    await post(`/api/books/${harbor.slug}/series`, { newSeriesTitle: 'Tides' }, 200);
+    await post('/api/series/tides/books', { title: 'High Water', follows: 'harbor' });
+    const undo = async (book: string, label: string) => {
+      const row = (await history(book)).find((entry) => entry.label === label);
+      expect(row, `${book}: ${label}`).toBeDefined();
+      return app.inject({
+        method: 'POST',
+        url: `/api/books/${book}/checkpoints/${row!.id}/undo`,
+      });
+    };
+
+    await app.inject({ method: 'DELETE', url: '/api/series/tides/books/high-water' });
+    for (const book of ['high-water', 'harbor']) {
+      const refused = await undo(book, 'Leave series tides: high-water');
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json()).toMatchObject({ error: 'checkpoint_structural' });
+    }
+    expect(story('projects/high-water')).not.toMatch(/^series:/mu);
+
+    const joined = await undo('harbor', 'Join series tides');
+    expect(joined.json()).toMatchObject({ error: 'checkpoint_structural' });
+    expect(story('series/tides/harbor')).toMatch(/^series: tides$/mu);
+  }, 30_000);
+
+  it('reports duplicate disk slugs without exposing server paths or opening the later copy', async () => {
+    await post('/api/series', { title: 'Tides' });
+    await post('/api/series/tides/books', { title: 'Harbor' });
+    // A separate project with the same slug simulates a writer copying folders outside the app.
+    const { cpSync, mkdirSync } = await import('node:fs');
+    mkdirSync(join(dataDir, 'projects/harbor'), { recursive: true });
+    cpSync(join(dataDir, 'series/tides/harbor'), join(dataDir, 'projects/harbor'), {
+      recursive: true,
+    });
+    const conflicts = await app.inject('/api/books/conflicts');
+    expect(conflicts.statusCode, conflicts.body).toBe(200);
+    expect(conflicts.json()).toEqual([
+      { slug: 'harbor', path: 'series/tides/harbor', seriesId: 'tides', kind: 'book' },
+    ]);
+    expect(app.services.books.get('harbor').seriesId).toBe(null);
+  }, 30_000);
   it('creates a series whose bible is addressed by the series id', async () => {
     const bible = await post<BookSummary>('/api/series', { title: 'Tides' });
     expect(bible).toMatchObject({

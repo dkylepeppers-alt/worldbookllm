@@ -21,6 +21,13 @@ interface CheckpointRow {
   created_at: string;
   undone_at: string | null;
   pending: number;
+  /** 1 when the change also moved folders, which undo cannot reverse. */
+  structural: number;
+}
+
+/** A structural checkpoint moved a book's folder, so undo refuses it. */
+export interface CheckpointOptions {
+  structural?: boolean;
 }
 
 interface CheckpointFileRow {
@@ -86,6 +93,7 @@ export class CheckpointService {
     actor: CheckpointActor,
     scope: CheckpointScope,
     change: () => Promise<T> | T,
+    options: CheckpointOptions = {},
   ): Promise<{ result: T; checkpoint: Checkpoint | null }> {
     const before = this.capture(book, scope);
     let result: T | undefined;
@@ -98,7 +106,14 @@ export class CheckpointService {
       failure = error;
     }
     const after = this.capture(book, scope);
-    const checkpoint = this.store(book, failed ? `${label} (failed)` : label, actor, before, after);
+    const checkpoint = this.store(
+      book,
+      failed ? `${label} (failed)` : label,
+      actor,
+      before,
+      after,
+      options,
+    );
     if (failed) throw failure;
     return { result: result as T, checkpoint };
   }
@@ -110,6 +125,7 @@ export class CheckpointService {
     actor: CheckpointActor,
     before: Map<string, Buffer>,
     after: Map<string, Buffer>,
+    options: CheckpointOptions = {},
   ): Checkpoint | null {
     const paths = [...new Set([...before.keys(), ...after.keys()])].sort();
     const changed = paths.filter((path) => {
@@ -128,6 +144,7 @@ export class CheckpointService {
       created_at: new Date().toISOString(),
       undone_at: null,
       pending: 0,
+      structural: options.structural === true ? 1 : 0,
     };
     const insertFile = this.db.prepare(
       `INSERT INTO book_checkpoint_files
@@ -137,7 +154,7 @@ export class CheckpointService {
     this.db.transaction(() => {
       this.db
         .prepare(
-          'INSERT INTO book_checkpoints (id, book, label, actor, created_at, undone_at, pending) VALUES (@id, @book, @label, @actor, @created_at, @undone_at, @pending)',
+          'INSERT INTO book_checkpoints (id, book, label, actor, created_at, undone_at, pending, structural) VALUES (@id, @book, @label, @actor, @created_at, @undone_at, @pending, @structural)',
         )
         .run(row);
       for (const path of changed) {
@@ -154,6 +171,21 @@ export class CheckpointService {
       }
     })();
     return this.get(book, row.id);
+  }
+
+  /** Starts a checkpoint that gathers several separately locked changes into one entry. */
+  storeGroup(
+    label: string,
+    actor: CheckpointActor,
+    snapshots: Array<{ book: string; before: Map<string, Buffer>; after: Map<string, Buffer> }>,
+    options: CheckpointOptions = {},
+  ): Checkpoint[] {
+    return this.db.transaction(() =>
+      snapshots.flatMap(({ book, before, after }) => {
+        const checkpoint = this.store(book, label, actor, before, after, options);
+        return checkpoint === null ? [] : [checkpoint];
+      }),
+    )();
   }
 
   /** Starts a checkpoint that gathers several separately locked changes into one entry. */
@@ -306,6 +338,12 @@ export class CheckpointService {
     const row = this.row(book, id);
     if (row.undone_at !== null) {
       throw new ConflictError('checkpoint_already_undone', 'This change was already undone.');
+    }
+    if (row.structural === 1) {
+      throw new ConflictError(
+        'checkpoint_structural',
+        'This change moved a book into or out of a series, which undo cannot reverse. Move the book back from its Project tab instead.',
+      );
     }
     const pending = this.db
       .prepare('SELECT 1 FROM book_checkpoints WHERE book = ? AND pending = 1 LIMIT 1')

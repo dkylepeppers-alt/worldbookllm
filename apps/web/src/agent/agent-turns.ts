@@ -4,6 +4,7 @@ import type {
   AgentStreamEvent,
   Checkpoint,
 } from '@worldbookllm/shared';
+import { bookSlugSchema } from '@worldbookllm/shared';
 
 export interface ToolCallView {
   id: string;
@@ -27,6 +28,7 @@ export interface PendingTurn {
   steps: StepView[];
   reasoning: string;
   checkpoint: Checkpoint | null;
+  seriesBooks: string[];
   /** Review mode: the changes the turn proposes, announced when it ends. */
   changeset: AgentChangeset | null;
   stopping: boolean;
@@ -39,6 +41,7 @@ export function startTurn(userContent: string, pinnedPaths: readonly string[] = 
     steps: [],
     reasoning: '',
     checkpoint: null,
+    seriesBooks: [],
     changeset: null,
     stopping: false,
   };
@@ -90,11 +93,38 @@ export function applyAgentEvent(turn: PendingTurn, event: AgentStreamEvent): Pen
       }));
     case 'checkpoint':
       return { ...turn, checkpoint: event.checkpoint };
+    case 'series_sync':
+      return {
+        ...turn,
+        seriesBooks: [
+          ...new Set([
+            ...turn.seriesBooks,
+            ...event.checkpoints.map((checkpoint) => checkpoint.book),
+          ]),
+        ],
+      };
     case 'changeset':
       return { ...turn, changeset: event.changeset };
     default:
       return turn;
   }
+}
+
+/** Sync results persist their compact book list, independent of checkpoint diff size. */
+export function seriesBooksOf(steps: readonly StepView[]): string[] {
+  const books = new Set<string>();
+  for (const call of steps.flatMap((step) => step.calls)) {
+    if (call.name !== 'sync_series' || call.status !== 'ok' || call.result === null) continue;
+    try {
+      const result = JSON.parse(call.result) as { books?: unknown };
+      if (!Array.isArray(result.books)) continue;
+      for (const book of result.books)
+        if (bookSlugSchema.safeParse(book).success) books.add(book as string);
+    } catch {
+      /* Failed or truncated legacy results do not become navigation links. */
+    }
+  }
+  return [...books];
 }
 
 /** The recorded steps of an assistant message, in the same shape as a pending turn. */

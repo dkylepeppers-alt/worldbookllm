@@ -46,7 +46,7 @@ import {
 } from '../story/book-import.js';
 import { sha256 } from '../story/book-files.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
-import { setFrontmatterField } from '../story/frontmatter-edit.js';
+import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
 import type {
   CheckpointActor,
   CheckpointService,
@@ -114,6 +114,142 @@ export class BookService {
 
   list(): BookSummary[] {
     return this.files.listBooks().map((slug) => this.summary(slug));
+  }
+
+  conflicts() {
+    this.files.listLocations();
+    return this.files.listDuplicates().map(({ slug, seriesId, kind }) => ({
+      slug,
+      seriesId,
+      kind,
+      path:
+        seriesId === null
+          ? `projects/${slug}`
+          : `series/${seriesId}/${kind === 'series-bible' ? 'series-bible' : slug}`,
+    }));
+  }
+
+  async removeFromSeries(slug: string, seriesId: string): Promise<BookSummary> {
+    return this.locks.run(CREATE_LOCK, async () => {
+      const members = this.list()
+        .filter((book) => book.seriesId === seriesId)
+        .map((book) => book.slug)
+        .sort();
+      if (!members.includes(slug) || this.files.locate(slug).kind !== 'book')
+        throw new ConflictError('not_series_book', `${slug} is not a book in series ${seriesId}.`);
+      const lock = (at: number): Promise<BookSummary> => {
+        const member = members[at];
+        return member === undefined ? remove() : this.locks.run(member, () => lock(at + 1));
+      };
+      const remove = async (): Promise<BookSummary> => {
+        for (const member of members)
+          this.chatLifecycle?.assertIdle(member, 'remove this series book');
+        const before = new Map(members.map((member) => [member, this.files.snapshot(member)]));
+        let moved = false;
+        try {
+          for (const member of members) {
+            const story = this.files.readBytes(member, 'story.md')!.toString('utf8');
+            const content = removeSeriesLinks(story, member === slug ? undefined : slug);
+            // Do not reformat an unrelated sibling's frontmatter.
+            if (
+              member === slug ||
+              linkField(parseFrontmatter(story).frontmatter, 'follows').includes(slug) ||
+              linkField(parseFrontmatter(story).frontmatter, 'precedes').includes(slug)
+            ) {
+              this.files.write(member, 'story.md', content);
+            }
+          }
+          this.files.moveOutOfSeries(slug, seriesId);
+          moved = true;
+          this.checkpoints.storeGroup(
+            `Leave series ${seriesId}: ${slug}`,
+            'user',
+            members.map((book) => ({
+              book,
+              before: before.get(book)!,
+              after: this.files.snapshot(book),
+            })),
+            { structural: true },
+          );
+        } catch (error) {
+          if (moved) this.files.moveIntoSeries(slug, seriesId);
+          for (const [member, snapshot] of before)
+            for (const [path, bytes] of snapshot) this.files.write(member, path, bytes);
+          throw error;
+        } finally {
+          for (const member of members) this.index.reconcile(member);
+          this.checkCache.clear();
+        }
+        return this.summary(slug);
+      };
+      return lock(0);
+    });
+  }
+
+  /** Series writes share normal book locks; all snapshots and history commit as one group. */
+  async updateBooksAtomically(
+    slugs: string[],
+    label: string,
+    build: () => Array<{ book: string; path: string; content: string }>,
+    actor: CheckpointActor = 'user',
+    activeBook?: string,
+  ): Promise<Checkpoint[]> {
+    const ordered = [...new Set(slugs)].sort();
+    const lock = (at: number): Promise<Checkpoint[]> => {
+      const slug = ordered[at];
+      if (slug !== undefined) return this.locks.run(slug, () => lock(at + 1));
+      return change();
+    };
+    const change = async (): Promise<Checkpoint[]> => {
+      for (const slug of ordered) {
+        this.files.root(slug);
+        if (slug !== activeBook) this.chatLifecycle?.assertIdle(slug, 'sync this series');
+        this.checkpoints.assertSessionCurrent(slug, null);
+      }
+      const changes = build();
+      for (const change of changes) {
+        if (!ordered.includes(change.book))
+          throw new ConflictError('unlocked_book', 'Series write targets an unlocked book.');
+        assertWritablePath(change.path);
+      }
+      const changed = [...new Set(changes.map((change) => change.book))];
+      const before = new Map(changed.map((slug) => [slug, this.files.snapshot(slug)]));
+      try {
+        for (const change of changes) this.files.write(change.book, change.path, change.content);
+        for (const slug of changed) {
+          const root = this.files.root(slug);
+          await this.cli.runOrThrow({ command: 'reindex', root });
+          const validation = await this.cli.run({ command: 'validate', root, json: true });
+          if (validation.exitCode !== 0 || validation.envelope?.ok !== true) {
+            throw new StoryCommandError(
+              validation.exitCode || 1,
+              `Series sync failed validation in ${slug}: ${validation.envelope?.diagnostics.map((item) => item.message).join('; ') ?? validation.stderr}`,
+            );
+          }
+        }
+        return this.checkpoints.storeGroup(
+          label,
+          actor,
+          changed.map((book) => ({
+            book,
+            before: before.get(book)!,
+            after: this.files.snapshot(book),
+          })),
+        );
+      } catch (error) {
+        for (const [slug, snapshot] of before) {
+          for (const path of this.files.snapshot(slug).keys()) {
+            if (!snapshot.has(path)) this.files.remove(slug, path);
+          }
+          for (const [path, bytes] of snapshot) this.files.write(slug, path, bytes);
+        }
+        throw error;
+      } finally {
+        for (const slug of changed) this.index.reconcile(slug);
+        this.checkCache.clear();
+      }
+    };
+    return lock(0);
   }
 
   async create(input: CreateBookInput): Promise<BookSummary> {
@@ -278,8 +414,13 @@ export class BookService {
     this.files.moveIntoSeries(slug, seriesId);
     this.checkCache.delete(slug);
     const story = this.files.readBytes(slug, 'story.md')?.toString('utf8') ?? '';
-    await this.checkpoints.record(slug, `Join series ${seriesId}`, 'user', 'book', () =>
-      this.files.write(slug, 'story.md', setFrontmatterField(story, 'series', seriesId)),
+    await this.checkpoints.record(
+      slug,
+      `Join series ${seriesId}`,
+      'user',
+      'book',
+      () => this.files.write(slug, 'story.md', setFrontmatterField(story, 'series', seriesId)),
+      { structural: true },
     );
     this.index.reconcile(slug);
   }
@@ -384,12 +525,12 @@ export class BookService {
     });
   }
 
-  async check(slug: string, command: BookCheckCommand): Promise<BookCheckResult> {
+  async check(slug: string, command: BookCheckCommand, fresh = false): Promise<BookCheckResult> {
     const root = this.files.root(slug);
     this.index.reconcile(slug);
     const revision = this.index.revision(slug);
     const cached = this.checkCache.get(`${slug}:${command}`);
-    if (cached && cached.revision === revision) return cached.result;
+    if (!fresh && cached && cached.revision === revision) return cached.result;
     const result = await this.cli.run({ command, root, json: true });
     if (!result.envelope) {
       throw new StoryCommandError(

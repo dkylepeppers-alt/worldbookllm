@@ -106,6 +106,14 @@ export const bookTreeSchema = z.strictObject({
   files: z.array(bookFileSchema),
 });
 
+export const bookConflictSchema = z.strictObject({
+  slug: bookSlugSchema,
+  path: z.string(),
+  seriesId: bookSlugSchema.nullable(),
+  kind: z.enum(['book', 'series-bible']),
+});
+export type BookConflict = z.infer<typeof bookConflictSchema>;
+
 export const STORY_TENSES = ['past', 'present', 'future', 'mixed'] as const;
 
 const shortTextSchema = z.string().trim().min(1).max(200);

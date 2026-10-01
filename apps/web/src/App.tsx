@@ -15,6 +15,7 @@ import { BookLayout } from './books/BookLayout.js';
 import { BookLibraryPage } from './books/BookLibraryPage.js';
 import { HealthPage } from './books/HealthPage.js';
 import { ProjectPage } from './books/ProjectPage.js';
+import { SeriesPage } from './books/SeriesPage.js';
 import { WritePage } from './books/WritePage.js';
 import { AppShell } from './layout/AppShell.js';
 import { NotFoundPage } from './pages/NotFoundPage.js';
@@ -28,6 +29,7 @@ export function AppRoutes() {
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/books" replace />} />
         <Route path="books" element={<BookLibraryPage />} />
+        <Route path="series/:id" element={<SeriesPage />} />
         <Route path="books/:slug" element={<BookLayout />}>
           <Route index element={<Navigate to="write" replace />} />
           <Route path="write" element={<WritePage />} />
