@@ -1,11 +1,13 @@
 import {
   addEntitySchema,
   addSeriesBookSchema,
+  bookBuildParamsSchema,
   bookCheckParamsSchema,
   bookFilePathSchema,
   bookParamsSchema,
   bookSearchQuerySchema,
   checkpointParamsSchema,
+  createBookBuildSchema,
   createBookImportSchema,
   createBookSchema,
   createSeriesSchema,
@@ -18,6 +20,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { InvalidImportError } from '../errors.js';
+import { buildContentType } from '../story/book-builds.js';
 
 function filePath(params: unknown): string {
   return bookFilePathSchema.parse((params as Record<string, unknown>)['*']);
@@ -47,9 +50,13 @@ export function registerBookRoutes(app: FastifyInstance): void {
     reply.status(201).send(await books().create(createBookSchema.parse(request.body))),
   );
 
+  // A manuscript (.md, .txt) is split into chapters; a .zip is a whole story-skills project.
   app.post('/api/books/import', async (request, reply) => {
     const { bytes, fileName } = await readUpload(request);
-    return reply.status(201).send(await books().importManuscript(bytes, fileName));
+    const result = /\.zip$/iu.test(fileName)
+      ? await books().importProject(bytes, fileName)
+      : await books().importManuscript(bytes, fileName);
+    return reply.status(201).send(result);
   });
 
   app.post('/api/books/:book/previews/file', async (request) => {
@@ -151,6 +158,35 @@ export function registerBookRoutes(app: FastifyInstance): void {
   app.get('/api/books/:book/checks/:command', (request) => {
     const { book, command } = bookCheckParamsSchema.parse(request.params);
     return books().check(book, command);
+  });
+
+  app.get('/api/books/:book/builds', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return books().listBuilds(book);
+  });
+
+  app.post('/api/books/:book/builds', async (request, reply) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    const input = createBookBuildSchema.parse(request.body);
+    return reply.status(201).send(await books().build(book, input));
+  });
+
+  app.get('/api/books/:book/builds/:file', (request, reply) => {
+    const { book, file } = bookBuildParamsSchema.parse(request.params);
+    const bytes = books().readBuild(book, file);
+    // Downloads only: a built HTML review copy must never run as a page of this origin.
+    return reply
+      .header('content-type', buildContentType(file))
+      .header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file)}`)
+      .header('content-security-policy', "sandbox; default-src 'none'")
+      .header('x-content-type-options', 'nosniff')
+      .send(bytes);
+  });
+
+  app.delete('/api/books/:book/builds/:file', async (request, reply) => {
+    const { book, file } = bookBuildParamsSchema.parse(request.params);
+    await books().removeBuild(book, file);
+    return reply.status(204).send();
   });
 
   app.get('/api/books/:book/checkpoints', (request) => {

@@ -1,7 +1,9 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, test } from '@playwright/test';
+
+import { makeZip } from '../../server/src/story/test-zip.js';
 
 const BOOK_TITLE = 'The Salt Road';
 
@@ -71,5 +73,45 @@ test('M7 story workspace on a phone', async ({ page }) => {
     await expect(
       readFile(join(bookDir, 'characters/mara-quill.md'), 'utf8'),
     ).resolves.not.toContain('Salt-grey eyes.');
+  });
+
+  await test.step('build an EPUB and download it', async () => {
+    await page.getByLabel('Format').selectOption('epub');
+    await page.getByRole('button', { name: 'Build' }).click();
+    await expect(page.getByRole('status', { name: 'Build output' })).toContainText(
+      'as epub to ./dist/the-salt-road.epub',
+    );
+    const builds = page.getByRole('list', { name: 'Built files' });
+    const downloading = page.waitForEvent('download');
+    await builds.getByRole('link', { name: 'the-salt-road.epub' }).click();
+    const download = await downloading;
+    expect(download.suggestedFilename()).toBe('the-salt-road.epub');
+    const bytes = await readFile((await download.path()) ?? '');
+    expect(bytes.subarray(0, 2).toString()).toBe('PK');
+    // Builds are not book content: nothing about them enters the history.
+    await expect(page.getByRole('list', { name: 'History' })).not.toContainText('dist/');
+  });
+
+  await test.step('import the book back from a project zip', async () => {
+    const entries = [];
+    for (const path of await readdir(bookDir, { recursive: true, withFileTypes: true })) {
+      if (!path.isFile()) continue;
+      const full = join(path.parentPath, path.name);
+      entries.push({
+        name: `salt-road/${full.slice(bookDir.length + 1).replaceAll('\\', '/')}`,
+        data: await readFile(full),
+      });
+    }
+    await page.goto('/books');
+    await page.getByLabel(/Import a manuscript or project/u).setInputFiles({
+      name: 'salt-road-backup.zip',
+      mimeType: 'application/zip',
+      buffer: makeZip(entries),
+    });
+    await expect(page).toHaveURL(/\/books\/the-salt-road-2\/write$/);
+    const report = page.getByRole('status', { name: 'Import report' });
+    await expect(report).toContainText('from salt-road-backup.zip');
+    await expect(report).toContainText('salt-road/dist/the-salt-road.epub (build output)');
+    await expect(page.getByRole('link', { name: /Arrival/u })).toBeVisible();
   });
 });

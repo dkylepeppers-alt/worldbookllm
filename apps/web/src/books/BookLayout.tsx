@@ -1,4 +1,5 @@
-import { Link, NavLink, Outlet, useParams } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 
 import { AgentRunnerProvider } from '../agent/agent-runner.js';
 import { useAgentRunner } from '../agent/agent-runner-context.js';
@@ -23,6 +24,7 @@ export function BookLayout() {
   const api = useApi();
   const slug = useParams().slug ?? '';
   const tree = useLoad((signal) => api.getBookTree(slug, signal), slug);
+  const importReport = useImportReport();
 
   if (tree.status === 'loading') return <LoadingState>Opening the book…</LoadingState>;
   if (tree.status === 'error') {
@@ -44,6 +46,7 @@ export function BookLayout() {
             ) : null}
             <h1>{tree.data.book.title}</h1>
           </header>
+          {importReport}
           <BookTabs />
           <div className="book-body">
             <Outlet />
@@ -51,6 +54,25 @@ export function BookLayout() {
         </div>
       </AgentRunnerProvider>
     </BookContext.Provider>
+  );
+}
+
+/** What an import just did (files kept and skipped, validation), passed in navigation state. */
+function useImportReport() {
+  const state: unknown = useLocation().state;
+  const [dismissed, setDismissed] = useState(false);
+  const report =
+    typeof state === 'object' && state !== null && 'importReport' in state
+      ? state.importReport
+      : null;
+  if (typeof report !== 'string' || report === '' || dismissed) return null;
+  return (
+    <section className="import-report" role="status" aria-label="Import report">
+      <pre className="build-output">{report}</pre>
+      <button type="button" className="button-secondary" onClick={() => setDismissed(true)}>
+        Dismiss
+      </button>
+    </section>
   );
 }
 

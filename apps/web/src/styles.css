@@ -889,7 +889,9 @@ label {
 }
 
 .series-section h3,
-.series-section p {
+.series-section p,
+.builds-section h3,
+.builds-section p {
   margin: 0;
 }
 
@@ -1030,6 +1032,48 @@ label {
 
 .add-entity button {
   justify-self: start;
+}
+
+.builds-section {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.builds-section .checkbox-label {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.builds-section .checkbox-label input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+}
+
+.import-report {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.import-report button {
+  justify-self: start;
+}
+
+.build-output {
+  margin: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+  background: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .book-file-header {

@@ -5,6 +5,8 @@ import {
   agentChatSchema,
   apiErrorSchema,
   appSettingsSchema,
+  bookBuildFileSchema,
+  bookBuildResultSchema,
   bookCheckResultSchema,
   bookConflictSchema,
   type BookConflict,
@@ -44,6 +46,8 @@ import {
   type AgentStreamEvent,
   type ApiErrorIssue,
   type AppSettings,
+  type BookBuildFile,
+  type BookBuildResult,
   type BookCheckCommand,
   type BookCheckResult,
   type BookEntityKind,
@@ -57,6 +61,7 @@ import {
   type ConnectionTestResponse,
   type CreateAgentChatInput,
   type AddSeriesBookInput,
+  type CreateBookBuildInput,
   type CreateBookInput,
   type CreateSeriesInput,
   type MoveBookToSeriesInput,
@@ -159,6 +164,13 @@ export interface ApiClient {
   listCheckpoints(slug: string, signal?: AbortSignal): Promise<Checkpoint[]>;
   getCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<CheckpointDetail>;
   undoCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<Checkpoint>;
+  listBuilds(slug: string, signal?: AbortSignal): Promise<BookBuildFile[]>;
+  createBuild(
+    slug: string,
+    input: CreateBookBuildInput,
+    signal?: AbortSignal,
+  ): Promise<BookBuildResult>;
+  removeBuild(slug: string, name: string, signal?: AbortSignal): Promise<void>;
   listAgentChats(slug: string, signal?: AbortSignal): Promise<AgentChat[]>;
   createAgentChat(
     slug: string,
@@ -224,6 +236,11 @@ interface RequestOptions<T> {
   formData?: FormData;
   signal?: AbortSignal;
   schema?: ResponseSchema<T>;
+}
+
+/** Where a build file downloads from; a plain link, so the browser handles the download. */
+export function buildDownloadUrl(slug: string, name: string): string {
+  return `/api/books/${encodeURIComponent(slug)}/builds/${encodeURIComponent(name)}`;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -401,6 +418,17 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: checkpointSchema,
         signal,
       }),
+    listBuilds: (slug, signal) =>
+      request(`${book(slug)}/builds`, { schema: z.array(bookBuildFileSchema), signal }),
+    createBuild: (slug, input, signal) =>
+      request(`${book(slug)}/builds`, {
+        method: 'POST',
+        body: input,
+        schema: bookBuildResultSchema,
+        signal,
+      }),
+    removeBuild: (slug, name, signal) =>
+      request(buildDownloadUrl(slug, name), { method: 'DELETE', signal }),
     listAgentChats: (slug, signal) =>
       request(`${book(slug)}/agent-chats`, { schema: agentChatListSchema, signal }),
     createAgentChat: (slug, input = {}, signal) =>

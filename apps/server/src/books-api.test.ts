@@ -11,6 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type {
+  BookBuildFile,
+  BookBuildResult,
   BookCheckResult,
   BookFileDetail,
   BookSearchResult,
@@ -435,5 +437,107 @@ describe('books API', () => {
       (await app.inject({ method: 'GET', url: `/api/books/${slug}/files/nope.md` })).statusCode,
     ).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/api/books/Bad_Slug' })).statusCode).toBe(400);
+  });
+});
+
+describe('builds', () => {
+  async function bookWithChapter(): Promise<string> {
+    const book = await createBook();
+    expect((await addEntity(book.slug, 'chapter', 'Arrival')).statusCode).toBe(201);
+    const chapter = join(dataDir, 'projects', book.slug, 'chapters/chapter-01.md');
+    writeFileSync(chapter, `${readFileSync(chapter, 'utf8')}\nMara stepped off the ferry.\n`);
+    return book.slug;
+  }
+
+  it('builds an EPUB into dist/, lists it, downloads it, and removes it', async () => {
+    const slug = await bookWithChapter();
+    expect((await app.inject({ method: 'GET', url: `/api/books/${slug}/builds` })).json()).toEqual(
+      [],
+    );
+
+    const built = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/builds`,
+      payload: { format: 'epub' },
+    });
+    expect(built.statusCode).toBe(201);
+    const result = built.json<BookBuildResult>();
+    expect(result.file).toMatchObject({ name: 'the-salt-road.epub' });
+    expect(result.file.size).toBeGreaterThan(0);
+    expect(result.output).toContain('as epub to ./dist/the-salt-road.epub');
+    expect(result.output).not.toContain(dataDir);
+
+    const listed = await app.inject({ method: 'GET', url: `/api/books/${slug}/builds` });
+    expect(listed.json<BookBuildFile[]>().map((file) => file.name)).toEqual(['the-salt-road.epub']);
+
+    const download = await app.inject({
+      method: 'GET',
+      url: `/api/books/${slug}/builds/the-salt-road.epub`,
+    });
+    expect(download.statusCode).toBe(200);
+    expect(download.headers['content-type']).toBe('application/epub+zip');
+    expect(download.headers['content-disposition']).toBe(
+      "attachment; filename*=UTF-8''the-salt-road.epub",
+    );
+    expect(download.rawPayload.subarray(0, 2).toString()).toBe('PK');
+
+    // Builds are not book content: no checkpoint, nothing in the tree.
+    const checkpoints = await app.inject({ method: 'GET', url: `/api/books/${slug}/checkpoints` });
+    expect(checkpoints.json<Checkpoint[]>().every((entry) => entry.label !== 'build')).toBe(true);
+    const tree = await app.inject({ method: 'GET', url: `/api/books/${slug}/tree` });
+    expect(tree.json<BookTree>().files.some((file) => file.path.startsWith('dist/'))).toBe(false);
+
+    const removed = await app.inject({
+      method: 'DELETE',
+      url: `/api/books/${slug}/builds/the-salt-road.epub`,
+    });
+    expect(removed.statusCode).toBe(204);
+    expect(existsSync(join(dataDir, 'projects', slug, 'dist/the-salt-road.epub'))).toBe(false);
+  });
+
+  it('serves an HTML review copy only as a sandboxed download', async () => {
+    const slug = await bookWithChapter();
+    const built = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/builds`,
+      payload: { format: 'html', stamp: 'round-2' },
+    });
+    expect(built.statusCode).toBe(201);
+    const download = await app.inject({
+      method: 'GET',
+      url: `/api/books/${slug}/builds/${built.json<BookBuildResult>().file.name}`,
+    });
+    expect(download.headers['content-security-policy']).toContain('sandbox');
+    expect(download.headers['x-content-type-options']).toBe('nosniff');
+    expect(download.body).toContain('round-2');
+  });
+
+  it('refuses options that do not apply to the format, and bad file names', async () => {
+    const slug = await bookWithChapter();
+    const mismatched = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/builds`,
+      payload: { format: 'epub', trim: '6x9' },
+    });
+    expect(mismatched.statusCode).toBe(400);
+
+    for (const name of ['..%2Fstory.md', '%2E%2E', '.hidden', 'missing.epub']) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/books/${slug}/builds/${name}`,
+      });
+      expect([400, 404]).toContain(response.statusCode);
+    }
+  });
+
+  it('reports a book with nothing to build as an unusable project', async () => {
+    const book = await createBook('Empty');
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/books/${book.slug}/builds`,
+      payload: { format: 'markdown' },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: 'story_unusable_project' });
   });
 });

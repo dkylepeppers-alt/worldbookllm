@@ -139,6 +139,8 @@ This supersedes the unfinished notebook-era scope: M2's remaining re-ingestion w
 
 Series (ADR 0018) adds sibling book folders and a series bible, canon drift and health, push/pull/carry/seed with rollback and per-book undo, same-series agent reads and explicit sync, duplicate-folder reporting, and detaching a book without losing its history. The phone journey covers conversion, seeding, adding a sequel, editing a bible alias, and pushing the resulting drift.
 
+Builds and project zips (ADR 0020): the Project tab builds any `story build` format (EPUB, DOCX, HTML review copy, print, and the rest) into `dist/` for download, and the library imports a zipped story-skills project as a new book. The SillyTavern lorebook and character-card exports are what remain of the "done when" list.
+
 **Scope (in build order):**
 
 1. Story core: pinned `story-skills`, a sandboxed CLI runner, the book index and API, checkpoints, ingestion into books, and a one-time notebook-to-book migration

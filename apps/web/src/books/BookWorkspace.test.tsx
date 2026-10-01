@@ -470,3 +470,61 @@ describe('book health and project', () => {
     );
   });
 });
+
+describe('builds and project import', () => {
+  it('builds an EPUB from the Project tab and lists it for download', async () => {
+    const epub = { name: 'the-salt-road.epub', size: 2048, updatedAt: book.updatedAt };
+    let built = false;
+    const createBuild = vi.fn(() => {
+      built = true;
+      return Promise.resolve({
+        file: epub,
+        output: 'Built 1 chapters as epub to ./dist/the-salt-road.epub',
+      });
+    });
+    renderAt('/books/the-salt-road/project', {
+      listBuilds: () => Promise.resolve(built ? [epub] : []),
+      createBuild,
+    });
+
+    const user = userEvent.setup();
+    await screen.findByRole('heading', { name: 'Build' });
+    expect(screen.queryByLabelText('Trim size')).toBeNull();
+    await user.selectOptions(screen.getByLabelText('Format'), 'print');
+    screen.getByLabelText('Trim size');
+    await user.selectOptions(screen.getByLabelText('Format'), 'epub');
+    await user.click(screen.getByRole('button', { name: 'Build' }));
+
+    expect(createBuild).toHaveBeenCalledWith('the-salt-road', { format: 'epub' });
+    expect((await screen.findByRole('status', { name: 'Build output' })).textContent).toContain(
+      'as epub to ./dist',
+    );
+    const link = await screen.findByRole('link', { name: 'the-salt-road.epub' });
+    expect(link.getAttribute('href')).toBe('/api/books/the-salt-road/builds/the-salt-road.epub');
+    expect(link.getAttribute('download')).toBe('the-salt-road.epub');
+  });
+
+  it('opens an imported project with its import report', async () => {
+    const importManuscript = vi.fn(() =>
+      Promise.resolve({
+        book,
+        output:
+          'Imported 7 files from salt.zip.\nSkipped 1:\n- notes.docx (not a project file type)',
+      }),
+    );
+    renderAt('/books', { importManuscript });
+    const user = userEvent.setup();
+    const input = await screen.findByLabelText(/Import a manuscript or project/u);
+    await user.upload(
+      input,
+      new File([new Uint8Array([0x50, 0x4b])], 'salt.zip', { type: 'application/zip' }),
+    );
+
+    expect(importManuscript).toHaveBeenCalled();
+    const report = await screen.findByRole('status', { name: 'Import report' });
+    expect(report.textContent).toContain('notes.docx (not a project file type)');
+    expect(screen.getByTestId('location').textContent).toBe('/books/the-salt-road/write');
+    await user.click(within(report).getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByRole('status', { name: 'Import report' })).toBeNull();
+  });
+});

@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 import type {
   BookImportPreview,
@@ -13,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
+import { makeZip, type TestZipEntry } from './story/test-zip.js';
 
 let app: FastifyInstance;
 let dataDir: string;
@@ -262,5 +263,106 @@ describe('manuscript import', () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ error: 'invalid_import' });
+  });
+});
+
+/** Zips a book folder from disk, every file under `prefix`. */
+function zipBook(root: string, prefix = ''): TestZipEntry[] {
+  return readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const path = relative(root, join(entry.parentPath, entry.name)).replaceAll('\\', '/');
+      return { name: `${prefix}${path}`, data: readFileSync(join(root, path)) };
+    });
+}
+
+describe('project zip import', () => {
+  async function upload(fileName: string, bytes: Buffer) {
+    return app.inject({
+      method: 'POST',
+      url: '/api/books/import',
+      ...multipartUpload(fileName, bytes),
+    });
+  }
+
+  it('imports a zipped book folder as a new book and validates it', async () => {
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/entities`,
+      payload: { kind: 'character', name: 'Ilse Marrow', options: {} },
+    });
+    const entries = zipBook(join(dataDir, 'projects', slug), 'harbor/');
+    entries.push({ name: 'harbor/dist/harbor.epub', data: 'old build' });
+    entries.push({ name: 'harbor/.DS_Store', data: 'noise' });
+
+    const response = await upload('Harbor backup.zip', makeZip(entries));
+    expect(response.statusCode).toBe(201);
+    const result = response.json<ManuscriptImportResult>();
+    expect(result.book).toMatchObject({
+      slug: 'harbor-2',
+      title: 'Harbor',
+      counts: { character: 1 },
+    });
+    expect(result.output).toContain('from Harbor backup.zip');
+    expect(result.output).toContain('story validate found no problems.');
+    expect(result.output).toContain('harbor/dist/harbor.epub (build output)');
+    expect(result.output).not.toContain('.DS_Store');
+    expect(result.output).not.toContain(dataDir);
+    const imported = join(dataDir, 'projects/harbor-2');
+    expect(readFileSync(join(imported, 'characters/ilse-marrow.md'), 'utf8')).toBe(
+      readFileSync(join(dataDir, 'projects', slug, 'characters/ilse-marrow.md'), 'utf8'),
+    );
+    expect(existsSync(join(imported, 'dist'))).toBe(false);
+    expect(readdirSync(join(dataDir, 'projects')).filter((name) => name.startsWith('.'))).toEqual(
+      [],
+    );
+  });
+
+  it('drops series links so the book arrives standalone', async () => {
+    const story = join(dataDir, 'projects', slug, 'story.md');
+    writeFileSync(
+      story,
+      readFileSync(story, 'utf8').replace(
+        /^title: .*$/mu,
+        (line) => `${line}\nseries: tides\nbook-number: 2\nfollows:\n  - ../first/story.md`,
+      ),
+    );
+    const response = await upload('tides.zip', makeZip(zipBook(join(dataDir, 'projects', slug))));
+    expect(response.statusCode).toBe(201);
+    const result = response.json<ManuscriptImportResult>();
+    expect(result.output).toContain('Removed its series links');
+    expect(result.book).toMatchObject({ seriesId: null, bookNumber: null, follows: [] });
+    const imported = readFileSync(join(dataDir, 'projects', result.book.slug, 'story.md'), 'utf8');
+    expect(imported).not.toMatch(/^(series|follows|book-number):/mu);
+  });
+
+  it('rejects archives that are not a usable project and leaves nothing behind', async () => {
+    const notProject = await upload('notes.zip', makeZip([{ name: 'notes.md', data: '# Notes' }]));
+    expect(notProject.statusCode).toBe(400);
+    expect(notProject.json()).toMatchObject({ error: 'invalid_import' });
+
+    const evil = await upload(
+      'evil.zip',
+      makeZip([
+        { name: 'story.md', data: '---\ntitle: Evil\n---\n' },
+        { name: '../escape.md', data: 'x' },
+      ]),
+    );
+    expect(evil.statusCode).toBe(400);
+    expect(existsSync(join(dataDir, 'escape.md'))).toBe(false);
+    expect(readdirSync(join(dataDir, 'projects'))).toEqual([slug]);
+  });
+
+  it('imports a project with validation errors and says so', async () => {
+    const response = await upload(
+      'broken.zip',
+      makeZip([{ name: 'story.md', data: '---\ntitle: Broken\n---\n' }]),
+    );
+    expect(response.statusCode).toBe(201);
+    const result = response.json<ManuscriptImportResult>();
+    expect(result.book.slug).toBe('broken');
+    expect(result.output).toMatch(
+      /story validate found \d+ errors? and \d+ warnings?; see the Health tab/u,
+    );
   });
 });
