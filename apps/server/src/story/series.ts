@@ -7,8 +7,11 @@ import type {
 } from '@worldbookllm/shared';
 import { orderSeriesBooks } from '@worldbookllm/shared';
 
+import { isDeepStrictEqual } from 'node:util';
+
 import { ConflictError, NotFoundError } from '../errors.js';
 import type { BookService } from '../services/books.js';
+import { parseFrontmatter } from './book-index.js';
 import {
   carryIdentity,
   mergeIdentity,
@@ -16,6 +19,24 @@ import {
   isSeriesEntityKind,
 } from './series-fields.js';
 import type { CheckpointActor } from './checkpoints.js';
+
+/** The style sheet is series-wide: the bible's copy is canon for every book, compared and synced whole. */
+const STYLE_SHEET = 'style-sheet.md';
+
+/** Frontmatter fields that differ, then `body` if the prose differs. */
+function styleSheetDifferences(bibleContent: string, bookContent: string): string[] {
+  const bible = parseFrontmatter(bibleContent);
+  const book = parseFrontmatter(bookContent);
+  const keys = new Set([
+    ...Object.keys(bible.frontmatter ?? {}),
+    ...Object.keys(book.frontmatter ?? {}),
+  ]);
+  const fields = [...keys].filter(
+    (key) => !isDeepStrictEqual(bible.frontmatter?.[key], book.frontmatter?.[key]),
+  );
+  if (bible.body.trim() !== book.body.trim()) fields.push('body');
+  return fields;
+}
 
 /** Read-only series views over the same indexed, on-disk books as the book workspace. */
 export class SeriesService {
@@ -46,7 +67,18 @@ export class SeriesService {
       .tree(series.bible.slug)
       .files.filter((file) => isSeriesEntityKind(file.kind) && file.entityId !== null);
     const result: SeriesDrift[] = [];
+    const styleSheet = this.readStyleSheet(series.bible.slug);
     for (const book of series.books) {
+      const local = this.readStyleSheet(book.slug);
+      if (styleSheet !== null && local !== null) {
+        const fields = styleSheetDifferences(styleSheet, local);
+        if (fields.length > 0)
+          result.push({
+            entity: { kind: 'style-sheet', id: 'style-sheet' },
+            book: book.slug,
+            fields,
+          });
+      }
       const copies = new Map(
         this.books.tree(book.slug).files.map((file) => [`${file.kind}:${file.entityId}`, file]),
       );
@@ -133,6 +165,20 @@ export class SeriesService {
           }
           return plans;
         }
+        if (input.entity.kind === 'style-sheet') {
+          if (input.direction === 'carry')
+            throw new ConflictError(
+              'entity_exists',
+              'Every book already has a style sheet. Use push to update it.',
+            );
+          const source = this.readStyleSheet(input.direction === 'pull' ? input.book : id);
+          if (source === null) throw new NotFoundError(`${STYLE_SHEET} was not found`);
+          for (const book of input.direction === 'pull' ? [id] : targets) {
+            if (this.readStyleSheet(book) !== source)
+              plans.push({ book, path: STYLE_SHEET, content: source });
+          }
+          return plans;
+        }
         const { kind, id: entityId } = input.entity;
         const sourceBook = input.direction === 'pull' ? input.book : id;
         const source = find(sourceBook, kind, entityId);
@@ -174,5 +220,11 @@ export class SeriesService {
       activeBook,
     );
     return { checkpoints };
+  }
+
+  private readStyleSheet(book: string): string | null {
+    return this.books.tree(book).files.some((file) => file.path === STYLE_SHEET)
+      ? this.books.readFile(book, STYLE_SHEET).content
+      : null;
   }
 }

@@ -229,7 +229,7 @@ export class AgentToolRegistry {
       ),
       tool(
         'sync_series',
-        'Push, pull, carry, or seed canon within this chat’s series. Only identity fields change; each changed book gets an undoable checkpoint. Unavailable in review mode.',
+        'Push, pull, carry, or seed canon within this chat’s series. For entities only identity fields change; the style sheet (kind and id "style-sheet") is shared by the whole series and syncs as a whole file. Each changed book gets an undoable checkpoint. Unavailable in review mode.',
         {
           properties: {
             direction: { type: 'string', enum: ['push', 'pull', 'carry', 'seed'] },
@@ -239,7 +239,15 @@ export class AgentToolRegistry {
               properties: {
                 kind: {
                   type: 'string',
-                  enum: ['character', 'location', 'system', 'faction', 'artifact', 'term'],
+                  enum: [
+                    'character',
+                    'location',
+                    'system',
+                    'faction',
+                    'artifact',
+                    'term',
+                    'style-sheet',
+                  ],
                 },
                 id: { type: 'string' },
               },

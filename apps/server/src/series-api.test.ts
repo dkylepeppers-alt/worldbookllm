@@ -203,6 +203,24 @@ describe('series (ADR 0018)', () => {
     expect(story('series/tides/low-water')).not.toContain('../high-water');
   });
 
+  it('shares one style sheet: a new series bible adopts the converted book’s, new books start from the bible’s', async () => {
+    const book = await post<BookSummary>('/api/books', { title: 'Harbor' });
+    const own = app.services.books.readFile(book.slug, 'style-sheet.md');
+    await app.services.books.writeFile(book.slug, 'style-sheet.md', {
+      content: own.content.replace('watch-words: []', 'watch-words:\n  - "suddenly"'),
+      expectedHash: own.hash,
+    });
+    const house = app.services.books.readFile(book.slug, 'style-sheet.md').content;
+    await post(`/api/books/${book.slug}/series`, { newSeriesTitle: 'Tides' }, 200);
+    expect(app.services.books.readFile('tides', 'style-sheet.md').content).toBe(house);
+
+    const sequel = await post<BookSummary>('/api/series/tides/books', {
+      title: 'High Water',
+      follows: 'harbor',
+    });
+    expect(app.services.books.readFile(sequel.slug, 'style-sheet.md').content).toBe(house);
+  });
+
   it('moves a standalone book into a series and keeps its history', async () => {
     const book = await post<BookSummary>('/api/books', { title: 'Harbor' });
     const moved = await post<BookSummary>(

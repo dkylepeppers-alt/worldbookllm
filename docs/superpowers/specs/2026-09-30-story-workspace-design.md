@@ -75,6 +75,8 @@ The series bible is an app convention layered on upstream. We checked it against
   table.
 - A series timeline: `plot/timeline.md`, with events across books in story-time order.
 - `## Series Notes` in the bible's `story.md`, covering premise, chronology, and canon rules.
+- The series style sheet: the bible's `style-sheet.md` is the house style for every book. Books
+  keep a copy, compared and synced as a whole file rather than field by field (ADR 0019).
 
 **Identity and state fields.** Each entity field is either identity, owned by the bible, or
 book-local state, owned by each book. The split is kept in a versioned field map derived from

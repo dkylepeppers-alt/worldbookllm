@@ -7,8 +7,9 @@ import {
   checkpointSchema,
 } from './books.js';
 
+/** Entity kinds the bible owns, plus `style-sheet`: one file the whole series shares, synced whole. */
 export const seriesEntitySchema = z.strictObject({
-  kind: z.enum(['character', 'location', 'system', 'faction', 'artifact', 'term']),
+  kind: z.enum(['character', 'location', 'system', 'faction', 'artifact', 'term', 'style-sheet']),
   id: bookSlugSchema,
 });
 
