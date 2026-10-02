@@ -132,6 +132,12 @@ export interface GenerationParams {
   toolChoice?: ToolChoice;
   /** Provider-specific extras (azure deployment, workers_ai account id, zai endpoint, …). */
   extra?: Record<string, unknown>;
+  /**
+   * Ask the provider to cache the request's prefix, for callers that resend a
+   * growing conversation. Applied where a provider supports it for the model
+   * (Claude models on OpenRouter and NanoGPT); ignored elsewhere.
+   */
+  promptCache?: boolean;
 }
 
 /** A fully-built provider HTTP request; the caller performs the fetch. */
