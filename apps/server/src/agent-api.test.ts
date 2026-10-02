@@ -492,6 +492,34 @@ describe('agent turns', () => {
     expect(JSON.stringify(followup)).toContain('characters');
   });
 
+  it('sends a file once per turn and only a stub of it in later turns', async () => {
+    const { app, book, chat, requests } = await boot([
+      () => sse(toolCall('read_1', 'read_file', { path: 'notes/big.md' })),
+      () => sse(toolCall('read_2', 'read_file', { path: 'notes/big.md' })),
+      () => sse(text('Read it twice.')),
+      () => sse(text('Noted.')),
+    ]);
+    const bulk = 'tidewater '.repeat(3000);
+    await app.services.books.writeFile(book.slug, 'notes/big.md', {
+      content: `# Big\n\n${bulk}\n`,
+      expectedHash: null,
+    });
+    const copies = (request: Record<string, unknown> | undefined) =>
+      JSON.stringify(request?.messages).split('# Big').length - 1;
+    for (const content of ['Read the notes.', 'And now?']) {
+      await app.inject({
+        method: 'POST',
+        url: `/api/agent-chats/${chat.id}/messages`,
+        payload: { content },
+      });
+    }
+    expect(requests.map(copies)).toEqual([0, 1, 1, 0]);
+    expect(JSON.stringify(requests[2]?.messages)).toContain('superseded by a later read_file');
+    expect(JSON.stringify(requests[3]?.messages)).toContain(
+      'notes/big.md: read in an earlier turn',
+    );
+  }, 30_000);
+
   it('refuses Gemma 3 on Google sources before recording a turn', async () => {
     const { app, chat } = await boot([() => sse(text('unused'))], 'makersuite', 'gemma-3-27b-it');
     const response = await app.inject({

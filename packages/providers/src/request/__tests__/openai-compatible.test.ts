@@ -276,3 +276,33 @@ describe('OpenAI-compatible request building', () => {
     }
   });
 });
+
+describe('prompt caching', () => {
+  const cached = (source: ChatCompletionSource, model: string, promptCache = true) =>
+    buildChatRequest(source, { model, messages, stream: true, apiKey: 'test-key', promptCache })
+      .body;
+
+  it('asks OpenRouter to cache the growing prefix for Claude models', () => {
+    expect(cached('openrouter', 'anthropic/claude-opus-4.6')).toMatchObject({
+      cache_control: { type: 'ephemeral' },
+    });
+  });
+
+  it('turns on NanoGPT’s automatic caching for Claude models', () => {
+    const body = cached('nanogpt', 'anthropic/claude-opus-4.6:thinking');
+    expect(body).toMatchObject({ prompt_caching: { enabled: true } });
+    expect(body).not.toHaveProperty('cache_control');
+  });
+
+  it('adds nothing for other models, other sources, or when not requested', () => {
+    for (const body of [
+      cached('openrouter', 'deepseek/deepseek-v4.1-flash'),
+      cached('nanogpt', 'deepseek/deepseek-v4.1-flash:thinking'),
+      cached('openai', 'gpt-5'),
+      cached('openrouter', 'anthropic/claude-opus-4.6', false),
+    ]) {
+      expect(body).not.toHaveProperty('cache_control');
+      expect(body).not.toHaveProperty('prompt_caching');
+    }
+  });
+});

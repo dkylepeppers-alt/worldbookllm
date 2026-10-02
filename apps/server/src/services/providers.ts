@@ -136,6 +136,8 @@ export class ProviderService {
         temperature: controls.temperature,
         topP: controls.topP ?? undefined,
         maxTokens: controls.maxTokens ?? undefined,
+        // Agent turns resend a growing conversation every step.
+        promptCache: true,
         ...(tools && tools.length > 0 ? { tools } : {}),
         // The thinking toggle asks the provider to reason and surface it in
         // the response. Claude requires signed thinking blocks to be replayed

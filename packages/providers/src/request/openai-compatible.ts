@@ -244,6 +244,21 @@ function getProviderBody(
   }
 }
 
+/**
+ * Prompt caching for Claude models behind OpenAI-compatible routers. Both
+ * place the cache breakpoint themselves, so an agent loop that resends a
+ * growing conversation pays the cached rate for everything already sent.
+ */
+function promptCacheFields(
+  source: OpenAiCompatibleSource,
+  params: GenerationParams,
+): Record<string, unknown> {
+  if (params.promptCache !== true || !/claude/iu.test(params.model)) return {};
+  if (source === 'openrouter') return { cache_control: { type: 'ephemeral' } };
+  if (source === 'nanogpt') return { prompt_caching: { enabled: true } };
+  return {};
+}
+
 export function assembleOpenAiCompatBody(
   source: OpenAiCompatibleSource,
   params: GenerationParams,
@@ -263,6 +278,7 @@ export function assembleOpenAiCompatBody(
       seed: params.seed,
     }),
     ...getProviderBody(source, params),
+    ...promptCacheFields(source, params),
     ...openAiToolFields(params),
   };
 }
