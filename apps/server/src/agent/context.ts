@@ -47,6 +47,24 @@ function callsById(messages: readonly ChatMessage[]): Map<string, ToolCallInfo> 
   return calls;
 }
 
+/**
+ * Calls whose result is an error. A failed write or edit never landed, so its
+ * arguments are the only copy of the text the model will want to correct.
+ */
+function failedCallIds(messages: readonly ChatMessage[]): Set<string> {
+  const failed = new Set<string>();
+  for (const message of messages) {
+    if (
+      message.role === 'tool' &&
+      message.tool_call_id !== undefined &&
+      String(message.content).startsWith('Error: ')
+    ) {
+      failed.add(message.tool_call_id);
+    }
+  }
+  return failed;
+}
+
 /** A file's identity across tools: the same path in another series book is another file. */
 function fileKey(args: Record<string, unknown>): string | null {
   if (typeof args.path !== 'string') return null;
@@ -93,6 +111,7 @@ function compactResult(call: ToolCallInfo | undefined, content: string): string 
  */
 export function compactEarlierTurns(messages: readonly ChatMessage[]): ChatMessage[] {
   const calls = callsById(messages);
+  const failed = failedCallIds(messages);
   return messages.map((message) => {
     if (message.role === 'tool' && typeof message.content === 'string') {
       const call = calls.get(message.tool_call_id ?? '');
@@ -100,6 +119,7 @@ export function compactEarlierTurns(messages: readonly ChatMessage[]): ChatMessa
     }
     let compacted = message;
     for (const call of message.tool_calls ?? []) {
+      if (failed.has(call.id)) continue;
       const args = parseArgs(call.function.arguments);
       if (call.function.name === 'write_file' && typeof args.content === 'string') {
         if (isStub(args.content)) continue;
@@ -130,6 +150,7 @@ export function compactEarlierTurns(messages: readonly ChatMessage[]): ChatMessa
  */
 export function supersedeRepeatedReads(messages: ChatMessage[]): void {
   const calls = callsById(messages);
+  const failed = failedCallIds(messages);
   const lastRead = new Map<string, number>();
   messages.forEach((message, index) => {
     const call = message.role === 'tool' ? calls.get(message.tool_call_id ?? '') : undefined;
@@ -151,7 +172,7 @@ export function supersedeRepeatedReads(messages: ChatMessage[]): void {
       return;
     }
     for (const call of message.tool_calls ?? []) {
-      if (call.function.name !== 'write_file') continue;
+      if (call.function.name !== 'write_file' || failed.has(call.id)) continue;
       const args = parseArgs(call.function.arguments);
       const key = fileKey(args);
       if (key === null || typeof args.content !== 'string' || isStub(args.content)) continue;

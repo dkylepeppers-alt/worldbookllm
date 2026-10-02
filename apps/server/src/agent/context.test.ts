@@ -69,6 +69,24 @@ describe('compactEarlierTurns', () => {
     expect(args(messages[2]).find).toMatch(/omitted from an earlier turn/u);
     expect(args(messages[2]).replace).toBe('short');
   });
+
+  it('keeps the arguments of failed writes and edits for the model to correct', () => {
+    const messages = compactEarlierTurns([
+      ...call(
+        'write_file',
+        { path: 'characters/mira.md', content: big, expectedHash: null },
+        'Error: characters/mira.md changed since it was read.',
+      ),
+      ...call(
+        'edit_file',
+        { path: 'characters/mira.md', find: big, replace: big },
+        'Error: find text was not found.',
+      ),
+    ]);
+    expect(args(messages[0]).content).toBe(big);
+    expect(args(messages[2]).find).toBe(big);
+    expect(args(messages[2]).replace).toBe(big);
+  });
 });
 
 describe('supersedeRepeatedReads', () => {
@@ -109,6 +127,19 @@ describe('supersedeRepeatedReads', () => {
     supersedeRepeatedReads(messages);
     expect(args(messages[0]).content).toMatch(/superseded by a later read_file/u);
     expect(messages[3]!.content).toContain(big);
+  });
+
+  it('keeps a failed write whole even after the file is read again', () => {
+    const messages = [
+      ...call(
+        'write_file',
+        { path: 'characters/mira.md', content: big, expectedHash: null },
+        'Error: characters/mira.md changed since it was read.',
+      ),
+      ...read('characters/mira.md', 'the version on disk'),
+    ];
+    supersedeRepeatedReads(messages);
+    expect(args(messages[0]).content).toBe(big);
   });
 
   it('is stable when run again on the same messages', () => {
