@@ -227,23 +227,28 @@ export const bookCheckParamsSchema = z.strictObject({
  * `--where` filters, and `mentions` takes a kind and id for one entity
  * (without them it audits every chapter). The CLI validates the values.
  */
-export const bookCheckQuerySchema = z.strictObject({
-  kind: z
-    .string()
-    .regex(/^[a-z][a-z-]*$/u)
-    .max(40)
-    .optional(),
-  id: z
-    .string()
-    .regex(/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u)
-    .max(120)
-    .optional(),
-  where: z
-    .union([z.string(), z.array(z.string())])
-    .transform((value) => (Array.isArray(value) ? value : [value]))
-    .pipe(z.array(z.string().trim().min(1).max(200)).max(10))
-    .optional(),
-});
+export const bookCheckQuerySchema = z
+  .strictObject({
+    kind: z
+      .string()
+      .regex(/^[a-z][a-z-]*$/u)
+      .max(40)
+      .optional(),
+    id: z
+      .string()
+      .regex(/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u)
+      .max(120)
+      .optional(),
+    where: z
+      .union([z.string(), z.array(z.string())])
+      .transform((value) => (Array.isArray(value) ? value : [value]))
+      .pipe(z.array(z.string().trim().min(1).max(200)).max(10))
+      .optional(),
+  })
+  .refine((query) => query.id === undefined || query.kind !== undefined, {
+    message: 'An entity id needs its kind.',
+    path: ['id'],
+  });
 
 export const storyDiagnosticSchema = z.looseObject({
   severity: z.string(),

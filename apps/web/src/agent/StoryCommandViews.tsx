@@ -48,8 +48,9 @@ function GridView({ data }: { data: GridData }) {
           <tr>
             <th scope="col">Arc</th>
             {data.chapters.map((chapter) => (
-              <th key={chapter.id} scope="col" title={chapter.title}>
+              <th key={chapter.id} scope="col">
                 {chapter.number ?? chapter.id}
+                <span className="visually-hidden">: {chapter.title}</span>
               </th>
             ))}
           </tr>
@@ -70,6 +71,13 @@ function GridView({ data }: { data: GridData }) {
           ))}
         </tbody>
       </table>
+      <ol className="story-grid-key" aria-label="Chapters">
+        {data.chapters.map((chapter) => (
+          <li key={chapter.id}>
+            <span className="coordinate-label">{chapter.number ?? chapter.id}</span> {chapter.title}
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

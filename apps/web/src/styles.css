@@ -1487,6 +1487,16 @@ label {
   white-space: nowrap;
 }
 
+.story-grid-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.85rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
 .story-grid-table td span {
   color: var(--blueprint);
 }

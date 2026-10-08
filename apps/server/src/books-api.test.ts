@@ -455,6 +455,11 @@ describe('books API', () => {
       url: `/api/books/${slug}/checks/mentions?kind=character&id=..%2Fx`,
     });
     expect(bad.statusCode).toBe(400);
+    const idWithoutKind = await app.inject({
+      method: 'GET',
+      url: `/api/books/${slug}/checks/mentions?id=mara-quill`,
+    });
+    expect(idWithoutKind.statusCode).toBe(400);
   });
 
   it('moves a trashed book out of the library', async () => {

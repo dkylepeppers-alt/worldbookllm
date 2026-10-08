@@ -66,7 +66,10 @@ function commandLine(command: BookCheckCommand, query: BookCheckQuery): string {
   const parts = [`story ${command}`];
   if (query.kind) parts.push(query.kind);
   if (query.id) parts.push(query.id);
-  for (const filter of [query.where ?? []].flat()) parts.push(`--where '${filter}'`);
+  // Quoted as a shell would need it, so a filter like title=O'Brien reads back exactly.
+  for (const filter of [query.where ?? []].flat()) {
+    parts.push(`--where '${filter.replaceAll("'", "'\\''")}'`);
+  }
   return parts.join(' ');
 }
 

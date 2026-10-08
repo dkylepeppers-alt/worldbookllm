@@ -1090,18 +1090,22 @@ describe('story commands panel', () => {
     const grid = await screen.findByRole('table', { name: 'Arcs advanced by chapter' });
     expect(within(grid).getByRole('rowheader', { name: 'The Salt War' })).toBeTruthy();
     expect(within(grid).getAllByLabelText('advanced')).toHaveLength(1);
+    expect(screen.getByRole('list', { name: 'Chapters' }).textContent).toContain('2 Fog');
 
     await user.click(screen.getByRole('button', { name: /^list/u }));
     const listForm = screen.getByRole('form', { name: 'story list arguments' });
-    await user.type(within(listForm).getByLabelText(/Filters/u), 'status=draft; pov');
+    await user.type(
+      within(listForm).getByLabelText(/Filters/u),
+      "status=draft; pov; title=O'Brien",
+    );
     await user.click(within(listForm).getByRole('button', { name: 'Run story list' }));
     expect(runBookCheck).toHaveBeenLastCalledWith('the-salt-road', 'list', undefined, {
       kind: 'chapters',
-      where: ['status=draft', 'pov'],
+      where: ['status=draft', 'pov', "title=O'Brien"],
     });
     const list = await screen.findByRole('region', { name: 'story list result' });
     expect(within(list).getByRole('status').textContent).toContain(
-      "story list chapters --where 'status=draft' --where 'pov'",
+      "story list chapters --where 'status=draft' --where 'pov' --where 'title=O'\\''Brien'",
     );
     expect(within(list).getByRole('link', { name: 'Arrival' }).getAttribute('href')).toBe(
       '/books/the-salt-road/files/chapters/chapter-01.md',
