@@ -33,7 +33,7 @@ import {
   type WriteBookFileInput,
 } from '@worldbookllm/shared';
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -808,7 +808,9 @@ export class BookService {
     const title = fileName.replace(/\.[^.]+$/u, '').trim() || 'Imported manuscript';
     const workDir = mkdtempSync(join(tmpdir(), 'worldbookllm-import-'));
     try {
-      const source = join(workDir, `manuscript.${extension === 'txt' ? 'txt' : 'md'}`);
+      // story import names its source in the synopsis placeholder, so the source keeps the upload's name.
+      const stem = sourceName(fileName.replace(/\.[^.]+$/u, ''), 'manuscript');
+      const source = join(workDir, `${stem}.${extension === 'txt' ? 'txt' : 'md'}`);
       writeFileSync(source, bytes, { mode: 0o600 });
       const { slug, output } = await this.locks.run(CREATE_LOCK, async () => {
         const free = this.freeSlug(title);
@@ -923,9 +925,12 @@ export class BookService {
 
     const workDir = mkdtempSync(join(tmpdir(), 'worldbookllm-import-'));
     try {
+      // The chapters folder takes the zip's name: story import names it in the synopsis placeholder.
+      const chapterDir = join(workDir, sourceName(fileName.replace(/\.zip$/iu, ''), 'manuscript'));
+      mkdirSync(chapterDir, { mode: 0o700 });
       const flat = flatChapterNames(chapters.map((file) => file.path));
       chapters.forEach((file, index) => {
-        writeFileSync(join(workDir, flat[index]!), file.data, { mode: 0o600 });
+        writeFileSync(join(chapterDir, flat[index]!), file.data, { mode: 0o600 });
       });
       const slug = await this.locks.run(CREATE_LOCK, async () => {
         const free = this.freeSlug(title);
@@ -941,10 +946,10 @@ export class BookService {
             command: 'import',
             cwd: this.files.projectsDir,
             dir: free,
-            args: [workDir],
+            args: [chapterDir],
             options: { title },
           });
-          lines.push(result.stdout.replaceAll(workDir, fileName).trim());
+          lines.push(result.stdout.replaceAll(chapterDir, fileName).trim());
         }
         return free;
       });
@@ -1348,6 +1353,21 @@ interface BookCheckQueryArgs {
 function checkArgs(query: BookCheckQueryArgs): string[] {
   if (query.kind === undefined) return [];
   return query.id === undefined ? [query.kind] : [query.kind, query.id];
+}
+
+/**
+ * A temporary file or folder name that keeps an upload's own name: path
+ * separators, control characters, and leading dots are replaced, and a name
+ * with nothing left falls back to `fallback`.
+ */
+function sourceName(name: string, fallback: string): string {
+  const cleaned = name
+    .replace(/[\\/\p{Cc}]/gu, '-')
+    .replace(/^[.\s-]+/u, '')
+    .trim()
+    .slice(0, 120)
+    .trim();
+  return cleaned === '' ? fallback : cleaned;
 }
 
 /** Sorts `chapter-2` before `chapter-10`, as `story import` reads a folder. */

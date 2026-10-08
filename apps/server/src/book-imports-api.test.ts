@@ -251,6 +251,9 @@ describe('manuscript import', () => {
     expect(
       readFileSync(join(dataDir, 'projects/the-ferry/chapters/chapter-02.md'), 'utf8'),
     ).toContain('The bell rang twice.');
+    expect(readFileSync(join(dataDir, 'projects/the-ferry/story.md'), 'utf8')).toContain(
+      'Imported from The Ferry.md.',
+    );
     const after = readdirSync(tmpdir()).filter((name) => name.startsWith('worldbookllm-import-'));
     expect(after).toEqual(before);
   });
@@ -409,6 +412,9 @@ describe('project zip import', () => {
     const note = readFileSync(join(root, 'research/tide-tables.md'), 'utf8');
     expect(note).toContain('Spring tides run high.');
     expect(note).toContain('origin-file: "The Lost Coast.zip: draft/notes/tides.md"');
+    const story = readFileSync(join(root, 'story.md'), 'utf8');
+    expect(story).toContain('Imported from The Lost Coast.');
+    expect(story).not.toContain('worldbookllm-import-');
   });
 
   it('starts an empty book when a zip without story.md holds only notes', async () => {
