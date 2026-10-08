@@ -421,6 +421,47 @@ describe('books API', () => {
     expect(unknown.statusCode).toBe(400);
   });
 
+  it('runs check, grid, list, and mentions, passing list and mentions their arguments', async () => {
+    const { slug } = await createBook();
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/entities`,
+      payload: { kind: 'character', name: 'Mara Quill', options: {} },
+    });
+    const run = async (command: string, query = '') =>
+      (
+        await app.inject({ method: 'GET', url: `/api/books/${slug}/checks/${command}${query}` })
+      ).json<BookCheckResult>();
+
+    expect((await run('check')).envelope.data).toMatchObject({ errors: 0 });
+    expect((await run('grid')).envelope.data).toHaveProperty('rows');
+    expect((await run('mentions')).envelope.data).toMatchObject({ mode: 'audit' });
+
+    const listed = await run('list', '?kind=characters&where=status');
+    expect(listed.envelope.data).toMatchObject({
+      kind: 'characters',
+      where: [{ key: 'status', op: 'present' }],
+      items: [{ id: 'mara-quill' }],
+    });
+    const mentioned = await run('mentions', '?kind=character&id=mara-quill');
+    expect(mentioned.envelope.data).toMatchObject({ mode: 'entity', id: 'mara-quill' });
+
+    // A list without a kind is the CLI's usage error, returned as a result.
+    const bare = await run('list');
+    expect(bare.exitCode).toBe(2);
+    expect(bare.envelope.diagnostics[0]?.message).toMatch(/^Usage: story list/u);
+    const bad = await app.inject({
+      method: 'GET',
+      url: `/api/books/${slug}/checks/mentions?kind=character&id=..%2Fx`,
+    });
+    expect(bad.statusCode).toBe(400);
+    const idWithoutKind = await app.inject({
+      method: 'GET',
+      url: `/api/books/${slug}/checks/mentions?id=mara-quill`,
+    });
+    expect(idWithoutKind.statusCode).toBe(400);
+  });
+
   it('moves a trashed book out of the library', async () => {
     const { slug } = await createBook();
     const response = await app.inject({ method: 'DELETE', url: `/api/books/${slug}` });

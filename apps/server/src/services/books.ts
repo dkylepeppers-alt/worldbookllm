@@ -564,13 +564,31 @@ export class BookService {
     });
   }
 
-  async check(slug: string, command: BookCheckCommand, fresh = false): Promise<BookCheckResult> {
+  /**
+   * Runs a read-only check as JSON. Results without arguments are cached
+   * until the book changes; `list` and `mentions` take theirs from `query`.
+   */
+  async check(
+    slug: string,
+    command: BookCheckCommand,
+    fresh = false,
+    query: BookCheckQueryArgs = {},
+  ): Promise<BookCheckResult> {
     const root = this.files.root(slug);
     this.index.reconcile(slug);
     const revision = this.index.revision(slug);
-    const cached = this.checkCache.get(`${slug}:${command}`);
+    const args =
+      command === 'list'
+        ? checkArgs({ kind: query.kind })
+        : command === 'mentions'
+          ? checkArgs(query)
+          : [];
+    const options: StoryOptions =
+      command === 'list' && query.where && query.where.length > 0 ? { where: query.where } : {};
+    const cacheable = args.length === 0;
+    const cached = cacheable ? this.checkCache.get(`${slug}:${command}`) : undefined;
     if (!fresh && cached && cached.revision === revision) return cached.result;
-    const result = await this.cli.run({ command, root, json: true });
+    const result = await this.cli.run({ command, root, args, options, json: true });
     if (!result.envelope) {
       throw new StoryCommandError(
         result.exitCode,
@@ -582,7 +600,7 @@ export class BookService {
       exitCode: result.exitCode,
       envelope: result.envelope,
     };
-    this.checkCache.set(`${slug}:${command}`, { revision, result: checked });
+    if (cacheable) this.checkCache.set(`${slug}:${command}`, { revision, result: checked });
     return checked;
   }
 
@@ -1318,6 +1336,18 @@ function storyCommandWrites(command: string, options: StoryOptions): boolean {
   return (WRITING_FLAGS[command] ?? []).some(
     (flag) => options[flag] !== undefined && options[flag] !== false,
   );
+}
+
+interface BookCheckQueryArgs {
+  kind?: string;
+  id?: string;
+  where?: string[];
+}
+
+/** Positional arguments for `list <kind>` and `mentions <kind> <id>`. */
+function checkArgs(query: BookCheckQueryArgs): string[] {
+  if (query.kind === undefined) return [];
+  return query.id === undefined ? [query.kind] : [query.kind, query.id];
 }
 
 /** Sorts `chapter-2` before `chapter-10`, as `story import` reads a folder. */

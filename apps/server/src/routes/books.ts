@@ -3,6 +3,7 @@ import {
   addSeriesBookSchema,
   bookBuildParamsSchema,
   bookCheckParamsSchema,
+  bookCheckQuerySchema,
   bookFilePathSchema,
   bookParamsSchema,
   bookSearchQuerySchema,
@@ -157,7 +158,7 @@ export function registerBookRoutes(app: FastifyInstance): void {
 
   app.get('/api/books/:book/checks/:command', (request) => {
     const { book, command } = bookCheckParamsSchema.parse(request.params);
-    return books().check(book, command);
+    return books().check(book, command, false, bookCheckQuerySchema.parse(request.query));
   });
 
   app.get('/api/books/:book/manuscript', (request) => {

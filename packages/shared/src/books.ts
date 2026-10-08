@@ -196,6 +196,7 @@ export const moveEntitySchema = z.strictObject({
 
 /** Read-only `story` commands the checks endpoint runs with --json. */
 export const BOOK_CHECK_COMMANDS = [
+  'check',
   'validate',
   'links',
   'continuity',
@@ -209,6 +210,9 @@ export const BOOK_CHECK_COMMANDS = [
   'doctor',
   'progress',
   'prose',
+  'grid',
+  'mentions',
+  'list',
 ] as const;
 
 export const bookCheckCommandSchema = z.enum(BOOK_CHECK_COMMANDS);
@@ -217,6 +221,34 @@ export const bookCheckParamsSchema = z.strictObject({
   book: bookSlugSchema,
   command: bookCheckCommandSchema,
 });
+
+/**
+ * Arguments for the checks that take them: `list` needs a kind and takes
+ * `--where` filters, and `mentions` takes a kind and id for one entity
+ * (without them it audits every chapter). The CLI validates the values.
+ */
+export const bookCheckQuerySchema = z
+  .strictObject({
+    kind: z
+      .string()
+      .regex(/^[a-z][a-z-]*$/u)
+      .max(40)
+      .optional(),
+    id: z
+      .string()
+      .regex(/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u)
+      .max(120)
+      .optional(),
+    where: z
+      .union([z.string(), z.array(z.string())])
+      .transform((value) => (Array.isArray(value) ? value : [value]))
+      .pipe(z.array(z.string().trim().min(1).max(200)).max(10))
+      .optional(),
+  })
+  .refine((query) => query.id === undefined || query.kind !== undefined, {
+    message: 'An entity id needs its kind.',
+    path: ['id'],
+  });
 
 export const storyDiagnosticSchema = z.looseObject({
   severity: z.string(),
@@ -301,6 +333,7 @@ export type AddEntityInput = z.infer<typeof addEntitySchema>;
 export type RenameEntityInput = z.infer<typeof renameEntitySchema>;
 export type MoveEntityInput = z.infer<typeof moveEntitySchema>;
 export type BookCheckCommand = z.infer<typeof bookCheckCommandSchema>;
+export type BookCheckQuery = z.input<typeof bookCheckQuerySchema>;
 export type StoryEnvelope = z.infer<typeof storyEnvelopeSchema>;
 export type BookCheckResult = z.infer<typeof bookCheckResultSchema>;
 export type StoryCommandOutcome = z.infer<typeof storyCommandOutcomeSchema>;
