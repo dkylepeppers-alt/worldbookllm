@@ -73,6 +73,7 @@ import {
   discardStagedProject,
   promoteStagedProject,
   stageProjectFiles,
+  PREVIEW_DOCUMENT_EXTENSIONS,
   unpackProjectZip,
   type ProjectArchive,
 } from '../story/project-zip.js';
@@ -646,9 +647,16 @@ export class BookService {
     return this.writeImports(
       slug,
       label,
-      input.entries.map(({ origin, ...entry }) => ({
+      input.entries.map(({ origin, conversionNotes, ...entry }) => ({
         ...entry,
-        provenance: origin ? provenanceLines(origin, [], importedAt) : provenance,
+        provenance:
+          origin || conversionNotes
+            ? provenanceLines(
+                origin ?? input.origin,
+                conversionNotes ?? (origin ? [] : input.conversionNotes),
+                importedAt,
+              )
+            : provenance,
       })),
     );
   }
@@ -665,6 +673,11 @@ export class BookService {
     entries: readonly ImportEntry[],
   ): Promise<BookImportResult> {
     const root = this.files.root(slug);
+    if (entries.some((entry) => entry.kind === 'chapter') && this.summary(slug).kind !== 'book') {
+      throw new InvalidImportError(
+        'A series bible holds shared canon, not chapters. Add chapters to one of the series books.',
+      );
+    }
     return this.locks.run(slug, async () => {
       this.index.reconcile(slug);
       const taken = new Set(this.index.list(slug).map((file) => file.path));
@@ -922,16 +935,21 @@ export class BookService {
         const importedAt = new Date().toISOString();
         const entries: ImportEntry[] = [];
         for (const file of notes) {
-          const markdown = await convertArchiveFile(file.path, file.data);
-          if (markdown === null) {
+          const converted = await convertArchiveFile(file.path, file.data);
+          const entry = converted?.entries[0];
+          if (converted === null || entry === undefined) {
             lines.push(`Skipped ${file.path}: it has no readable text.`);
             continue;
           }
           entries.push({
-            title: markdown.title,
-            markdown: markdown.markdown,
-            kind: archiveDocumentKind(file.path, markdown.markdown),
-            provenance: provenanceLines(archiveOrigin(fileName, file.path), [], importedAt),
+            title: entry.title,
+            markdown: entry.markdown,
+            kind: archiveDocumentKind(file.path, entry.markdown),
+            provenance: provenanceLines(
+              archiveOrigin(fileName, file.path, mediaTypeOf(converted)),
+              converted.conversionNotes,
+              importedAt,
+            ),
           });
         }
         if (entries.length > 0) {
@@ -1307,30 +1325,42 @@ const naturalOrder = new Intl.Collator('en', { numeric: true, sensitivity: 'base
 
 /**
  * File names for a folder of chapters that `story import` reads in natural
- * order: the file's own name when every name is distinct, otherwise its
- * archive path with `/` as `-`, so folders keep their files together.
+ * order. Each file keeps its own name when every name is distinct, so
+ * `story import` can still put a prologue first. Otherwise each name gets
+ * its position in `paths` (already in natural order) as a zero-padded
+ * prefix, which keeps that order and can never collide.
  */
 function flatChapterNames(paths: readonly string[]): string[] {
   const names = paths.map((path) => path.slice(path.lastIndexOf('/') + 1));
   if (new Set(names.map((name) => name.toLowerCase())).size === names.length) return names;
-  return paths.map((path) => path.replaceAll('/', '-'));
+  const width = String(paths.length).length;
+  return names.map((name, index) => `${String(index + 1).padStart(width, '0')}-${name}`);
 }
 
-/** The provenance of one file inside an uploaded zip. */
-function archiveOrigin(zipName: string, path: string): SourceOrigin {
-  const mediaType = /\.txt$/iu.test(path) ? 'text/plain' : 'text/markdown';
-  return { type: 'file', fileName: `${zipName}: ${path}`.slice(0, 255), mediaType };
+/**
+ * The provenance of one file inside an uploaded zip, `<zip>: <path>`, within
+ * the 255-character limit. The zip name gives way first and then the start
+ * of the path, so the file's own name, which tells entries apart, is kept.
+ */
+function archiveOrigin(zipName: string, path: string, mediaType: string): SourceOrigin {
+  const room = 255 - ': '.length - path.length;
+  const fileName =
+    room >= 1
+      ? `${zipName.length <= room ? zipName : `${zipName.slice(0, room - 1)}…`}: ${path}`
+      : `…${path.slice(-254)}`;
+  return { type: 'file', fileName, mediaType };
+}
+
+/** The media type a converter found for an archive file. */
+function mediaTypeOf(preview: SourcePreview): string {
+  return 'mediaType' in preview.origin ? preview.origin.mediaType : 'text/plain';
 }
 
 /** One archive file converted for import, or null when it has no readable text. */
-async function convertArchiveFile(
-  path: string,
-  data: Buffer,
-): Promise<{ title: string; markdown: string; format: SourcePreview['format'] } | null> {
+async function convertArchiveFile(path: string, data: Buffer): Promise<SourcePreview | null> {
   try {
     const preview = await convertUpload(data, path.slice(path.lastIndexOf('/') + 1));
-    const entry = preview.entries[0];
-    return entry ? { ...entry, format: preview.format } : null;
+    return preview.entries.length > 0 ? preview : null;
   } catch (error) {
     if (error instanceof InvalidImportError) return null;
     throw error;
@@ -1345,9 +1375,9 @@ function capNotes(notes: readonly string[]): string[] {
     : [...clipped.slice(0, 19), `…and ${clipped.length - 19} more notes.`];
 }
 
-/** Previews every Markdown and text file of a zip for import into an existing book. */
+/** Previews every convertible file of a zip for import into an existing book. */
 async function previewArchive(bytes: Buffer, fileName: string): Promise<BookImportPreview> {
-  const archive = await unpackProjectZip(bytes);
+  const archive = await unpackProjectZip(bytes, PREVIEW_DOCUMENT_EXTENSIONS);
   if (archive.kind === 'project') {
     throw new InvalidImportError(
       'This zip is a whole story project (it has story.md). Import it from the library as a new book.',
@@ -1362,18 +1392,21 @@ async function previewArchive(bytes: Buffer, fileName: string): Promise<BookImpo
       notes.push(`Skipped ${file.path}: it has no readable text.`);
       continue;
     }
-    entries.push({
-      title: converted.title,
-      markdown: converted.markdown,
-      ...suggestImportKind(converted.markdown, converted.format, {
-        title: converted.title,
-        path: file.path,
-      }),
-      origin: archiveOrigin(fileName, file.path),
-    });
+    const origin = archiveOrigin(fileName, file.path, mediaTypeOf(converted));
+    for (const entry of converted.entries) {
+      entries.push({
+        ...entry,
+        ...suggestImportKind(entry.markdown, converted.format, {
+          title: entry.title,
+          path: file.path,
+        }),
+        origin,
+        conversionNotes: converted.conversionNotes,
+      });
+    }
   }
   if (entries.length === 0) {
-    throw new InvalidImportError('The zip has no Markdown or text files with readable text.');
+    throw new InvalidImportError('The zip has no files with readable text.');
   }
   if (entries.length > 1_000) {
     throw new InvalidImportError('The zip holds more than 1,000 files to import.');

@@ -27,6 +27,8 @@ interface DraftEntry {
   kind: BookImportKind;
   markdown: string;
   origin: SourceOrigin;
+  /** The converter's notes for this entry's file, recorded as its provenance. */
+  conversionNotes: string[];
   /** Where the entry came from, as shown in the list. */
   source: string;
 }
@@ -42,7 +44,9 @@ function sourceLabel(origin: SourceOrigin, fallback: string): string {
  */
 export function AddFilesSection() {
   const api = useApi();
-  const { slug, reload } = useBook();
+  const { slug, tree, reload } = useBook();
+  // A series bible holds shared canon, never chapters.
+  const kinds = tree.book.kind === 'book' ? KINDS : KINDS.filter((kind) => kind !== 'chapter');
   const [entries, setEntries] = useState<DraftEntry[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
   const [busy, setBusy] = useState<'reading' | 'adding' | null>(null);
@@ -70,13 +74,19 @@ export function AddFilesSection() {
       readNotes.push(...preview.conversionNotes.map((note) => `${file.name}: ${note}`));
       preview.entries.forEach((entry, index) => {
         const origin = entry.origin ?? preview.origin;
+        for (const note of entry.conversionNotes ?? []) {
+          readNotes.push(`${sourceLabel(origin, file.name)}: ${note}`);
+        }
+        const suggested = kinds.includes(entry.suggestedKind) ? entry.suggestedKind : 'research';
         read.push({
           key: `${file.name}:${index}:${entries.length + read.length}`,
           include: true,
           title: entry.title,
-          kind: entry.suggestedKind,
+          kind: suggested,
           markdown: entry.markdown,
           origin,
+          // A zip's entries carry their own file's notes; its top-level notes list skipped files.
+          conversionNotes: entry.conversionNotes ?? (entry.origin ? [] : preview.conversionNotes),
           source: sourceLabel(origin, file.name),
         });
       });
@@ -119,6 +129,7 @@ export function AddFilesSection() {
           markdown: entry.markdown,
           kind: entry.kind,
           origin: entry.origin,
+          conversionNotes: entry.conversionNotes,
         })),
       });
       const findings = imported.validation?.diagnostics.length ?? 0;
@@ -203,7 +214,7 @@ export function AddFilesSection() {
                       update(entry.key, { kind: event.target.value as BookImportKind })
                     }
                   >
-                    {KINDS.map((kind) => (
+                    {kinds.map((kind) => (
                       <option key={kind} value={kind}>
                         {KIND_LABELS[kind] ?? kind}
                       </option>

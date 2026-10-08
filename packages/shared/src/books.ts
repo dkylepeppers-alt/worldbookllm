@@ -347,6 +347,8 @@ export const bookImportPreviewSchema = z.strictObject({
         entityFile: z.boolean(),
         /** Where this entry came from, when it differs from the upload (a file inside a zip). */
         origin: sourceOriginSchema.optional(),
+        /** This entry's own conversion notes, when they differ from the upload's. */
+        conversionNotes: conversionNotesSchema.optional(),
       }),
     )
     .min(1)
@@ -363,6 +365,7 @@ export const createBookImportSchema = z.strictObject({
         markdown: z.string().min(1).max(10_485_760),
         kind: bookImportKindSchema,
         origin: sourceOriginSchema.optional(),
+        conversionNotes: conversionNotesSchema.optional(),
       }),
     )
     .min(1)

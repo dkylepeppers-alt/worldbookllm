@@ -103,9 +103,9 @@ describe('unpackProjectZip', () => {
       'draft/chapter-1.md',
       'draft/notes/harbor.txt',
     ]);
-    expect(archive.skipped).toEqual(['draft/cover.png (not a Markdown or text file)']);
+    expect(archive.skipped).toEqual(['draft/cover.png (not a supported document type)']);
     await expect(unpackProjectZip(makeZip([{ name: 'cover.png', data: 'x' }]))).rejects.toThrow(
-      'no story.md and no Markdown or text files',
+      'no story.md and no documents',
     );
   });
 

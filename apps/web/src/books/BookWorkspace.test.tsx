@@ -631,6 +631,7 @@ describe('builds and project import', () => {
           markdown: 'Flour dust.\n',
           kind: 'chapter',
           origin: { ...zipOrigin, fileName: 'more.zip: ch-2.md', mediaType: 'text/markdown' },
+          conversionNotes: [],
         },
       ],
     });

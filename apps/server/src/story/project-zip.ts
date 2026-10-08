@@ -191,21 +191,31 @@ export interface ProjectArchive {
   skipped: string[];
 }
 
-/** What a loose-documents archive keeps: manuscript and note text. */
-const DOCUMENT_EXTENSIONS = new Set(['md', 'markdown', 'txt']);
+/** What a loose-documents archive keeps for a new book: manuscript and note text. */
+const DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set(['md', 'markdown', 'txt']);
+
+/** What a loose-documents archive keeps for review: every format a single upload converts. */
+export const PREVIEW_DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set([
+  ...DOCUMENT_EXTENSIONS,
+  'html',
+  'htm',
+  'pdf',
+  'json',
+]);
 
 /**
  * Unpacks an uploaded book archive (ADR 0020, ADR 0024). With a `story.md`,
  * it is a story-skills project: the project root is the folder holding it,
  * the archive root or a single top-level folder, and Markdown, plain-text
  * notes, and cover images are kept. Without one, its Markdown and text files
- * are kept at their archive paths. Build output (`dist/`), dot-entries,
+ * (or, for review, `documentExtensions`) are kept at their archive paths. Build output (`dist/`), dot-entries,
  * macOS resource forks, symlinks, and other file types are skipped and
  * reported. An entry whose path could escape the book rejects the whole
  * archive.
  */
 export async function unpackProjectZip(
   bytes: Buffer,
+  documentExtensions: ReadonlySet<string> = DOCUMENT_EXTENSIONS,
   deadlineMs: number = PROJECT_ZIP_LIMITS.maxProcessingMs,
 ): Promise<ProjectArchive> {
   const entries = listEntries(bytes);
@@ -231,7 +241,7 @@ export async function unpackProjectZip(
     throw invalid('Zip the book folder itself: story.md must be at the top of the archive.');
   }
   const kind = root === null ? 'documents' : 'project';
-  const keptExtensions = kind === 'project' ? KEPT_EXTENSIONS : DOCUMENT_EXTENSIONS;
+  const keptExtensions = kind === 'project' ? KEPT_EXTENSIONS : documentExtensions;
 
   const kept: Array<{ entry: ZipEntry; path: string }> = [];
   const keptPaths = new Set<string>();
@@ -251,7 +261,7 @@ export async function unpackProjectZip(
     } else if (entry.symlink) {
       skip('symbolic link');
     } else if (!keptExtensions.has(extensionOf(path))) {
-      skip(kind === 'project' ? 'not a project file type' : 'not a Markdown or text file');
+      skip(kind === 'project' ? 'not a project file type' : 'not a supported document type');
     } else if (entry.size > PROJECT_ZIP_LIMITS.maxFileBytes) {
       throw invalid(`${entry.name} is larger than 25 MiB.`);
     } else if (keptPaths.has(path)) {
@@ -266,7 +276,7 @@ export async function unpackProjectZip(
     }
   }
   if (kind === 'documents' && kept.length === 0) {
-    throw invalid('The archive has no story.md and no Markdown or text files to import.');
+    throw invalid('The archive has no story.md and no documents to import.');
   }
 
   const started = Date.now();
