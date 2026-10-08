@@ -65,6 +65,7 @@ import {
   type ConnectionTestResponse,
   type CreateAgentChatInput,
   type AddSeriesBookInput,
+  type BookCheckQuery,
   type BookImportPreview,
   type BookImportResult,
   type CreateBookBuildInput,
@@ -173,6 +174,8 @@ export interface ApiClient {
     slug: string,
     command: BookCheckCommand,
     signal?: AbortSignal,
+    /** Arguments for `list` (kind, filters) and `mentions` (kind and id). */
+    query?: BookCheckQuery,
   ): Promise<BookCheckResult>;
   listCheckpoints(slug: string, signal?: AbortSignal): Promise<Checkpoint[]>;
   getCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<CheckpointDetail>;
@@ -437,8 +440,18 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: storyCommandOutcomeSchema,
         signal,
       }),
-    runBookCheck: (slug, command, signal) =>
-      request(`${book(slug)}/checks/${command}`, { schema: bookCheckResultSchema, signal }),
+    runBookCheck: (slug, command, signal, query) => {
+      const params = new URLSearchParams();
+      if (query?.kind) params.set('kind', query.kind);
+      if (query?.id) params.set('id', query.id);
+      const where = query?.where === undefined ? [] : [query.where].flat();
+      for (const filter of where) params.append('where', filter);
+      const search = params.size === 0 ? '' : `?${params.toString()}`;
+      return request(`${book(slug)}/checks/${command}${search}`, {
+        schema: bookCheckResultSchema,
+        signal,
+      });
+    },
     listCheckpoints: (slug, signal) =>
       request(`${book(slug)}/checkpoints`, { schema: checkpointListSchema, signal }),
     getCheckpoint: (slug, id, signal) =>

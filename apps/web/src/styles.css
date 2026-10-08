@@ -1448,6 +1448,49 @@ label {
   box-shadow: inset 0 -3px 0 var(--blueprint);
 }
 
+.story-command-args {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 1px solid var(--line);
+  padding: 0.75rem;
+}
+
+.story-command-args label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.story-command-args button {
+  justify-self: start;
+}
+
+.story-grid-scroll {
+  overflow-x: auto;
+}
+
+.story-grid-table {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.story-grid-table th,
+.story-grid-table td {
+  min-width: 2rem;
+  border: 1px solid var(--line);
+  padding: 0.3rem 0.45rem;
+  text-align: center;
+}
+
+.story-grid-table tbody th {
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.story-grid-table td span {
+  color: var(--blueprint);
+}
+
 .story-command-result {
   display: grid;
   gap: 0.65rem;

@@ -1024,4 +1024,103 @@ describe('story commands panel', () => {
     );
     localStorage.removeItem('worldbookllm.storyCommands.open');
   });
+
+  it('runs grid, list, and mentions from the panel, asking for list and mentions arguments', async () => {
+    localStorage.setItem('worldbookllm.storyCommands.open', 'true');
+    const envelope = (command: string, data: unknown) => ({
+      command,
+      exitCode: 0,
+      envelope: { apiVersion: 'story/v2', command, ok: true, data, diagnostics: [] },
+    });
+    const runBookCheck = vi.fn(
+      (_slug: string, command: string) =>
+        Promise.resolve(
+          command === 'grid'
+            ? envelope('grid', {
+                chapters: [
+                  { id: 'chapter-01', number: 1, title: 'Arrival' },
+                  { id: 'chapter-02', number: 2, title: 'Fog' },
+                ],
+                rows: [{ id: 'salt-war', name: 'The Salt War', known: true, cells: [true, false] }],
+              })
+            : command === 'list'
+              ? envelope('list', {
+                  kind: 'chapters',
+                  total: 2,
+                  items: [
+                    {
+                      id: 'chapter-01',
+                      file: 'chapters/chapter-01.md',
+                      title: 'Arrival',
+                      fields: { status: 'draft' },
+                    },
+                  ],
+                })
+              : envelope('mentions', {
+                  mode: 'entity',
+                  id: 'mara-quill',
+                  names: ['Mara Quill', 'Mara'],
+                  chapters: [
+                    {
+                      chapter: 'chapter-01',
+                      file: 'chapters/chapter-01.md',
+                      count: 2,
+                      listed: false,
+                    },
+                  ],
+                  matches: [
+                    {
+                      file: 'chapters/chapter-01.md',
+                      line: 3,
+                      text: 'Mara',
+                      excerpt: 'Mara walked.',
+                    },
+                  ],
+                }),
+        ) as ReturnType<ApiClient['runBookCheck']>,
+    );
+    renderAt(`/books/the-salt-road/agent/${CHAT_ID}`, {
+      getAgentChat: () =>
+        Promise.resolve({ ...chat, messages: [], changesets: [] } satisfies AgentChatDetail),
+      runBookCheck,
+    });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: /^grid/u }));
+    const grid = await screen.findByRole('table', { name: 'Arcs advanced by chapter' });
+    expect(within(grid).getByRole('rowheader', { name: 'The Salt War' })).toBeTruthy();
+    expect(within(grid).getAllByLabelText('advanced')).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: /^list/u }));
+    const listForm = screen.getByRole('form', { name: 'story list arguments' });
+    await user.type(within(listForm).getByLabelText(/Filters/u), 'status=draft; pov');
+    await user.click(within(listForm).getByRole('button', { name: 'Run story list' }));
+    expect(runBookCheck).toHaveBeenLastCalledWith('the-salt-road', 'list', undefined, {
+      kind: 'chapters',
+      where: ['status=draft', 'pov'],
+    });
+    const list = await screen.findByRole('region', { name: 'story list result' });
+    expect(within(list).getByRole('status').textContent).toContain(
+      "story list chapters --where 'status=draft' --where 'pov'",
+    );
+    expect(within(list).getByRole('link', { name: 'Arrival' }).getAttribute('href')).toBe(
+      '/books/the-salt-road/files/chapters/chapter-01.md',
+    );
+
+    await user.click(screen.getByRole('button', { name: /^mentions/u }));
+    const mentionsForm = screen.getByRole('form', { name: 'story mentions arguments' });
+    await user.selectOptions(
+      within(mentionsForm).getByLabelText('Entity'),
+      'characters/mara-quill.md',
+    );
+    await user.click(within(mentionsForm).getByRole('button', { name: 'Run story mentions' }));
+    expect(runBookCheck).toHaveBeenLastCalledWith('the-salt-road', 'mentions', undefined, {
+      kind: 'character',
+      id: 'mara-quill',
+    });
+    const mentions = await screen.findByRole('region', { name: 'story mentions result' });
+    expect(mentions.textContent).toContain('not in its frontmatter');
+    expect(mentions.textContent).toContain('Mara walked.');
+    localStorage.removeItem('worldbookllm.storyCommands.open');
+  });
 });
