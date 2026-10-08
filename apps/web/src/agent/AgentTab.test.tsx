@@ -1127,4 +1127,55 @@ describe('story commands panel', () => {
     expect(mentions.textContent).toContain('Mara walked.');
     localStorage.removeItem('worldbookllm.storyCommands.open');
   });
+
+  it('guides an imported book through building its bible, a batch of chapters at a time', async () => {
+    const imported: BookTree = {
+      book: { ...book, counts: { chapter: 7 } },
+      files: [
+        file('story.md', 'story', null, 'The Salt Road'),
+        file('research/import-report.md', 'research', 'import-report', 'Import report'),
+        ...[1, 2, 3, 4, 5, 6, 7].map((n) =>
+          file(`chapters/chapter-0${n}.md`, 'chapter', `chapter-0${n}`, `Chapter ${n}`),
+        ),
+        file('scenes/chapter-01-scene-01.md', 'scene', 'chapter-01-scene-01', 'Docks'),
+      ],
+    };
+    localStorage.removeItem('worldbookllm.bibleGuide.the-salt-road.hidden');
+    renderAt('/books/the-salt-road/agent', { getBookTree: () => Promise.resolve(imported) });
+    const user = userEvent.setup();
+
+    const guide = await screen.findByRole('region', { name: 'Build the bible' });
+    expect(guide.textContent).toContain('research/import-report.md');
+    expect(guide.textContent).toContain('1 of 7 chapters have scene records');
+    const composer = screen.getByLabelText<HTMLTextAreaElement>('New chat');
+
+    await user.click(within(guide).getByRole('button', { name: 'Build the cast' }));
+    expect(composer.value).toContain('Read research/import-report.md');
+    expect(composer.value).toContain('ask_user');
+
+    await user.clear(composer);
+    await user.click(within(guide).getByRole('button', { name: 'Outline chapters 2–6' }));
+    expect(composer.value).toMatch(/^Reverse-outline chapters 2–6\./u);
+
+    await user.click(within(guide).getByRole('button', { name: 'Hide this guide' }));
+    expect(screen.queryByRole('region', { name: 'Build the bible' })).toBeNull();
+    expect(localStorage.getItem('worldbookllm.bibleGuide.the-salt-road.hidden')).toBe('true');
+    await user.click(screen.getByRole('button', { name: 'Show the Build the bible guide' }));
+    expect(screen.getByRole('region', { name: 'Build the bible' })).toBeTruthy();
+  });
+
+  it('leaves books that already have a bible alone', async () => {
+    renderAt('/books/the-salt-road/agent', {
+      getBookTree: () =>
+        Promise.resolve({
+          ...tree,
+          files: [
+            ...tree.files,
+            file('chapters/chapter-01.md', 'chapter', 'chapter-01', 'Arrival'),
+          ],
+        }),
+    });
+    await screen.findByLabelText('New chat');
+    expect(screen.queryByRole('region', { name: 'Build the bible' })).toBeNull();
+  });
 });

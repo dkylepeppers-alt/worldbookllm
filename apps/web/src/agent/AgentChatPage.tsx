@@ -24,6 +24,7 @@ import { pendingQuestion } from './agent-turns.js';
 import { useDraftAppend } from './use-draft-append.js';
 import { AgentChatSettings } from './AgentChatSettings.js';
 import { DiffDialog, type DiffFile } from './DiffDialog.js';
+import { BuildBibleGuide } from './BuildBibleGuide.js';
 import { StoryCommandsPanel } from './StoryCommandsPanel.js';
 
 const WATCH_POLL_MS = 2000;
@@ -341,6 +342,7 @@ function AgentChatPage({ chatId }: { chatId: string }) {
           onAnswer={(content, callId) => runner.send(chatId, content, [], callId)}
         />
       )}
+      <BuildBibleGuide onAsk={draft.ask} />
       <StoryCommandsPanel onAsk={draft.ask} />
       <AgentComposer
         // A turn the server refused before it started gives its message back

@@ -134,7 +134,7 @@ test('M7 story workspace on a phone', async ({ page }) => {
       name: 'The Ferry.md',
       mimeType: 'text/markdown',
       buffer: Buffer.from(
-        '# Prologue\n\nThe storm came.\n\n# Chapter 1: Arrival\n\nMara Quill stepped off the ferry.\n',
+        '# Prologue\n\nThe storm came.\n\n# Chapter 1: Arrival\n\nMara Quill stepped off the ferry. Mara Quill waved. Mara Quill ran.\n',
       ),
     });
     const entries = page.getByRole('list', { name: 'Import entries' });
@@ -147,5 +147,11 @@ test('M7 story workspace on a phone', async ({ page }) => {
       'Created The Ferry with 2 chapters',
     );
     await expect(page.getByRole('link', { name: /Arrival/u })).toBeVisible();
+
+    await page.getByRole('link', { name: 'build the bible' }).click();
+    const guide = page.getByRole('region', { name: 'Build the bible' });
+    await expect(guide).toContainText('research/import-report.md');
+    await guide.getByRole('button', { name: 'Build the cast' }).click();
+    await expect(page.getByLabel('New chat')).toHaveValue(/Read research\/import-report\.md/u);
   });
 });
