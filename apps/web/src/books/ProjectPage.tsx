@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useApi } from '../api/useApi.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
+import { AddFilesSection } from './AddFilesSection.js';
 import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
 import { BuildsSection } from './BuildsSection.js';
@@ -26,7 +27,7 @@ function formatTime(value: string): string {
   }).format(new Date(value));
 }
 
-/** Book-level files, builds, change history with undo, and removing the book. */
+/** Book-level files, adding files, builds, change history with undo, and removing the book. */
 export function ProjectPage() {
   const api = useApi();
   const navigate = useNavigate();
@@ -107,6 +108,8 @@ export function ProjectPage() {
           <Link to={`/series/${tree.book.seriesId}`}>Series overview</Link>
         </p>
       )}
+
+      <AddFilesSection />
 
       {tree.book.kind === 'book' ? <BuildsSection /> : null}
 

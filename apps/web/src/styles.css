@@ -1062,6 +1062,76 @@ label {
   margin: 0;
 }
 
+.add-files-section {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.add-files-section .file-button {
+  justify-self: start;
+}
+
+.add-files-notes {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.add-files-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.add-files-list > li {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+  background: var(--surface);
+}
+
+.add-files-list label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.add-files-list .checkbox-label {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.add-files-list .checkbox-label input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+}
+
+.add-files-list summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.add-files-list textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.add-files-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
 .import-report {
   display: grid;
   grid-column: 1 / -1;

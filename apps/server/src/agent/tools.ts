@@ -27,6 +27,7 @@ import type { BookService } from '../services/books.js';
  * left out because their --ref/--against options name arbitrary paths.
  */
 const AGENT_STORY_COMMANDS: ReadonlySet<StoryCommandName> = new Set<StoryCommandName>([
+  'check',
   'validate',
   'reindex',
   'wordcount',
@@ -39,6 +40,9 @@ const AGENT_STORY_COMMANDS: ReadonlySet<StoryCommandName> = new Set<StoryCommand
   'prose',
   'diagram',
   'names',
+  'mentions',
+  'list',
+  'grid',
   'pacing',
   'clues',
   'voices',
@@ -51,6 +55,8 @@ const AGENT_STORY_COMMANDS: ReadonlySet<StoryCommandName> = new Set<StoryCommand
   'rename',
   'remove',
   'move',
+  'split',
+  'merge',
   'export',
   'build',
   'synopsis',

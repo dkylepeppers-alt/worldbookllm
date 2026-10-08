@@ -16,6 +16,7 @@ export const IMPORT_KIND_DIRECTORIES: Readonly<Record<BookImportKind, string>> =
   clue: 'continuity/clues',
   term: 'glossary/terms',
   matter: 'matter',
+  chapter: 'chapters',
 };
 
 export interface SplitMarkdown {
@@ -86,16 +87,121 @@ export function entityKindOf(frontmatter: Frontmatter): BookImportKind | null {
   return null;
 }
 
-/** The kind to suggest for a converted entry, and whether it is already an entity file. */
+/** A chapter heading or file name: `Chapter 3`, `CHAPTER ONE: Arrival`, `ch-02`, `Prologue`. */
+const CHAPTER_NAME =
+  /^(?:chapter|ch|kapitel|chapitre|cap[ií]tulo)\b|^ch[-_ ]?\d|^(?:prologue|epilogue|interlude|afterword)\b/iu;
+
+/** Folders whose files are notes about the book rather than its prose. */
+const NOTE_FOLDER =
+  /^(?:research|notes?|sources?|references?|bible|lore|world|worldbuilding|characters?|locations?|outlines?|plot|planning)$/iu;
+
+function fileName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
+}
+
+/** A file in story-skills' own chapter layout: frontmatter and a `## Chapter Text` section. */
+function isStoryChapterFile(markdown: string): boolean {
+  return /^---\n/u.test(markdown) && /^## Chapter Text[ \t]*$/mu.test(markdown);
+}
+
+/**
+ * The kind to suggest for a converted entry, and whether it is already an
+ * entity file. Story-skills entity frontmatter decides first. Otherwise a
+ * chapter-like title, file name, or story-skills chapter file suggests a
+ * chapter, unless the file sits in a notes folder (`research/`, `notes/`).
+ */
 export function suggestImportKind(
   markdown: string,
   format: SourcePreview['format'],
+  hint: { title?: string; path?: string } = {},
 ): { suggestedKind: BookImportKind; entityFile: boolean } {
   const { frontmatter } = parseFrontmatter(markdown);
   const kind = frontmatter ? entityKindOf(frontmatter) : null;
   if (kind) return { suggestedKind: kind, entityFile: true };
   if (format === 'character') return { suggestedKind: 'character', entityFile: false };
-  return { suggestedKind: 'research', entityFile: false };
+  const folders = hint.path?.split('/').slice(0, -1) ?? [];
+  if (folders.some((folder) => NOTE_FOLDER.test(folder))) {
+    return { suggestedKind: 'research', entityFile: false };
+  }
+  const chapterLike =
+    isStoryChapterFile(markdown) ||
+    CHAPTER_NAME.test(hint.title?.trim() ?? '') ||
+    CHAPTER_NAME.test(fileName(hint.path ?? '')) ||
+    folders.some((folder) => /^(?:chapters?|manuscript|drafts?)$/iu.test(folder));
+  return { suggestedKind: chapterLike ? 'chapter' : 'research', entityFile: false };
+}
+
+/**
+ * How a file from a zip with no `story.md` is filed when it becomes a new
+ * book: entity files and files in notes folders keep their suggested kind,
+ * and everything else is the manuscript, one chapter per file.
+ */
+export function archiveDocumentKind(path: string, markdown: string): BookImportKind {
+  const { suggestedKind, entityFile } = suggestImportKind(markdown, 'markdown', { path });
+  const inNotes = path
+    .split('/')
+    .slice(0, -1)
+    .some((folder) => NOTE_FOLDER.test(folder));
+  return entityFile || inNotes ? suggestedKind : 'chapter';
+}
+
+/**
+ * The title to give `story add chapter`, which numbers the chapter itself:
+ * `Chapter 3: The Harbor` becomes `The Harbor`. A bare `Chapter 3` keeps its
+ * text, since a chapter needs some title.
+ */
+export function chapterTitle(title: string): string {
+  const stripped = title
+    .replace(/^(?:chapter|ch\.?)\s+[\p{L}\p{N}.-]+\s*(?:[:.\-–—]\s*)?/iu, '')
+    .trim();
+  return stripped === '' ? title.trim() : stripped;
+}
+
+/**
+ * A chapter `story add chapter` created, given the imported prose under
+ * `## Chapter Text` (the section builds and exports read) and marked as a
+ * draft. A story-skills chapter file brings only its own chapter text; other
+ * frontmatter is kept visibly in a `## Imported Frontmatter` section outside
+ * the prose, so no imported text disappears and none leaks into the book.
+ */
+export function fillCreatedChapter(
+  created: string,
+  markdown: string,
+  title: string,
+  provenance: readonly string[],
+): string {
+  const { frontmatterText, body: template } = splitFrontmatter(created);
+  const heading = /^\s*(# .+)\n/u.exec(template)?.[1] ?? `# ${title}`;
+  const lines = mergeProvenance(
+    (frontmatterText ?? '').replace(/^status:.*$/mu, 'status: draft'),
+    provenance,
+  );
+  const imported = splitFrontmatter(markdown);
+  const chapterText = /^## Chapter Text[ \t]*\n([\s\S]*)$/mu.exec(imported.body);
+  const prose = chapterText
+    ? (chapterText[1] ?? '').trim()
+    : withoutChapterHeading(imported.body, title).trimEnd();
+  const parts = [heading];
+  if (imported.frontmatterText !== null && !chapterText) {
+    parts.push(`## Imported Frontmatter\n\n\`\`\`yaml\n${imported.frontmatterText}\n\`\`\``);
+  }
+  parts.push('## Chapter Text', prose === '' ? '' : prose);
+  return `---\n${lines.join('\n')}\n---\n\n${parts.join('\n\n').trimEnd()}\n`;
+}
+
+/** Drops a leading heading that names the chapter, since the chapter file has its own. */
+function withoutChapterHeading(body: string, title: string): string {
+  const trimmed = body.replace(/^\s+/u, '');
+  const match = /^#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*(?:\n|$)/u.exec(trimmed);
+  const heading = match?.[1]?.trim();
+  if (
+    match &&
+    heading !== undefined &&
+    (CHAPTER_NAME.test(heading) || chapterTitle(heading).toLowerCase() === title.toLowerCase())
+  ) {
+    return trimmed.slice(match[0].length).replace(/^\s+/u, '');
+  }
+  return withoutRepeatedTitle(trimmed, title);
 }
 
 /** A YAML double-quoted scalar the story CLI's parser reads back exactly. */

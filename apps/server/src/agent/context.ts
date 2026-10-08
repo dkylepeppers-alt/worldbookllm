@@ -1,11 +1,21 @@
 import type { ChatMessage } from '@worldbookllm/providers';
 
 /**
- * Keeps the agent's resent conversation small. Every step of a turn resends
- * the whole conversation, so bulk that the model no longer needs (file
- * contents from earlier turns, a file's older reads, text it already wrote)
- * is replaced with a short stub that says how to get it back.
+ * Keeps the agent's resent conversation within bounds without making it
+ * forget. Every step of a turn resends the whole conversation. Earlier turns
+ * are replayed verbatim while they fit a budget, so the agent still has what
+ * it read and wrote a message ago, and prompt caching bills the repeated
+ * prefix at the cached rate. Only once the history outgrows the budget are
+ * the oldest turns compacted: bulk the model can get back (file contents,
+ * skill text, text it wrote) becomes a short stub saying how (ADR 0025).
  */
+
+/**
+ * Earlier turns replay verbatim while they total at most this many
+ * characters of JSON (about 40k tokens), which leaves room for the system
+ * prompt, the turn in progress, and tools in a 128k-token context.
+ */
+const HISTORY_BUDGET_CHARS = 160_000;
 
 /** Earlier-turn results longer than this keep only their head. */
 const EARLIER_RESULT_MAX_CHARS = 2000;
@@ -105,9 +115,63 @@ function compactResult(call: ToolCallInfo | undefined, content: string): string 
   return `${content.slice(0, EARLIER_RESULT_HEAD_CHARS)}\n[… ${omitted} more characters from an earlier turn omitted; run the tool again if you need them.]`;
 }
 
+/** Finished turns: each starts at a user message and runs to the next one. */
+function splitTurns(messages: readonly ChatMessage[]): ChatMessage[][] {
+  const turns: ChatMessage[][] = [];
+  for (const message of messages) {
+    if (message.role === 'user' || turns.length === 0) turns.push([]);
+    turns.at(-1)!.push(message);
+  }
+  return turns;
+}
+
 /**
- * Compacts the replayed history of finished turns. The conversation, tool
- * calls, and short results stay as they were; bulk is stubbed.
+ * The first turn to replay verbatim. Turns before it are compacted.
+ *
+ * The boundary only ever moves to a mark, the first turn after each further
+ * half-budget of history. Marks depend only on earlier turns, which never
+ * change, so the boundary stays put while the history grows by up to half a
+ * budget at a time. Each move rewrites the cached prefix once, instead of on
+ * every turn once the history is full. The latest earlier turn always stays
+ * verbatim, whatever its size.
+ */
+function verbatimFrom(sizes: readonly number[], budget: number): number {
+  let remaining = sizes.reduce((sum, size) => sum + size, 0);
+  if (remaining <= budget) return 0;
+  const step = budget / 2;
+  let cumulative = 0;
+  let nextMark = step;
+  for (const [index, size] of sizes.entries()) {
+    if (cumulative >= nextMark) {
+      while (cumulative >= nextMark) nextMark += step;
+      if (remaining <= budget) return index;
+    }
+    cumulative += size;
+    remaining -= size;
+  }
+  return Math.max(0, sizes.length - 1);
+}
+
+/**
+ * Fits the replayed history of finished turns into `budget` characters: the
+ * most recent turns stay verbatim and the oldest are compacted, as little
+ * and as rarely as the budget allows.
+ */
+export function fitEarlierTurns(
+  messages: readonly ChatMessage[],
+  budget: number = HISTORY_BUDGET_CHARS,
+): ChatMessage[] {
+  const turns = splitTurns(messages);
+  const from = verbatimFrom(
+    turns.map((turn) => JSON.stringify(turn).length),
+    budget,
+  );
+  return [...compactEarlierTurns(turns.slice(0, from).flat()), ...turns.slice(from).flat()];
+}
+
+/**
+ * Compacts the replayed history of old turns. The conversation, tool calls,
+ * and short results stay as they were; bulk is stubbed.
  */
 export function compactEarlierTurns(messages: readonly ChatMessage[]): ChatMessage[] {
   const calls = callsById(messages);

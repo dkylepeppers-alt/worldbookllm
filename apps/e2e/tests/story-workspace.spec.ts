@@ -115,7 +115,7 @@ test('M7 story workspace on a phone', async ({ page }) => {
       });
     }
     await page.goto('/books');
-    await page.getByLabel(/Import a manuscript or project/u).setInputFiles({
+    await page.getByLabel(/Import a manuscript, a project/u).setInputFiles({
       name: 'salt-road-backup.zip',
       mimeType: 'application/zip',
       buffer: makeZip(entries),

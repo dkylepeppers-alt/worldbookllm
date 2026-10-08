@@ -337,7 +337,7 @@ describe('project zip import', () => {
   });
 
   it('rejects archives that are not a usable project and leaves nothing behind', async () => {
-    const notProject = await upload('notes.zip', makeZip([{ name: 'notes.md', data: '# Notes' }]));
+    const notProject = await upload('cover.zip', makeZip([{ name: 'cover.png', data: 'png' }]));
     expect(notProject.statusCode).toBe(400);
     expect(notProject.json()).toMatchObject({ error: 'invalid_import' });
 
@@ -378,5 +378,213 @@ describe('project zip import', () => {
     expect(result.output).toMatch(
       /story validate found \d+ errors? and \d+ warnings?; see the Health tab/u,
     );
+  });
+
+  it('builds a book from a zip of chapters and notes with no story.md', async () => {
+    const response = await upload(
+      'The Lost Coast.zip',
+      makeZip([
+        { name: 'draft/chapter-10.md', data: '# Chapter 10: Landfall\n\nThe boat struck sand.\n' },
+        { name: 'draft/chapter-2.md', data: '# Chapter 2\n\nFog over the harbor.\n' },
+        { name: 'draft/prologue.txt', data: 'Before the storm.\n' },
+        { name: 'draft/notes/tides.md', data: '# Tide tables\n\nSpring tides run high.\n' },
+        { name: 'draft/cover.png', data: 'png' },
+      ]),
+    );
+    expect(response.statusCode).toBe(201);
+    const result = response.json<ManuscriptImportResult>();
+    expect(result.book).toMatchObject({ slug: 'the-lost-coast', title: 'The Lost Coast' });
+    expect(result.output).toContain('Imported 3 chapters');
+    expect(result.output).toContain('research/tide-tables.md');
+    expect(result.output).toContain('draft/cover.png (not a supported document type)');
+    expect(result.output).not.toContain(tmpdir());
+
+    const root = join(dataDir, 'projects/the-lost-coast');
+    const chapters = ['chapter-01.md', 'chapter-02.md', 'chapter-03.md'].map((name) =>
+      readFileSync(join(root, 'chapters', name), 'utf8'),
+    );
+    expect(chapters[0]).toContain('Before the storm.');
+    expect(chapters[1]).toContain('Fog over the harbor.');
+    expect(chapters[2]).toContain('The boat struck sand.');
+    const note = readFileSync(join(root, 'research/tide-tables.md'), 'utf8');
+    expect(note).toContain('Spring tides run high.');
+    expect(note).toContain('origin-file: "The Lost Coast.zip: draft/notes/tides.md"');
+  });
+
+  it('starts an empty book when a zip without story.md holds only notes', async () => {
+    const response = await upload(
+      'Lore.zip',
+      makeZip([{ name: 'research/salt.md', data: '# Salt trade\n\nCaravans.\n' }]),
+    );
+    expect(response.statusCode).toBe(201);
+    const result = response.json<ManuscriptImportResult>();
+    expect(result.book.slug).toBe('lore');
+    expect(readFileSync(join(dataDir, 'projects/lore/research/salt-trade.md'), 'utf8')).toContain(
+      'Caravans.',
+    );
+  });
+});
+
+describe('adding files to an existing book', () => {
+  async function preview(fileName: string, body: string | Buffer) {
+    return app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/previews/file`,
+      ...multipartUpload(fileName, body),
+    });
+  }
+
+  it('suggests a chapter for a chapter file and appends it after the last chapter', async () => {
+    const first = await preview('chapter-1.md', '# Chapter 1: Arrival\n\nThe ferry docked.\n');
+    expect(first.json<BookImportPreview>().entries[0]).toMatchObject({
+      title: 'Chapter 1: Arrival',
+      suggestedKind: 'chapter',
+      entityFile: false,
+    });
+    const notes = await preview('harbor-notes.md', '# Harbor notes\n\nDepths.\n');
+    expect(notes.json<BookImportPreview>().entries[0]?.suggestedKind).toBe('research');
+
+    const imported = await importEntries([
+      {
+        title: 'Chapter 1: Arrival',
+        markdown: '# Chapter 1: Arrival\n\nThe ferry docked.\n',
+        kind: 'chapter',
+      },
+      { title: 'The Lighthouse', markdown: 'The lamp was dark.\n', kind: 'chapter' },
+    ]);
+    expect(imported.statusCode).toBe(201);
+    expect(imported.json<BookImportResult>().files).toEqual([
+      'chapters/chapter-01.md',
+      'chapters/chapter-02.md',
+    ]);
+    const chapter = bookFile('chapters/chapter-01.md');
+    expect(chapter).toMatch(/^title: Arrival$/mu);
+    expect(chapter).toMatch(/^status: draft$/mu);
+    expect(chapter).toContain('# Chapter 1: Arrival\n\n## Chapter Text\n\nThe ferry docked.');
+    expect(chapter).not.toContain('## Outline');
+    expect(bookFile('chapters/chapter-02.md')).toMatch(/^word-count: 4$/mu);
+    expect((await validate()).ok).toBe(true);
+
+    await importEntries([{ title: 'Epilogue', markdown: 'Gulls.\n', kind: 'chapter' }]);
+    expect(bookFile('chapters/chapter-03.md')).toContain('Gulls.');
+  });
+
+  it('previews a zip of files with an origin per file, and refuses a whole project', async () => {
+    const response = await preview(
+      'more.zip',
+      makeZip([
+        { name: 'chapters/ch-2.md', data: 'Second.\n' },
+        { name: 'chapters/ch-10.md', data: 'Tenth.\n' },
+        { name: 'research/ships.md', data: '# Ships\n\nSloops.\n' },
+      ]),
+    );
+    expect(response.statusCode).toBe(200);
+    const result = response.json<BookImportPreview>();
+    expect(result.origin).toEqual({
+      type: 'file',
+      fileName: 'more.zip',
+      mediaType: 'application/zip',
+    });
+    expect(result.entries.map((entry) => [entry.suggestedKind, entry.origin])).toEqual([
+      [
+        'chapter',
+        { type: 'file', fileName: 'more.zip: chapters/ch-2.md', mediaType: 'text/markdown' },
+      ],
+      [
+        'chapter',
+        { type: 'file', fileName: 'more.zip: chapters/ch-10.md', mediaType: 'text/markdown' },
+      ],
+      [
+        'research',
+        { type: 'file', fileName: 'more.zip: research/ships.md', mediaType: 'text/markdown' },
+      ],
+    ]);
+
+    const project = await preview(
+      'book.zip',
+      makeZip([{ name: 'story.md', data: '---\ntitle: X\n---\n' }]),
+    );
+    expect(project.statusCode).toBe(400);
+    expect(project.json<{ message: string }>().message).toContain('whole story project');
+  });
+
+  it('keeps every chapter when files in different folders share a name', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/books/import',
+      ...multipartUpload(
+        'Parts.zip',
+        makeZip([
+          { name: 'a/b/ch.md', data: 'First part.\n' },
+          { name: 'a-b/ch.md', data: 'Second part.\n' },
+        ]),
+      ),
+    });
+    expect(response.statusCode).toBe(201);
+    const root = join(dataDir, 'projects/parts/chapters');
+    expect(readFileSync(join(root, 'chapter-01.md'), 'utf8')).toContain('Second part.');
+    expect(readFileSync(join(root, 'chapter-02.md'), 'utf8')).toContain('First part.');
+  });
+
+  it('previews HTML in a zip with its converter notes, and keeps each file named', async () => {
+    const zipName = `${'z'.repeat(250)}.zip`;
+    const response = await preview(
+      zipName,
+      makeZip([
+        { name: 'web/page.html', data: '<html><body><h1>Docks</h1><p>Cranes.</p></body></html>' },
+        { name: 'web/other.md', data: 'Other.\n' },
+      ]),
+    );
+    expect(response.statusCode).toBe(200);
+    const entries = response.json<BookImportPreview>().entries;
+    expect(entries.map((entry) => entry.origin)).toEqual([
+      {
+        type: 'file',
+        fileName: expect.stringMatching(/…: web\/other\.md$/u),
+        mediaType: 'text/markdown',
+      },
+      {
+        type: 'file',
+        fileName: expect.stringMatching(/…: web\/page\.html$/u),
+        mediaType: 'text/html',
+      },
+    ]);
+    expect(entries[1]?.markdown).toContain('Cranes.');
+    expect(
+      entries.every((entry) => (entry.origin as { fileName: string }).fileName.length <= 255),
+    ).toBe(true);
+
+    const imported = await importEntries([
+      {
+        title: 'Docks',
+        markdown: '# Docks\n\nCranes.\n',
+        kind: 'research',
+        origin: { type: 'file', fileName: 'docks.html', mediaType: 'text/html' },
+        conversionNotes: ['Removed 2 scripts.'],
+      },
+    ]);
+    expect(imported.statusCode).toBe(201);
+    const note = bookFile(imported.json<BookImportResult>().files[0]!);
+    expect(note).toContain('origin-file: "docks.html"');
+    expect(note).toContain('  - "Removed 2 scripts."');
+  });
+
+  it('refuses chapters in a series bible', async () => {
+    const series = await app.inject({
+      method: 'POST',
+      url: '/api/series',
+      payload: { title: 'Tides' },
+    });
+    const bible = series.json<BookSummary>().slug;
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/books/${bible}/imports`,
+      payload: {
+        origin: { type: 'paste' },
+        entries: [{ title: 'One', markdown: 'Text.', kind: 'chapter' }],
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ message: string }>().message).toContain('series bible');
   });
 });
