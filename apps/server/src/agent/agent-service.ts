@@ -33,7 +33,7 @@ import type { CheckpointSession } from '../story/checkpoints.js';
 import { SeriesService } from '../story/series.js';
 import type { StagedBook } from '../story/staging.js';
 import type { AgentChangesetService } from './changesets.js';
-import { compactEarlierTurns, supersedeRepeatedReads } from './context.js';
+import { fitEarlierTurns, supersedeRepeatedReads } from './context.js';
 import type { CustomAgentService } from './custom-agents.js';
 import type { AgentToolRegistry, ToolContext } from './tools.js';
 import { LiveWorkspace, type AgentWorkspace } from './workspace.js';
@@ -710,7 +710,7 @@ export class AgentService {
             reviewMode: prepared.reviewMode,
           }),
         },
-        ...compactEarlierTurns(historyMessages(prepared.history)),
+        ...fitEarlierTurns(historyMessages(prepared.history)),
         { role: 'user', content: userText(prepared.userContent, prepared.note) },
       ];
 

@@ -1,6 +1,6 @@
 # ADR 0023 — The agent resends less, and caches what it resends
 
-**Status:** accepted · 2026-10-02 · builds on ADR 0015
+**Status:** accepted · 2026-10-02 · builds on ADR 0015 · decision 1 amended by ADR 0025
 
 ## Context
 

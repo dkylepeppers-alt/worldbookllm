@@ -1,7 +1,7 @@
 import type { ChatMessage } from '@worldbookllm/providers';
 import { describe, expect, it } from 'vitest';
 
-import { compactEarlierTurns, supersedeRepeatedReads } from './context.js';
+import { compactEarlierTurns, fitEarlierTurns, supersedeRepeatedReads } from './context.js';
 
 let nextId = 0;
 function call(name: string, args: Record<string, unknown>, result: string): ChatMessage[] {
@@ -21,6 +21,56 @@ function read(path: string, content: string, hash = 'a'.repeat(64)): ChatMessage
 const big = 'x'.repeat(30_000);
 const args = (message: ChatMessage | undefined) =>
   JSON.parse(String(message!.tool_calls![0]!.function.arguments)) as Record<string, string>;
+
+function turn(index: number, size: number): ChatMessage[] {
+  return [
+    { role: 'user', content: `Turn ${index}` },
+    ...read(`chapters/chapter-${index}.md`, 'y'.repeat(size)),
+    { role: 'assistant', content: `Done ${index}.` },
+  ];
+}
+const isStubbed = (messages: ChatMessage[], index: number) =>
+  messages.some(
+    (message) =>
+      message.role === 'tool' &&
+      String(message.content).startsWith(`[chapters/chapter-${index}.md: read in an earlier turn`),
+  );
+
+describe('fitEarlierTurns', () => {
+  it('replays earlier turns verbatim while they fit the budget', () => {
+    const history = [...turn(1, 5_000), ...turn(2, 5_000)];
+    expect(fitEarlierTurns(history, 50_000)).toEqual(history);
+  });
+
+  it('compacts the oldest turns once the history outgrows the budget', () => {
+    const history = Array.from({ length: 8 }, (_, index) => turn(index + 1, 10_000)).flat();
+    const fitted = fitEarlierTurns(history, 40_000);
+    expect(JSON.stringify(fitted).length).toBeLessThan(45_000);
+    expect(isStubbed(fitted, 1)).toBe(true);
+    expect(isStubbed(fitted, 8)).toBe(false);
+    expect(isStubbed(fitted, 7)).toBe(false);
+    expect(fitted.filter((message) => message.role === 'user')).toHaveLength(8);
+  });
+
+  it('moves the boundary in half-budget steps, so the cached prefix rarely changes', () => {
+    const turns = Array.from({ length: 12 }, (_, index) => turn(index + 1, 4_000));
+    const boundaries = turns.map((_, count) => {
+      const fitted = fitEarlierTurns(turns.slice(0, count + 1).flat(), 40_000);
+      return turns.slice(0, count + 1).filter((_turn, index) => isStubbed(fitted, index + 1))
+        .length;
+    });
+    // Monotonic, and it jumps a few turns at a time instead of one per turn.
+    expect(boundaries).toEqual([...boundaries].sort((a, b) => a - b));
+    expect(new Set(boundaries).size).toBeLessThan(boundaries.filter((b) => b > 0).length);
+    expect(boundaries[0]).toBe(0);
+  });
+
+  it('keeps the latest earlier turn verbatim even when it alone is over budget', () => {
+    const fitted = fitEarlierTurns([...turn(1, 30_000), ...turn(2, 30_000)], 20_000);
+    expect(isStubbed(fitted, 1)).toBe(true);
+    expect(isStubbed(fitted, 2)).toBe(false);
+  });
+});
 
 describe('compactEarlierTurns', () => {
   it('replaces earlier file reads and skill loads with stubs that say how to get them back', () => {

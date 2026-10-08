@@ -492,7 +492,7 @@ describe('agent turns', () => {
     expect(JSON.stringify(followup)).toContain('characters');
   });
 
-  it('sends a file once per turn and only a stub of it in later turns', async () => {
+  it('sends a file once per request, and still has it in the next turn', async () => {
     const { app, book, chat, requests } = await boot([
       () => sse(toolCall('read_1', 'read_file', { path: 'notes/big.md' })),
       () => sse(toolCall('read_2', 'read_file', { path: 'notes/big.md' })),
@@ -513,11 +513,9 @@ describe('agent turns', () => {
         payload: { content },
       });
     }
-    expect(requests.map(copies)).toEqual([0, 1, 1, 0]);
+    expect(requests.map(copies)).toEqual([0, 1, 1, 1]);
     expect(JSON.stringify(requests[2]?.messages)).toContain('superseded by a later read_file');
-    expect(JSON.stringify(requests[3]?.messages)).toContain(
-      'notes/big.md: read in an earlier turn',
-    );
+    expect(JSON.stringify(requests[3]?.messages)).not.toContain('read in an earlier turn');
   }, 30_000);
 
   it('refuses Gemma 3 on Google sources before recording a turn', async () => {
