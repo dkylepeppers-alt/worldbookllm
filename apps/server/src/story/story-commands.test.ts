@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -19,9 +20,9 @@ interface UpstreamOption {
 }
 
 async function loadUpstream(): Promise<{ commands: UpstreamCommand[]; options: UpstreamOption[] }> {
-  const require = createRequire(import.meta.url);
-  const commandsUrl = pathToFileURL(require.resolve('story-skills/src/commands.js')).href;
-  const optionsUrl = pathToFileURL(require.resolve('story-skills/src/options.js')).href;
+  const root = dirname(createRequire(import.meta.url).resolve('story-skills/package.json'));
+  const commandsUrl = pathToFileURL(join(root, 'src', 'commands.js')).href;
+  const optionsUrl = pathToFileURL(join(root, 'src', 'options.js')).href;
   const commandsModule = (await import(commandsUrl)) as { COMMANDS: UpstreamCommand[] };
   const optionsModule = (await import(optionsUrl)) as { OPTIONS: UpstreamOption[] };
   return { commands: commandsModule.COMMANDS, options: optionsModule.OPTIONS };

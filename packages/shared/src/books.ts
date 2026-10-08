@@ -380,7 +380,7 @@ export const manuscriptImportResultSchema = z.strictObject({
   output: z.string(),
 });
 
-/** `story build --format` values (story-skills 0.18.0). */
+/** `story build --format` values (story-skills 0.23.0). `codex` writes a folder, not a file, so it is left out. */
 export const BOOK_BUILD_FORMATS = [
   'markdown',
   'epub',

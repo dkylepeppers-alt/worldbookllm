@@ -98,7 +98,7 @@ M7 replaces notebooks with [story-skills](https://github.com/danjdewhurst/story-
 
 Series live under `data/series/<id>/`: books are sibling projects and `series-bible/` holds shared canon (ADR 0018). Every project keeps its globally unique slug; the bible uses the series id. `BookFileStore` resolves each slug to its current folder, so converting or detaching a book preserves its indexed files, chats, and history. The library reports duplicate on-disk slugs rather than opening a later copy.
 
-`SeriesService` reads membership from those folders and compares entity copies by kind and id. `series-fields.ts` pins the identity/book-local boundary to story-skills 0.18.0; unknown frontmatter and unnamed sections remain local. The Series overview combines identity drift with `story series` and each project's `story links` result.
+`SeriesService` reads membership from those folders and compares entity copies by kind and id. `series-fields.ts` pins the identity/book-local boundary to story-skills 0.23.0; unknown frontmatter and unnamed sections remain local. The Series overview combines identity drift with `story series` and each project's `story links` result.
 
 Push and pull copy only identity fields. Carry creates a missing copy with fresh local defaults; seed adds missing bible entries from a book without replacing existing canon. A sync acquires the normal book locks in slug order, snapshots every changed book, runs `reindex` and `validate`, then records one checkpoint per changed book with a shared label. A failure restores every touched book, including its registries, and records no sync checkpoints. Undo remains per book, from Project history.
 

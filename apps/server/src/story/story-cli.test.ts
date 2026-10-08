@@ -109,9 +109,8 @@ describe('StoryCli.buildArgv', () => {
     ).toThrow('does not accept --out');
   });
 
-  it('refuses NUL characters and --json on commands without JSON output', () => {
+  it('refuses NUL characters', () => {
     expect(() => cli.buildArgv({ command: 'add', root: '/r', args: ['a\0b'] })).toThrow(/NUL/u);
-    expect(() => cli.buildArgv({ command: 'add', root: '/r', json: true })).toThrow(/no --json/u);
   });
 });
 

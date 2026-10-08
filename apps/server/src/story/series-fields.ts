@@ -4,7 +4,7 @@ import matter from 'gray-matter';
 import { parseFrontmatter } from './book-index.js';
 
 /** ADR 0018's canon boundary, pinned to the schema/templates shipped by story-skills. */
-export const SERIES_FIELDS_VERSION = '0.18.0';
+export const SERIES_FIELDS_VERSION = '0.23.0';
 
 interface SeriesFieldMap {
   identity: readonly string[];

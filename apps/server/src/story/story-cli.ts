@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { isAbsolute } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 
 import { storyEnvelopeSchema, type StoryEnvelope, type StoryOptions } from '@worldbookllm/shared';
 
@@ -39,8 +39,10 @@ export interface StoryRunResult {
   envelope: StoryEnvelope | null;
 }
 
+/** The package exports only package.json and schemas, so the bin is found beside package.json. */
 function resolveStoryBin(): string {
-  return createRequire(import.meta.url).resolve('story-skills/bin/story.js');
+  const packageJson = createRequire(import.meta.url).resolve('story-skills/package.json');
+  return join(dirname(packageJson), 'bin', 'story.js');
 }
 
 function assertNoNul(value: string, what: string): void {

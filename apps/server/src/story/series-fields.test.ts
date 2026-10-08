@@ -66,7 +66,7 @@ describe('series identity contract', () => {
     ) as {
       version: string;
     };
-    expect(SERIES_FIELDS_VERSION).toBe('0.18.0');
+    expect(SERIES_FIELDS_VERSION).toBe('0.23.0');
     expect(upstream.version).toBe(SERIES_FIELDS_VERSION);
     expect(Object.keys(SERIES_FIELDS)).toEqual([
       'character',

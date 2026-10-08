@@ -1145,11 +1145,14 @@ const WRITING_COMMANDS = new Set<string>([
   'rename',
   'move',
   'remove',
+  'split',
+  'merge',
   'reindex',
   'export',
   'build',
 ]);
 const WRITING_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  doctor: ['fix'],
   passes: ['init', 'start', 'done'],
   wordcount: ['write'],
   progress: ['log'],
