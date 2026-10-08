@@ -15,7 +15,7 @@ import type { ChatMessage } from '@worldbookllm/providers';
  * characters of JSON (about 40k tokens), which leaves room for the system
  * prompt, the turn in progress, and tools in a 128k-token context.
  */
-export const HISTORY_BUDGET_CHARS = 160_000;
+const HISTORY_BUDGET_CHARS = 160_000;
 
 /** Earlier-turn results longer than this keep only their head. */
 const EARLIER_RESULT_MAX_CHARS = 2000;
