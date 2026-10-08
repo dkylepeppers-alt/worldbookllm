@@ -17,6 +17,8 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     addSeriesBook: unused,
     moveBookToSeries: unused,
     importManuscript: unused,
+    previewNewBook: unused,
+    createImportedBook: unused,
     previewBookImport: unused,
     importBookEntries: unused,
     trashBook: unused,

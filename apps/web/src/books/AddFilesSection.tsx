@@ -1,41 +1,19 @@
-import {
-  BOOK_IMPORT_KINDS,
-  type BookImportKind,
-  type BookImportPreview,
-  type SourceOrigin,
-} from '@worldbookllm/shared';
+import type { BookImportPreview } from '@worldbookllm/shared';
 import { type ChangeEvent, useState } from 'react';
 
 import { useApi } from '../api/useApi.js';
 import { useBook } from './book-context.js';
-import { KIND_LABELS } from './book-sections.js';
+import {
+  type ChapterSlot,
+  type DraftEntry,
+  IMPORT_ACCEPT,
+  IMPORT_KINDS,
+  draftsFromPreview,
+  keptEntries,
+  previewNotes,
+} from './import-review.js';
+import { ImportReviewList } from './ImportReviewList.js';
 import { errorMessage } from './useLoad.js';
-
-/** Chapters first: adding manuscript files is the common case. */
-const KINDS: readonly BookImportKind[] = [
-  'chapter',
-  ...BOOK_IMPORT_KINDS.filter((kind) => kind !== 'chapter'),
-];
-
-const ACCEPT =
-  '.md,.markdown,.txt,.html,.htm,.pdf,.json,.zip,text/markdown,text/plain,text/html,application/pdf,application/json,application/zip';
-
-interface DraftEntry {
-  key: string;
-  include: boolean;
-  title: string;
-  kind: BookImportKind;
-  markdown: string;
-  origin: SourceOrigin;
-  /** The converter's notes for this entry's file, recorded as its provenance. */
-  conversionNotes: string[];
-  /** Where the entry came from, as shown in the list. */
-  source: string;
-}
-
-function sourceLabel(origin: SourceOrigin, fallback: string): string {
-  return origin.type === 'file' ? origin.fileName : fallback;
-}
 
 /**
  * Adds files to the book: Markdown, text, HTML, PDF, lorebooks, or a zip of
@@ -46,7 +24,16 @@ export function AddFilesSection() {
   const api = useApi();
   const { slug, tree, reload } = useBook();
   // A series bible holds shared canon, never chapters.
-  const kinds = tree.book.kind === 'book' ? KINDS : KINDS.filter((kind) => kind !== 'chapter');
+  const kinds =
+    tree.book.kind === 'book' ? IMPORT_KINDS : IMPORT_KINDS.filter((kind) => kind !== 'chapter');
+  const chapters: ChapterSlot[] = tree.files
+    .flatMap((file) => {
+      const number = /^chapter-(\d+)$/u.exec(file.entityId ?? '')?.[1];
+      return file.kind === 'chapter' && number !== undefined
+        ? [{ number: Number(number), title: file.title }]
+        : [];
+    })
+    .sort((left, right) => left.number - right.number);
   const [entries, setEntries] = useState<DraftEntry[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
   const [busy, setBusy] = useState<'reading' | 'adding' | null>(null);
@@ -71,36 +58,13 @@ export function AddFilesSection() {
         failed.push(`${file.name}: ${errorMessage(caught)}`);
         continue;
       }
-      readNotes.push(...preview.conversionNotes.map((note) => `${file.name}: ${note}`));
-      preview.entries.forEach((entry, index) => {
-        const origin = entry.origin ?? preview.origin;
-        for (const note of entry.conversionNotes ?? []) {
-          readNotes.push(`${sourceLabel(origin, file.name)}: ${note}`);
-        }
-        const suggested = kinds.includes(entry.suggestedKind) ? entry.suggestedKind : 'research';
-        read.push({
-          key: `${file.name}:${index}:${entries.length + read.length}`,
-          include: true,
-          title: entry.title,
-          kind: suggested,
-          markdown: entry.markdown,
-          origin,
-          // A zip's entries carry their own file's notes; its top-level notes list skipped files.
-          conversionNotes: entry.conversionNotes ?? (entry.origin ? [] : preview.conversionNotes),
-          source: sourceLabel(origin, file.name),
-        });
-      });
+      readNotes.push(...previewNotes(preview, file.name));
+      read.push(...draftsFromPreview(preview, file.name, kinds));
     }
     setEntries((current) => [...current, ...read]);
     setNotes((current) => [...current, ...readNotes]);
     if (failed.length > 0) setError(failed.join('\n'));
     setBusy(null);
-  }
-
-  function update(key: string, change: Partial<DraftEntry>) {
-    setEntries((current) =>
-      current.map((entry) => (entry.key === key ? { ...entry, ...change } : entry)),
-    );
   }
 
   function clear() {
@@ -124,13 +88,7 @@ export function AddFilesSection() {
       const imported = await api.importBookEntries(slug, {
         origin: first.origin,
         conversionNotes: [],
-        entries: kept.map((entry) => ({
-          title: entry.title.trim(),
-          markdown: entry.markdown,
-          kind: entry.kind,
-          origin: entry.origin,
-          conversionNotes: entry.conversionNotes,
-        })),
+        entries: keptEntries(entries),
       });
       const findings = imported.validation?.diagnostics.length ?? 0;
       setResult(
@@ -150,16 +108,17 @@ export function AddFilesSection() {
     <section className="add-files-section" aria-labelledby="add-files-heading">
       <h3 id="add-files-heading">Add files</h3>
       <p>
-        Add chapters, notes, or bible entries from Markdown, text, HTML, PDF, or a zip of them.
-        Review each one before it is written; the whole addition is one change you can undo.
-        Chapters go after the book's last chapter.
+        Add chapters, notes, or bible entries from Markdown, text, HTML, PDF, or a zip of them. A
+        file with several chapter headings is split into chapters. Review each entry, and place
+        chapters at the end, before a chapter, or in place of a chapter's text; the whole addition
+        is one change you can undo.
       </p>
       <label className="button-secondary file-button">
         {busy === 'reading' ? 'Reading…' : 'Choose files'}
         <input
           type="file"
           multiple
-          accept={ACCEPT}
+          accept={IMPORT_ACCEPT}
           disabled={busy !== null}
           onChange={(event) => void choose(event)}
         />
@@ -185,56 +144,13 @@ export function AddFilesSection() {
               ))}
             </ul>
           )}
-          <ol className="add-files-list" aria-label="Files to add">
-            {entries.map((entry) => (
-              <li key={entry.key}>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={entry.include}
-                    onChange={(event) => update(entry.key, { include: event.target.checked })}
-                  />
-                  Add
-                </label>
-                <label>
-                  Title
-                  <input
-                    value={entry.title}
-                    maxLength={200}
-                    disabled={!entry.include}
-                    onChange={(event) => update(entry.key, { title: event.target.value })}
-                  />
-                </label>
-                <label>
-                  As
-                  <select
-                    value={entry.kind}
-                    disabled={!entry.include}
-                    onChange={(event) =>
-                      update(entry.key, { kind: event.target.value as BookImportKind })
-                    }
-                  >
-                    {kinds.map((kind) => (
-                      <option key={kind} value={kind}>
-                        {KIND_LABELS[kind] ?? kind}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <span className="coordinate-label">{entry.source}</span>
-                <details>
-                  <summary>Review text</summary>
-                  <textarea
-                    aria-label={`Text of ${entry.title}`}
-                    value={entry.markdown}
-                    rows={10}
-                    disabled={!entry.include}
-                    onChange={(event) => update(entry.key, { markdown: event.target.value })}
-                  />
-                </details>
-              </li>
-            ))}
-          </ol>
+          <ImportReviewList
+            label="Files to add"
+            entries={entries}
+            onChange={setEntries}
+            kinds={kinds}
+            chapters={chapters}
+          />
           <div className="add-files-actions">
             <button
               type="button"

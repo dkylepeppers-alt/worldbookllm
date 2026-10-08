@@ -1,6 +1,6 @@
 # ADR 0024 — Zips without story.md, and adding files to an existing book
 
-**Status:** accepted · 2026-10-08 · amends ADR 0020, builds on ADR 0014 decision 5
+**Status:** accepted · 2026-10-08 · amends ADR 0020, builds on ADR 0014 decision 5 · decision 1 superseded by ADR 0026
 
 ## Context
 

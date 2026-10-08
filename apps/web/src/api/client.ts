@@ -15,6 +15,7 @@ import {
   bookFileSchema,
   bookImportPreviewSchema,
   bookImportResultSchema,
+  newBookImportPreviewSchema,
   bookSearchResultSchema,
   bookSummarySchema,
   bookTreeSchema,
@@ -70,6 +71,8 @@ import {
   type BookImportResult,
   type CreateBookBuildInput,
   type CreateBookImportInput,
+  type CreateImportedBookInput,
+  type NewBookImportPreview,
   type CreateBookInput,
   type CreateSeriesInput,
   type MoveBookToSeriesInput,
@@ -135,7 +138,19 @@ export interface ApiClient {
     input: MoveBookToSeriesInput,
     signal?: AbortSignal,
   ): Promise<BookSummary>;
+  /** Imports a zipped story-skills project whole (ADR 0020). */
   importManuscript(file: File, signal?: AbortSignal): Promise<ManuscriptImportResult>;
+  /** Reads an upload for a new book without writing anything (ADR 0026). */
+  previewNewBook(
+    file: File,
+    language?: string,
+    signal?: AbortSignal,
+  ): Promise<NewBookImportPreview>;
+  /** Creates a book from a reviewed import. */
+  createImportedBook(
+    input: CreateImportedBookInput,
+    signal?: AbortSignal,
+  ): Promise<ManuscriptImportResult>;
   previewBookImport(slug: string, file: File, signal?: AbortSignal): Promise<BookImportPreview>;
   importBookEntries(
     slug: string,
@@ -386,6 +401,24 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         signal,
       });
     },
+    previewNewBook: (file, language, signal) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const search = language ? `?${new URLSearchParams({ language }).toString()}` : '';
+      return request(`/api/books/import/preview${search}`, {
+        method: 'POST',
+        formData,
+        schema: newBookImportPreviewSchema,
+        signal,
+      });
+    },
+    createImportedBook: (input, signal) =>
+      request('/api/books/import/create', {
+        method: 'POST',
+        body: input,
+        schema: manuscriptImportResultSchema,
+        signal,
+      }),
     previewBookImport: (slug, file, signal) => {
       const formData = new FormData();
       formData.append('file', file);

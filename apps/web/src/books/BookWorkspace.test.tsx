@@ -620,6 +620,8 @@ describe('builds and project import', () => {
       'cover.png',
     );
     await user.click(within(list).getAllByLabelText('Add')[1]!);
+    // The book's chapter 1 is Arrival; the new chapter goes before it.
+    await user.selectOptions(within(list).getByLabelText('Place'), 'before:1');
     await user.click(screen.getByRole('button', { name: 'Add 1 entry to the book' }));
 
     expect(importBookEntries).toHaveBeenCalledWith('the-salt-road', {
@@ -632,6 +634,7 @@ describe('builds and project import', () => {
           kind: 'chapter',
           origin: { ...zipOrigin, fileName: 'more.zip: ch-2.md', mediaType: 'text/markdown' },
           conversionNotes: [],
+          placement: { at: 'before', chapter: 1 },
         },
       ],
     });
@@ -642,6 +645,9 @@ describe('builds and project import', () => {
   });
 
   it('opens an imported project with its import report', async () => {
+    const previewNewBook = vi.fn(() =>
+      Promise.resolve({ kind: 'project' as const, title: 'The Salt Road', files: 7, skipped: [] }),
+    );
     const importManuscript = vi.fn(() =>
       Promise.resolve({
         book,
@@ -649,13 +655,14 @@ describe('builds and project import', () => {
           'Imported 7 files from salt.zip.\nSkipped 1:\n- notes.docx (not a project file type)',
       }),
     );
-    renderAt('/books', { importManuscript });
+    renderAt('/books', { previewNewBook, importManuscript });
     const user = userEvent.setup();
     const input = await screen.findByLabelText(/Import a manuscript, a project/u);
     await user.upload(
       input,
       new File([new Uint8Array([0x50, 0x4b])], 'salt.zip', { type: 'application/zip' }),
     );
+    await user.click(await screen.findByRole('button', { name: 'Import the project' }));
 
     expect(importManuscript).toHaveBeenCalled();
     const report = await screen.findByRole('status', { name: 'Import report' });
@@ -663,6 +670,90 @@ describe('builds and project import', () => {
     expect(screen.getByTestId('location').textContent).toBe('/books/the-salt-road/write');
     await user.click(within(report).getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByRole('status', { name: 'Import report' })).toBeNull();
+  });
+
+  it('reviews a manuscript as a new book before creating it', async () => {
+    const origin = { type: 'file' as const, fileName: 'Salt.md', mediaType: 'text/markdown' };
+    const previewNewBook = vi.fn(() =>
+      Promise.resolve({
+        kind: 'documents' as const,
+        title: 'Salt',
+        format: 'markdown' as const,
+        origin,
+        conversionNotes: [],
+        entries: [
+          {
+            title: 'Prologue',
+            markdown: 'Storm.',
+            suggestedKind: 'chapter' as const,
+            entityFile: false,
+            origin,
+            conversionNotes: [],
+            numbered: false,
+          },
+          {
+            title: 'Arrival',
+            markdown: 'Ferry.',
+            suggestedKind: 'chapter' as const,
+            entityFile: false,
+            origin,
+            conversionNotes: [],
+          },
+          {
+            title: 'Tides',
+            markdown: 'High.',
+            suggestedKind: 'research' as const,
+            entityFile: false,
+            origin,
+            conversionNotes: [],
+          },
+        ],
+        candidates: [{ name: 'Mara Quill', count: 9 }],
+        skipped: [],
+      }),
+    );
+    const createImportedBook = vi.fn(() =>
+      Promise.resolve({ book, output: 'Created Salt with 2 chapters.' }),
+    );
+    renderAt('/books', { previewNewBook, createImportedBook });
+    const user = userEvent.setup();
+    await user.upload(
+      await screen.findByLabelText(/Import a manuscript, a project/u),
+      new File(['# Prologue'], 'Salt.md', { type: 'text/markdown' }),
+    );
+
+    const list = await screen.findByRole('list', { name: 'Import entries' });
+    expect(screen.getByText('Mara Quill')).toBeTruthy();
+    // Put the research note first, then drop it, and set the book's form.
+    await user.click(within(list).getByRole('button', { name: 'Move Tides up' }));
+    await user.click(within(list).getAllByLabelText('Add')[2]!);
+    await user.selectOptions(screen.getByLabelText('Form'), 'novel');
+    await user.type(screen.getByLabelText('Word target'), '80000');
+    await user.click(screen.getByRole('button', { name: 'Create the book' }));
+
+    expect(createImportedBook).toHaveBeenCalledWith({
+      title: 'Salt',
+      form: 'novel',
+      targetWords: 80000,
+      import: {
+        origin,
+        conversionNotes: [],
+        entries: [
+          {
+            title: 'Prologue',
+            markdown: 'Storm.',
+            kind: 'chapter',
+            origin,
+            conversionNotes: [],
+            numbered: false,
+          },
+          { title: 'Tides', markdown: 'High.', kind: 'research', origin, conversionNotes: [] },
+        ],
+      },
+      candidates: [{ name: 'Mara Quill', count: 9 }],
+      skipped: [],
+    });
+    expect(await screen.findByRole('status', { name: 'Import report' })).toBeTruthy();
   });
 });
 

@@ -157,35 +157,94 @@ export function chapterTitle(title: string): string {
   return stripped === '' ? title.trim() : stripped;
 }
 
+/** A title `story import` gives a chapter that had none: `Chapter 3`. */
+function isUntitledChapter(title: string): boolean {
+  return /^chapter\s+[\p{L}\p{N}.]+$/iu.test(title.trim());
+}
+
+/** How a chapter is headed and credited, as `story import` would write it. */
+export interface ChapterShape {
+  /** False for a prologue, epilogue, or other unnumbered chapter. */
+  numbered?: boolean;
+  /** A collection's or anthology's writer of this chapter. */
+  author?: string | string[] | null;
+}
+
+/** The imported prose: a story-skills chapter's own text, or the body less a repeated heading. */
+function importedProse(markdown: string, title: string): { prose: string; stray: string | null } {
+  const imported = splitFrontmatter(markdown);
+  const chapterText = /^## Chapter Text[ \t]*\n([\s\S]*)$/mu.exec(imported.body);
+  if (chapterText) return { prose: (chapterText[1] ?? '').trim(), stray: null };
+  return {
+    prose: withoutChapterHeading(imported.body, title).trimEnd(),
+    stray: imported.frontmatterText,
+  };
+}
+
+function strayFrontmatterSection(stray: string | null): string[] {
+  return stray === null ? [] : [`## Imported Frontmatter\n\n\`\`\`yaml\n${stray}\n\`\`\``];
+}
+
+function authorLines(author: string | string[] | null | undefined): string[] {
+  if (author === null || author === undefined) return [];
+  if (typeof author === 'string') return [`author: ${quoted(author)}`];
+  return ['author:', ...author.map((name) => `  - ${quoted(name)}`)];
+}
+
 /**
  * A chapter `story add chapter` created, given the imported prose under
  * `## Chapter Text` (the section builds and exports read) and marked as a
- * draft. A story-skills chapter file brings only its own chapter text; other
- * frontmatter is kept visibly in a `## Imported Frontmatter` section outside
- * the prose, so no imported text disappears and none leaks into the book.
+ * draft. It is headed as `story import` heads one: an untitled chapter is
+ * `# Chapter N`, and an unnumbered one (a prologue) gets `numbered: false`
+ * and its title alone. A story-skills chapter file brings only its own
+ * chapter text; other frontmatter is kept visibly in a
+ * `## Imported Frontmatter` section outside the prose, so no imported text
+ * disappears and none leaks into the book.
  */
 export function fillCreatedChapter(
   created: string,
   markdown: string,
   title: string,
   provenance: readonly string[],
+  shape: ChapterShape = {},
 ): string {
   const { frontmatterText, body: template } = splitFrontmatter(created);
-  const heading = /^\s*(# .+)\n/u.exec(template)?.[1] ?? `# ${title}`;
-  const lines = mergeProvenance(
-    (frontmatterText ?? '').replace(/^status:.*$/mu, 'status: draft'),
-    provenance,
-  );
-  const imported = splitFrontmatter(markdown);
-  const chapterText = /^## Chapter Text[ \t]*\n([\s\S]*)$/mu.exec(imported.body);
-  const prose = chapterText
-    ? (chapterText[1] ?? '').trim()
-    : withoutChapterHeading(imported.body, title).trimEnd();
-  const parts = [heading];
-  if (imported.frontmatterText !== null && !chapterText) {
-    parts.push(`## Imported Frontmatter\n\n\`\`\`yaml\n${imported.frontmatterText}\n\`\`\``);
+  const number = /^number:\s*(\d+)\s*$/mu.exec(frontmatterText ?? '')?.[1];
+  const untitled = isUntitledChapter(title) && number !== undefined;
+  let heading = /^\s*(# .+)\n/u.exec(template)?.[1] ?? `# ${title}`;
+  let fields = (frontmatterText ?? '').replace(/^status:.*$/mu, 'status: draft');
+  if (shape.numbered === false) {
+    heading = `# ${title}`;
+    fields = fields.replace(/^(title:.*)$/mu, '$1\nnumbered: false');
+  } else if (untitled) {
+    heading = `# Chapter ${number}`;
+    fields = fields.replace(/^title:.*$/mu, `title: ${quoted(`Chapter ${number}`)}`);
   }
-  parts.push('## Chapter Text', prose === '' ? '' : prose);
+  const lines = mergeProvenance(fields, [...authorLines(shape.author), ...provenance]);
+  const { prose, stray } = importedProse(markdown, title);
+  const parts = [heading, ...strayFrontmatterSection(stray), '## Chapter Text', prose];
+  return `---\n${lines.join('\n')}\n---\n\n${parts.join('\n\n').trimEnd()}\n`;
+}
+
+/**
+ * An existing chapter with its prose replaced by an imported revision. Its
+ * frontmatter (POV, cast, scenes, status) and everything above
+ * `## Chapter Text`, such as an outline, stay as they were.
+ */
+export function replaceChapterText(
+  existing: string,
+  markdown: string,
+  title: string,
+  provenance: readonly string[],
+): string {
+  const { frontmatterText, body } = splitFrontmatter(existing);
+  const lines = mergeProvenance(frontmatterText ?? '', provenance);
+  const { prose, stray } = importedProse(markdown, title);
+  const marker = /^## Chapter Text[ \t]*$/mu.exec(body);
+  const before = (marker ? body.slice(0, marker.index) : `${body.trimEnd()}\n\n`).trimEnd();
+  const parts = [before, ...strayFrontmatterSection(stray), '## Chapter Text', prose].filter(
+    (part) => part !== '',
+  );
   return `---\n${lines.join('\n')}\n---\n\n${parts.join('\n\n').trimEnd()}\n`;
 }
 

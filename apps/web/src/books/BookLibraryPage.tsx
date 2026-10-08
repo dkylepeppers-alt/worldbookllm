@@ -1,11 +1,13 @@
-import type { BookSummary } from '@worldbookllm/shared';
+import type { BookSummary, ManuscriptImportResult } from '@worldbookllm/shared';
 import { type ChangeEvent, type FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { groupLibrary } from './library-groups.js';
+import { IMPORT_ACCEPT } from './import-review.js';
 import { MigrationReport } from './MigrationReport.js';
+import { NewBookImport } from './NewBookImport.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 function countLabel(book: BookSummary): string {
@@ -37,7 +39,9 @@ export function BookLibraryPage() {
   const books = useLoad((signal) => api.listBooks(signal), 'books');
   const conflicts = useLoad((signal) => api.listBookConflicts(signal), 'conflicts');
   const [title, setTitle] = useState('');
-  const [busy, setBusy] = useState<'create' | 'series' | 'import' | null>(null);
+  const [busy, setBusy] = useState<'create' | 'series' | null>(null);
+  /** An upload being reviewed as a new book. */
+  const [importing, setImporting] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
@@ -77,22 +81,19 @@ export function BookLibraryPage() {
     }
   }
 
-  async function handleImport(event: ChangeEvent<HTMLInputElement>) {
+  function handleImport(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    setBusy('import');
     setError(null);
-    try {
-      const result = await api.importManuscript(file);
-      await navigate(`/books/${result.book.slug}/write`, {
-        state: { importReport: result.output },
-      });
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setBusy(null);
-    }
+    setImporting(file);
+  }
+
+  async function opened(result: ManuscriptImportResult) {
+    setImporting(null);
+    await navigate(`/books/${result.book.slug}/write`, {
+      state: { importReport: result.output },
+    });
   }
 
   return (
@@ -154,14 +155,12 @@ export function BookLibraryPage() {
           </button>
         </div>
         <label className="button-secondary file-button">
-          {busy === 'import'
-            ? 'Importing…'
-            : 'Import a manuscript, a project, or a zip of chapters (.md, .txt, .zip)'}
+          Import a manuscript, a project, or a zip of chapters
           <input
             type="file"
-            accept=".md,.markdown,.txt,.zip,text/markdown,text/plain,application/zip"
-            onChange={(event) => void handleImport(event)}
-            disabled={busy !== null}
+            accept={IMPORT_ACCEPT}
+            onChange={handleImport}
+            disabled={busy !== null || importing !== null}
           />
         </label>
         {error === null ? null : (
@@ -170,6 +169,15 @@ export function BookLibraryPage() {
           </p>
         )}
       </form>
+
+      {importing === null ? null : (
+        <NewBookImport
+          key={`${importing.name}:${importing.lastModified}`}
+          file={importing}
+          onCancel={() => setImporting(null)}
+          onCreated={(result) => void opened(result)}
+        />
+      )}
 
       {books.status === 'loading' ? <LoadingState>Charting books…</LoadingState> : null}
       {books.status === 'error' ? (
