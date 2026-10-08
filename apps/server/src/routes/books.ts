@@ -11,6 +11,8 @@ import {
   createBookBuildSchema,
   createBookImportSchema,
   createBookSchema,
+  createImportedBookSchema,
+  importPreviewQuerySchema,
   createSeriesSchema,
   entityParamsSchema,
   moveBookToSeriesSchema,
@@ -51,14 +53,29 @@ export function registerBookRoutes(app: FastifyInstance): void {
     reply.status(201).send(await books().create(createBookSchema.parse(request.body))),
   );
 
-  // A manuscript (.md, .txt) is split into chapters; a .zip is a whole story-skills project.
+  // A zipped story-skills project is imported whole (ADR 0020).
   app.post('/api/books/import', async (request, reply) => {
     const { bytes, fileName } = await readUpload(request);
-    const result = /\.zip$/iu.test(fileName)
-      ? await books().importProject(bytes, fileName)
-      : await books().importManuscript(bytes, fileName);
-    return reply.status(201).send(result);
+    if (!/\.zip$/iu.test(fileName)) {
+      throw new InvalidImportError(
+        'Preview a manuscript for review before creating a book from it.',
+      );
+    }
+    return reply.status(201).send(await books().importProject(bytes, fileName));
   });
+
+  // Anything else becomes a new book through review (ADR 0026): preview, then create.
+  app.post('/api/books/import/preview', async (request) => {
+    const { language } = importPreviewQuerySchema.parse(request.query);
+    const { bytes, fileName } = await readUpload(request);
+    return books().previewNewBook(bytes, fileName, language);
+  });
+
+  app.post('/api/books/import/create', async (request, reply) =>
+    reply
+      .status(201)
+      .send(await books().createImportedBook(createImportedBookSchema.parse(request.body))),
+  );
 
   app.post('/api/books/:book/previews/file', async (request) => {
     const { book } = bookParamsSchema.parse(request.params);

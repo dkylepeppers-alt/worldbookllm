@@ -366,43 +366,117 @@ export const BOOK_IMPORT_KINDS = [
 
 export const bookImportKindSchema = z.enum(BOOK_IMPORT_KINDS);
 
+/** A chapter's writer in a collection or anthology: one name or several. */
+const chapterAuthorSchema = z.union([
+  z.string().trim().min(1).max(200),
+  z.array(z.string().trim().min(1).max(200)).min(1).max(20),
+]);
+
+/** How a chapter is shaped when written: unnumbered (a prologue), and its writer. */
+const chapterShapeFields = {
+  /** False for a prologue, epilogue, or other chapter headed by its title alone. */
+  numbered: z.boolean().optional(),
+  author: chapterAuthorSchema.optional(),
+};
+
+/**
+ * Where an imported chapter goes in an existing book: after the last
+ * chapter (the default), before chapter `chapter`, or in place of chapter
+ * `chapter`'s prose, keeping its frontmatter. Numbers are the book's as
+ * reviewed; inserts earlier in the same import are accounted for.
+ */
+export const chapterPlacementSchema = z.discriminatedUnion('at', [
+  z.strictObject({ at: z.literal('end') }),
+  z.strictObject({ at: z.literal('before'), chapter: z.number().int().positive().max(9999) }),
+  z.strictObject({ at: z.literal('replace'), chapter: z.number().int().positive().max(9999) }),
+]);
+
+export const bookImportPreviewEntrySchema = z.strictObject({
+  title: sourceTitleSchema,
+  /** May be empty: a chapter can be only a heading, such as a part title. */
+  markdown: z.string().max(10_485_760),
+  suggestedKind: bookImportKindSchema,
+  /** The entry is already a story-skills entity file and keeps its own frontmatter. */
+  entityFile: z.boolean(),
+  /** Where this entry came from, when it differs from the upload (a file inside a zip). */
+  origin: sourceOriginSchema.optional(),
+  /** This entry's own conversion notes, when they differ from the upload's. */
+  conversionNotes: conversionNotesSchema.optional(),
+  ...chapterShapeFields,
+});
+
 export const bookImportPreviewSchema = z.strictObject({
   format: sourcePreviewFormatSchema,
   origin: sourceOriginSchema,
   conversionNotes: conversionNotesSchema,
-  entries: z
-    .array(
-      z.strictObject({
-        title: sourceTitleSchema,
-        markdown: z.string().min(1).max(10_485_760),
-        suggestedKind: bookImportKindSchema,
-        /** The entry is already a story-skills entity file and keeps its own frontmatter. */
-        entityFile: z.boolean(),
-        /** Where this entry came from, when it differs from the upload (a file inside a zip). */
-        origin: sourceOriginSchema.optional(),
-        /** This entry's own conversion notes, when they differ from the upload's. */
-        conversionNotes: conversionNotesSchema.optional(),
-      }),
-    )
-    .min(1)
-    .max(1_000),
+  entries: z.array(bookImportPreviewEntrySchema).min(1).max(1_000),
+});
+
+export const bookImportEntrySchema = z.strictObject({
+  title: sourceTitleSchema,
+  markdown: z.string().max(10_485_760),
+  kind: bookImportKindSchema,
+  origin: sourceOriginSchema.optional(),
+  conversionNotes: conversionNotesSchema.optional(),
+  ...chapterShapeFields,
+  /** Chapters only; others ignore it. */
+  placement: chapterPlacementSchema.optional(),
 });
 
 export const createBookImportSchema = z.strictObject({
   origin: sourceOriginSchema,
   conversionNotes: conversionNotesSchema.default([]),
-  entries: z
-    .array(
-      z.strictObject({
-        title: sourceTitleSchema,
-        markdown: z.string().min(1).max(10_485_760),
-        kind: bookImportKindSchema,
-        origin: sourceOriginSchema.optional(),
-        conversionNotes: conversionNotesSchema.optional(),
-      }),
-    )
-    .min(1)
-    .max(1_000),
+  entries: z.array(bookImportEntrySchema).min(1).max(1_000),
+});
+
+/** Recurring names `story import` suggests as characters and places to add. */
+const nameCandidatesSchema = z
+  .array(
+    z.strictObject({ name: z.string().trim().min(1).max(200), count: z.number().int().min(0) }),
+  )
+  .max(100);
+
+/** Languages whose chapter headings `story import` splits on (ADR 0026). */
+export const IMPORT_LANGUAGES = ['en', 'es', 'fr', 'de'] as const;
+
+/**
+ * A new book's import, reviewed before anything is written (ADR 0026). A
+ * zipped story-skills project is imported whole; anything else is split into
+ * chapters and notes for the writer to review.
+ */
+export const newBookImportPreviewSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('project'),
+    title: z.string().min(1).max(300),
+    files: z.number().int().min(0),
+    skipped: z.array(z.string()).max(5_000),
+  }),
+  z.strictObject({
+    kind: z.literal('documents'),
+    title: z.string().min(1).max(300),
+    format: sourcePreviewFormatSchema,
+    origin: sourceOriginSchema,
+    conversionNotes: conversionNotesSchema,
+    entries: z.array(bookImportPreviewEntrySchema).min(1).max(1_000),
+    candidates: nameCandidatesSchema,
+    /** Archive entries left out, each with the reason. */
+    skipped: z.array(z.string()).max(5_000),
+  }),
+]);
+
+export const importPreviewQuerySchema = z.strictObject({
+  /** The manuscript's language, for its chapter headings; English when unset. */
+  language: z.enum(IMPORT_LANGUAGES).optional(),
+});
+
+/** Creates a book from reviewed import entries: `story init`, then one import checkpoint. */
+export const createImportedBookSchema = createBookSchema.extend({
+  language: z.enum(IMPORT_LANGUAGES).optional(),
+  targetWords: z.number().int().positive().max(10_000_000).optional(),
+  import: createBookImportSchema,
+  candidates: nameCandidatesSchema.default([]),
+  /** Archive entries the preview left out, recorded in the import report. */
+  skipped: z.array(z.string().max(1_000)).max(5_000).default([]),
 });
 
 export const bookImportResultSchema = z.strictObject({
@@ -504,6 +578,10 @@ export type BookImportKind = z.infer<typeof bookImportKindSchema>;
 export type BookImportPreview = z.infer<typeof bookImportPreviewSchema>;
 export type CreateBookImportInput = z.infer<typeof createBookImportSchema>;
 export type BookImportResult = z.infer<typeof bookImportResultSchema>;
+export type BookImportEntry = z.infer<typeof bookImportEntrySchema>;
+export type ChapterPlacement = z.infer<typeof chapterPlacementSchema>;
+export type NewBookImportPreview = z.infer<typeof newBookImportPreviewSchema>;
+export type CreateImportedBookInput = z.input<typeof createImportedBookSchema>;
 export type ManuscriptImportResult = z.infer<typeof manuscriptImportResultSchema>;
 export const bookManuscriptSchema = z.strictObject({
   /** The manuscript as `story export` assembles it: chapter prose and matter pages only. */

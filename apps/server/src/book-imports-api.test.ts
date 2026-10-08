@@ -8,6 +8,7 @@ import type {
   BookSummary,
   Checkpoint,
   ManuscriptImportResult,
+  NewBookImportPreview,
 } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -229,40 +230,198 @@ describe('book imports', () => {
   });
 });
 
-describe('manuscript import', () => {
-  it('creates a new book split into chapters and removes its temporary files', async () => {
-    const manuscript =
-      '# Chapter 1: Arrival\n\nMara stepped off the ferry.\n\n# Chapter 2: The Bell\n\nThe bell rang twice.\n';
-    const before = readdirSync(tmpdir()).filter((name) => name.startsWith('worldbookllm-import-'));
-    const response = await app.inject({
+describe('new book import: preview, review, create (ADR 0026)', () => {
+  async function previewNew(fileName: string, body: string | Buffer, query = '') {
+    return app.inject({
       method: 'POST',
-      url: '/api/books/import',
-      ...multipartUpload('The Ferry.md', manuscript),
+      url: `/api/books/import/preview${query}`,
+      ...multipartUpload(fileName, body),
     });
-    expect(response.statusCode).toBe(201);
-    const result = response.json<ManuscriptImportResult>();
+  }
+
+  /** Creates the book from a preview as reviewed: every entry kept, with its suggested kind. */
+  async function createFrom(preview: NewBookImportPreview, extra: Record<string, unknown> = {}) {
+    if (preview.kind !== 'documents') throw new Error('not a documents preview');
+    return app.inject({
+      method: 'POST',
+      url: '/api/books/import/create',
+      payload: {
+        title: preview.title,
+        import: {
+          origin: preview.origin,
+          entries: preview.entries.map((entry) => ({
+            title: entry.title,
+            markdown: entry.markdown,
+            kind: entry.suggestedKind,
+            origin: entry.origin,
+            conversionNotes: entry.conversionNotes,
+            numbered: entry.numbered,
+            author: entry.author,
+          })),
+        },
+        candidates: preview.candidates,
+        skipped: preview.skipped,
+        ...extra,
+      },
+    });
+  }
+
+  it('previews a manuscript as chapters without writing anything, then creates the book', async () => {
+    const manuscript =
+      '# Prologue\n\nThe storm came.\n\n# Chapter 1: Arrival\n\nMara Quill stepped off the ferry. Mara Quill waved. Mara Quill ran.\n\n# Chapter 2: The Bell\n\nThe bell rang twice.\n';
+    const tempBefore = readdirSync(tmpdir()).filter((name) =>
+      name.startsWith('worldbookllm-split-'),
+    );
+    const response = await previewNew('The Ferry.md', manuscript);
+    expect(response.statusCode).toBe(200);
+    const preview = response.json<NewBookImportPreview>();
+    if (preview.kind !== 'documents') throw new Error('expected documents');
+    expect(preview.title).toBe('The Ferry');
+    expect(
+      preview.entries.map(({ title, suggestedKind, numbered }) => ({
+        title,
+        suggestedKind,
+        numbered,
+      })),
+    ).toEqual([
+      { title: 'Prologue', suggestedKind: 'chapter', numbered: false },
+      { title: 'Arrival', suggestedKind: 'chapter', numbered: undefined },
+      { title: 'The Bell', suggestedKind: 'chapter', numbered: undefined },
+    ]);
+    expect(preview.candidates).toContainEqual({ name: 'Mara Quill', count: 3 });
+    expect(readdirSync(join(dataDir, 'projects'))).toEqual([slug]);
+
+    const created = await createFrom(preview, {
+      form: 'novel',
+      genre: 'mystery',
+      language: 'en',
+      targetWords: 60000,
+    });
+    expect(created.statusCode).toBe(201);
+    const result = created.json<ManuscriptImportResult>();
     expect(result.book).toMatchObject({
       slug: 'the-ferry',
       title: 'The Ferry',
-      counts: { chapter: 2 },
+      genre: 'mystery',
+      counts: { chapter: 3 },
     });
-    expect(result.output).toContain('Imported 2 chapters');
-    expect(result.output).not.toContain(dataDir);
-    expect(
-      readFileSync(join(dataDir, 'projects/the-ferry/chapters/chapter-02.md'), 'utf8'),
-    ).toContain('The bell rang twice.');
-    const after = readdirSync(tmpdir()).filter((name) => name.startsWith('worldbookllm-import-'));
-    expect(after).toEqual(before);
+    expect(result.output).toContain('Created The Ferry with 3 chapters');
+    expect(result.output).toContain('research/import-report.md');
+
+    const root = join(dataDir, 'projects/the-ferry');
+    const prologue = readFileSync(join(root, 'chapters/chapter-01.md'), 'utf8');
+    expect(prologue).toMatch(/^numbered: false$/mu);
+    expect(prologue).toContain('# Prologue\n\n## Chapter Text\n\nThe storm came.');
+    expect(readFileSync(join(root, 'chapters/chapter-02.md'), 'utf8')).toContain(
+      '# Chapter 2: Arrival',
+    );
+    const story = readFileSync(join(root, 'story.md'), 'utf8');
+    expect(story).toMatch(/^form: novel$/mu);
+    expect(story).toMatch(/^target-words: 60000$/mu);
+    expect(story).toMatch(/^language: en$/mu);
+    expect(story).not.toContain('worldbookllm-');
+    expect(readFileSync(join(root, 'research/import-report.md'), 'utf8')).toContain(
+      '- Mara Quill (3 mentions)',
+    );
+    const tempAfter = readdirSync(tmpdir()).filter((name) =>
+      name.startsWith('worldbookllm-split-'),
+    );
+    expect(tempAfter).toEqual(tempBefore);
   });
 
-  it('refuses files that are not Markdown or text', async () => {
-    const response = await app.inject({
+  it("previews HTML and PDF manuscripts too, and splits on another language's headings", async () => {
+    const html = await previewNew(
+      'Bells.html',
+      '<html><body><h1>Chapter 1</h1><p>One.</p><h1>Chapter 2</h1><p>Two.</p></body></html>',
+    );
+    expect(html.statusCode).toBe(200);
+    expect(html.json<NewBookImportPreview>()).toMatchObject({
+      kind: 'documents',
+      entries: [{ markdown: 'One.' }, { markdown: 'Two.' }],
+    });
+
+    const french = await previewNew(
+      'Cloches.md',
+      '# Chapitre 1\n\nUn.\n\n# Chapitre 2\n\nDeux.\n',
+      '?language=fr',
+    );
+    expect(french.json<NewBookImportPreview>()).toMatchObject({
+      entries: [{ markdown: 'Un.' }, { markdown: 'Deux.' }],
+    });
+  });
+
+  it('previews a zip of chapters and notes, keeping same-named files apart', async () => {
+    const response = await previewNew(
+      'The Lost Coast.zip',
+      makeZip([
+        { name: 'draft/a/b/ch.md', data: 'First part.\n' },
+        { name: 'draft/a-b/ch.md', data: 'Second part.\n' },
+        { name: 'draft/notes/tides.md', data: '# Tide tables\n\nSpring tides run high.\n' },
+        { name: 'draft/cover.png', data: 'png' },
+      ]),
+    );
+    const preview = response.json<NewBookImportPreview>();
+    if (preview.kind !== 'documents') throw new Error('expected documents');
+    expect(preview.entries.map((entry) => [entry.suggestedKind, entry.markdown])).toEqual([
+      ['chapter', 'Second part.'],
+      ['chapter', 'First part.'],
+      ['research', '# Tide tables\n\nSpring tides run high.\n'],
+    ]);
+    expect(preview.entries[2]?.origin).toMatchObject({
+      fileName: 'The Lost Coast.zip: draft/notes/tides.md',
+    });
+    expect(preview.skipped).toEqual(['draft/cover.png (not a supported document type)']);
+
+    const created = await createFrom(preview);
+    expect(created.statusCode).toBe(201);
+    const root = join(dataDir, 'projects/the-lost-coast');
+    expect(readFileSync(join(root, 'research/tide-tables.md'), 'utf8')).toContain(
+      'origin-file: "The Lost Coast.zip: draft/notes/tides.md"',
+    );
+    expect(readFileSync(join(root, 'research/import-report.md'), 'utf8')).toContain(
+      'draft/cover.png',
+    );
+  });
+
+  it('reports a whole project zip for direct import, and only takes zips directly', async () => {
+    const project = await previewNew(
+      'Whole.zip',
+      makeZip([{ name: 'story.md', data: '---\ntitle: Whole Book\n---\n' }]),
+    );
+    expect(project.json<NewBookImportPreview>()).toEqual({
+      kind: 'project',
+      title: 'Whole Book',
+      files: 1,
+      skipped: [],
+    });
+    const direct = await app.inject({
       method: 'POST',
       url: '/api/books/import',
-      ...multipartUpload('book.pdf', '%PDF-1.4'),
+      ...multipartUpload('book.md', '# Hi'),
     });
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toMatchObject({ error: 'invalid_import' });
+    expect(direct.statusCode).toBe(400);
+  });
+
+  it('sends a book whose import fails validation to the trash', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/books/import/create',
+      payload: {
+        title: 'Broken Import',
+        import: {
+          origin: { type: 'paste' },
+          entries: [
+            {
+              title: 'Bram',
+              markdown: characterFile.replace('status: alive', 'status: sleepy'),
+              kind: 'character',
+            },
+          ],
+        },
+      },
+    });
+    expect(created.statusCode).toBe(400);
+    expect(readdirSync(join(dataDir, 'projects'))).toEqual([slug]);
   });
 });
 
@@ -379,50 +538,6 @@ describe('project zip import', () => {
       /story validate found \d+ errors? and \d+ warnings?; see the Health tab/u,
     );
   });
-
-  it('builds a book from a zip of chapters and notes with no story.md', async () => {
-    const response = await upload(
-      'The Lost Coast.zip',
-      makeZip([
-        { name: 'draft/chapter-10.md', data: '# Chapter 10: Landfall\n\nThe boat struck sand.\n' },
-        { name: 'draft/chapter-2.md', data: '# Chapter 2\n\nFog over the harbor.\n' },
-        { name: 'draft/prologue.txt', data: 'Before the storm.\n' },
-        { name: 'draft/notes/tides.md', data: '# Tide tables\n\nSpring tides run high.\n' },
-        { name: 'draft/cover.png', data: 'png' },
-      ]),
-    );
-    expect(response.statusCode).toBe(201);
-    const result = response.json<ManuscriptImportResult>();
-    expect(result.book).toMatchObject({ slug: 'the-lost-coast', title: 'The Lost Coast' });
-    expect(result.output).toContain('Imported 3 chapters');
-    expect(result.output).toContain('research/tide-tables.md');
-    expect(result.output).toContain('draft/cover.png (not a supported document type)');
-    expect(result.output).not.toContain(tmpdir());
-
-    const root = join(dataDir, 'projects/the-lost-coast');
-    const chapters = ['chapter-01.md', 'chapter-02.md', 'chapter-03.md'].map((name) =>
-      readFileSync(join(root, 'chapters', name), 'utf8'),
-    );
-    expect(chapters[0]).toContain('Before the storm.');
-    expect(chapters[1]).toContain('Fog over the harbor.');
-    expect(chapters[2]).toContain('The boat struck sand.');
-    const note = readFileSync(join(root, 'research/tide-tables.md'), 'utf8');
-    expect(note).toContain('Spring tides run high.');
-    expect(note).toContain('origin-file: "The Lost Coast.zip: draft/notes/tides.md"');
-  });
-
-  it('starts an empty book when a zip without story.md holds only notes', async () => {
-    const response = await upload(
-      'Lore.zip',
-      makeZip([{ name: 'research/salt.md', data: '# Salt trade\n\nCaravans.\n' }]),
-    );
-    expect(response.statusCode).toBe(201);
-    const result = response.json<ManuscriptImportResult>();
-    expect(result.book.slug).toBe('lore');
-    expect(readFileSync(join(dataDir, 'projects/lore/research/salt-trade.md'), 'utf8')).toContain(
-      'Caravans.',
-    );
-  });
 });
 
 describe('adding files to an existing book', () => {
@@ -469,6 +584,79 @@ describe('adding files to an existing book', () => {
     expect(bookFile('chapters/chapter-03.md')).toContain('Gulls.');
   });
 
+  it('splits a file with several chapter headings into one entry per chapter', async () => {
+    const response = await preview(
+      'act-two.md',
+      '# Chapter 4: Fog\n\nGrey.\n\n# Chapter 5: Rain\n\nWet.\n',
+    );
+    expect(
+      response
+        .json<BookImportPreview>()
+        .entries.map(({ title, markdown, suggestedKind }) => [title, markdown, suggestedKind]),
+    ).toEqual([
+      ['Fog', 'Grey.', 'chapter'],
+      ['Rain', 'Wet.', 'chapter'],
+    ]);
+  });
+
+  it("inserts chapters before a reviewed chapter and replaces a chapter's prose in place", async () => {
+    await importEntries([
+      { title: 'One', markdown: 'First.', kind: 'chapter' },
+      { title: 'Two', markdown: 'Second.', kind: 'chapter' },
+      { title: 'Three', markdown: 'Third.', kind: 'chapter' },
+    ]);
+    // Give chapter 2 frontmatter that a replace must keep.
+    const two = bookFile('chapters/chapter-02.md').replace('pov: ""', 'pov: "mara"');
+    writeFileSync(join(dataDir, 'projects', slug, 'chapters/chapter-02.md'), two);
+
+    const response = await importEntries([
+      {
+        title: 'Interlude A',
+        markdown: 'A.',
+        kind: 'chapter',
+        placement: { at: 'before', chapter: 2 },
+      },
+      {
+        title: 'Interlude B',
+        markdown: 'B.',
+        kind: 'chapter',
+        placement: { at: 'before', chapter: 2 },
+      },
+      {
+        title: 'Two',
+        markdown: 'Second, revised.',
+        kind: 'chapter',
+        placement: { at: 'replace', chapter: 2 },
+      },
+      {
+        title: 'Four',
+        markdown: 'Fourth.',
+        kind: 'chapter',
+        placement: { at: 'before', chapter: 3 },
+      },
+    ]);
+    expect(response.statusCode).toBe(201);
+    const prose = (n: number) =>
+      /## Chapter Text\n\n([\s\S]*)$/u.exec(bookFile(`chapters/chapter-0${n}.md`))?.[1]?.trim();
+    expect([1, 2, 3, 4, 5, 6].map(prose)).toEqual([
+      'First.',
+      'A.',
+      'B.',
+      'Second, revised.',
+      'Fourth.',
+      'Third.',
+    ]);
+    expect(bookFile('chapters/chapter-04.md')).toMatch(/^pov: "mara"$/mu);
+    expect(bookFile('chapters/chapter-04.md')).toMatch(/^title: Two$/mu);
+    expect((await validate()).ok).toBe(true);
+
+    const missing = await importEntries([
+      { title: 'X', markdown: 'X.', kind: 'chapter', placement: { at: 'replace', chapter: 40 } },
+    ]);
+    expect(missing.statusCode).toBe(400);
+    expect(existsSync(join(dataDir, 'projects', slug, 'chapters/chapter-07.md'))).toBe(false);
+  });
+
   it('previews a zip of files with an origin per file, and refuses a whole project', async () => {
     const response = await preview(
       'more.zip',
@@ -506,24 +694,6 @@ describe('adding files to an existing book', () => {
     );
     expect(project.statusCode).toBe(400);
     expect(project.json<{ message: string }>().message).toContain('whole story project');
-  });
-
-  it('keeps every chapter when files in different folders share a name', async () => {
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/books/import',
-      ...multipartUpload(
-        'Parts.zip',
-        makeZip([
-          { name: 'a/b/ch.md', data: 'First part.\n' },
-          { name: 'a-b/ch.md', data: 'Second part.\n' },
-        ]),
-      ),
-    });
-    expect(response.statusCode).toBe(201);
-    const root = join(dataDir, 'projects/parts/chapters');
-    expect(readFileSync(join(root, 'chapter-01.md'), 'utf8')).toContain('Second part.');
-    expect(readFileSync(join(root, 'chapter-02.md'), 'utf8')).toContain('First part.');
   });
 
   it('previews HTML in a zip with its converter notes, and keeps each file named', async () => {

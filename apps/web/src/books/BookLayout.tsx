@@ -47,7 +47,7 @@ export function BookLayout() {
             ) : null}
             <h1>{tree.data.book.title}</h1>
           </header>
-          {importReport}
+          {importReport === null ? null : <ImportReport report={importReport} slug={slug} />}
           <BookTabs />
           <div className="book-body">
             <Outlet />
@@ -59,17 +59,25 @@ export function BookLayout() {
 }
 
 /** What an import just did (files kept and skipped, validation), passed in navigation state. */
-function useImportReport() {
+function useImportReport(): string | null {
   const state: unknown = useLocation().state;
-  const [dismissed, setDismissed] = useState(false);
   const report =
     typeof state === 'object' && state !== null && 'importReport' in state
       ? state.importReport
       : null;
-  if (typeof report !== 'string' || report === '' || dismissed) return null;
+  return typeof report === 'string' && report !== '' ? report : null;
+}
+
+function ImportReport({ report, slug }: { report: string; slug: string }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
   return (
     <section className="import-report" role="status" aria-label="Import report">
       <pre className="build-output">{report}</pre>
+      <p>
+        Next, <Link to={`/books/${encodeURIComponent(slug)}/agent`}>build the bible</Link> with the
+        agent: cast and places, each chapter's scenes, and open threads.
+      </p>
       <button type="button" className="button-secondary" onClick={() => setDismissed(true)}>
         Dismiss
       </button>

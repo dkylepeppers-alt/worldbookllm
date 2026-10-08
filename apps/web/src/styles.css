@@ -1126,6 +1126,75 @@ label {
   font-size: 0.85rem;
 }
 
+.import-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.import-entry-order {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.import-entry-order button {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 1.1rem;
+}
+
+.new-book-import {
+  display: grid;
+  gap: 0.85rem;
+  margin: 1.5rem 0;
+  border: 1px solid var(--ink);
+  padding: 1rem;
+  background: var(--surface);
+}
+
+.new-book-import h2,
+.new-book-import h3 {
+  margin: 0;
+}
+
+.new-book-import-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.new-book-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+}
+
+.new-book-settings legend {
+  padding: 0 0.35rem;
+  font-weight: 700;
+}
+
+.new-book-settings label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.new-book-settings .new-book-synopsis {
+  grid-column: 1 / -1;
+}
+
+.import-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .add-files-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1388,6 +1457,60 @@ label {
 }
 
 /* Story commands: read-only checks run from the Agent tab without an agent turn. */
+.bible-guide {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  padding: 0.75rem;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--blueprint);
+}
+
+.bible-guide h3,
+.bible-guide p {
+  margin: 0;
+}
+
+.bible-guide-steps {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bible-guide-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.5rem;
+}
+
+.bible-guide-steps li > div {
+  display: grid;
+  flex: 1 1 14rem;
+  gap: 0.15rem;
+}
+
+.bible-guide-steps li > div span {
+  font-size: 0.9rem;
+}
+
+.bible-guide-steps li[data-done] strong {
+  color: var(--lichen);
+}
+
+.bible-guide > .text-button,
+.bible-guide-hidden {
+  justify-self: start;
+  margin: 0 0 0.75rem;
+}
+
 .story-commands {
   margin-bottom: 0.75rem;
   border: 1px solid var(--ink);

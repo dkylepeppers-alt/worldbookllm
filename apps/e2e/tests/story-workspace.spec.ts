@@ -120,10 +120,38 @@ test('M7 story workspace on a phone', async ({ page }) => {
       mimeType: 'application/zip',
       buffer: makeZip(entries),
     });
+    await page.getByRole('button', { name: 'Import the project' }).click();
     await expect(page).toHaveURL(/\/books\/the-salt-road-2\/write$/);
     const report = page.getByRole('status', { name: 'Import report' });
     await expect(report).toContainText('from salt-road-backup.zip');
     await expect(report).toContainText('salt-road/dist/the-salt-road.epub (build output)');
     await expect(page.getByRole('link', { name: /Arrival/u })).toBeVisible();
+  });
+
+  await test.step('review a manuscript as a new book, then create it', async () => {
+    await page.goto('/books');
+    await page.getByLabel(/Import a manuscript, a project/u).setInputFiles({
+      name: 'The Ferry.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from(
+        '# Prologue\n\nThe storm came.\n\n# Chapter 1: Arrival\n\nMara Quill stepped off the ferry. Mara Quill waved. Mara Quill ran.\n',
+      ),
+    });
+    const entries = page.getByRole('list', { name: 'Import entries' });
+    await expect(entries.getByLabel('Title')).toHaveCount(2);
+    await expect(entries.getByLabel('Title').first()).toHaveValue('Prologue');
+    await page.getByLabel('Form').selectOption('novella');
+    await page.getByRole('button', { name: 'Create the book' }).click();
+    await expect(page).toHaveURL(/\/books\/the-ferry\/write$/);
+    await expect(page.getByRole('status', { name: 'Import report' })).toContainText(
+      'Created The Ferry with 2 chapters',
+    );
+    await expect(page.getByRole('link', { name: /Arrival/u })).toBeVisible();
+
+    await page.getByRole('link', { name: 'build the bible' }).click();
+    const guide = page.getByRole('region', { name: 'Build the bible' });
+    await expect(guide).toContainText('research/import-report.md');
+    await guide.getByRole('button', { name: 'Build the cast' }).click();
+    await expect(page.getByLabel('New chat')).toHaveValue(/Read research\/import-report\.md/u);
   });
 });
