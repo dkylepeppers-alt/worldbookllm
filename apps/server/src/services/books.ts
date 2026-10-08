@@ -3,6 +3,8 @@ import {
   type AddEntityInput,
   type BookImportKind,
   type BookImportPreview,
+  type SourceOrigin,
+  type SourcePreview,
   type BookImportResult,
   type BookCheckCommand,
   type BookCheckResult,
@@ -39,7 +41,10 @@ import { ConflictError, InvalidImportError, NotFoundError, StoryCommandError } f
 import type { BookFileStore } from '../story/book-files.js';
 import {
   IMPORT_KIND_DIRECTORIES,
+  archiveDocumentKind,
+  chapterTitle,
   entityFileTitle,
+  fillCreatedChapter,
   fillCreatedEntity,
   importedBody,
   kebabId,
@@ -69,6 +74,7 @@ import {
   promoteStagedProject,
   stageProjectFiles,
   unpackProjectZip,
+  type ProjectArchive,
 } from '../story/project-zip.js';
 import { StagedBook, type StagedChange } from '../story/staging.js';
 import { assertWritablePath, needsReindex } from '../story/write-rules.js';
@@ -598,9 +604,14 @@ export class BookService {
     });
   }
 
-  /** Converts an upload for review, suggesting the entity kind each entry should become. */
+  /**
+   * Converts an upload for review, suggesting the kind each entry should
+   * become. A zip of Markdown and text files previews every file in it, in
+   * natural name order, each with its own origin.
+   */
   async previewImport(slug: string, bytes: Buffer, fileName: string): Promise<BookImportPreview> {
     this.files.root(slug);
+    if (/\.zip$/iu.test(fileName)) return previewArchive(bytes, fileName);
     const preview = await convertUpload(bytes, fileName);
     return {
       format: preview.format,
@@ -608,7 +619,10 @@ export class BookService {
       conversionNotes: preview.conversionNotes,
       entries: preview.entries.map((entry) => ({
         ...entry,
-        ...suggestImportKind(entry.markdown, preview.format),
+        ...suggestImportKind(entry.markdown, preview.format, {
+          title: entry.title,
+          path: fileName,
+        }),
       })),
     };
   }
@@ -623,11 +637,8 @@ export class BookService {
    * error.
    */
   async importEntries(slug: string, input: CreateBookImportInput): Promise<BookImportResult> {
-    const provenance = provenanceLines(
-      input.origin,
-      input.conversionNotes,
-      new Date().toISOString(),
-    );
+    const importedAt = new Date().toISOString();
+    const provenance = provenanceLines(input.origin, input.conversionNotes, importedAt);
     const label =
       input.entries.length === 1
         ? `Import ${input.entries[0]?.title ?? ''}`
@@ -635,7 +646,10 @@ export class BookService {
     return this.writeImports(
       slug,
       label,
-      input.entries.map((entry) => ({ ...entry, provenance })),
+      input.entries.map(({ origin, ...entry }) => ({
+        ...entry,
+        provenance: origin ? provenanceLines(origin, [], importedAt) : provenance,
+      })),
     );
   }
 
@@ -663,6 +677,10 @@ export class BookService {
         'book',
         async () => {
           for (const entry of entries) {
+            if (entry.kind === 'chapter') {
+              written.push(await this.appendChapter(slug, root, entry));
+              continue;
+            }
             const { suggestedKind, entityFile } = suggestImportKind(entry.markdown, 'markdown');
             const keepAsEntity = entityFile && suggestedKind === entry.kind;
             const title = (keepAsEntity ? entityFileTitle(entry.markdown) : null) ?? entry.title;
@@ -692,6 +710,9 @@ export class BookService {
             }
             written.push(path);
           }
+          if (entries.some((entry) => entry.kind === 'chapter')) {
+            await this.cli.runOrThrow({ command: 'wordcount', root, options: { write: true } });
+          }
           await this.cli.runOrThrow({ command: 'reindex', root });
         },
       );
@@ -720,6 +741,28 @@ export class BookService {
         validation: validation.envelope,
       };
     });
+  }
+
+  /** Adds a chapter after the book's last one with `story add chapter`, holding the imported prose. */
+  private async appendChapter(slug: string, root: string, entry: ImportEntry): Promise<string> {
+    const title = chapterTitle(entry.title);
+    const added = await this.cli.runOrThrow({
+      command: 'add',
+      root,
+      args: ['chapter', title],
+      json: true,
+    });
+    const path = (added.envelope?.data as { file?: unknown } | undefined)?.file;
+    const created = typeof path === 'string' ? this.files.readBytes(slug, path) : undefined;
+    if (typeof path !== 'string' || created === undefined || created === null) {
+      throw new StoryCommandError(1, 'story add chapter did not report the chapter it created');
+    }
+    this.files.write(
+      slug,
+      path,
+      fillCreatedChapter(created.toString('utf8'), entry.markdown, title, entry.provenance),
+    );
+    return path;
   }
 
   /**
@@ -762,6 +805,7 @@ export class BookService {
    */
   async importProject(bytes: Buffer, fileName: string): Promise<ManuscriptImportResult> {
     const archive = await unpackProjectZip(bytes);
+    if (archive.kind === 'documents') return this.importDocuments(archive, fileName);
     const story = archive.files.find((file) => file.path === 'story.md');
     const notes: string[] = [];
     let storyText = story?.data.toString('utf8') ?? '';
@@ -823,6 +867,99 @@ export class BookService {
       );
     }
     return { book: this.summary(slug), output: lines.join('\n') };
+  }
+
+  /**
+   * Creates a new book from a zip of Markdown and text files with no
+   * `story.md` (ADR 0024). Files in notes folders (`research/`, `notes/`)
+   * and story-skills entity files are filed as notes and entities; every
+   * other file is a chapter. The chapters go through `story import`, which
+   * reads a folder of chapter files in natural name order; with none, the
+   * book starts empty from `story init`. The notes are then imported as one
+   * checkpoint.
+   */
+  private async importDocuments(
+    archive: ProjectArchive,
+    fileName: string,
+  ): Promise<ManuscriptImportResult> {
+    const title = fileName.replace(/\.zip$/iu, '').trim() || 'Imported manuscript';
+    const files = [...archive.files].sort((a, b) => naturalOrder.compare(a.path, b.path));
+    const chapters = files.filter(
+      (file) => archiveDocumentKind(file.path, file.data.toString('utf8')) === 'chapter',
+    );
+    const notes = files.filter((file) => !chapters.includes(file));
+    const lines: string[] = [];
+
+    const workDir = mkdtempSync(join(tmpdir(), 'worldbookllm-import-'));
+    try {
+      const flat = flatChapterNames(chapters.map((file) => file.path));
+      chapters.forEach((file, index) => {
+        writeFileSync(join(workDir, flat[index]!), file.data, { mode: 0o600 });
+      });
+      const slug = await this.locks.run(CREATE_LOCK, async () => {
+        const free = this.freeSlug(title);
+        if (chapters.length === 0) {
+          await this.cli.runOrThrow({
+            command: 'init',
+            cwd: this.files.projectsDir,
+            dir: free,
+            args: [title],
+          });
+        } else {
+          const result = await this.cli.runOrThrow({
+            command: 'import',
+            cwd: this.files.projectsDir,
+            dir: free,
+            args: [workDir],
+            options: { title },
+          });
+          lines.push(result.stdout.replaceAll(workDir, fileName).trim());
+        }
+        return free;
+      });
+
+      if (notes.length > 0) {
+        const importedAt = new Date().toISOString();
+        const entries: ImportEntry[] = [];
+        for (const file of notes) {
+          const markdown = await convertArchiveFile(file.path, file.data);
+          if (markdown === null) {
+            lines.push(`Skipped ${file.path}: it has no readable text.`);
+            continue;
+          }
+          entries.push({
+            title: markdown.title,
+            markdown: markdown.markdown,
+            kind: archiveDocumentKind(file.path, markdown.markdown),
+            provenance: provenanceLines(archiveOrigin(fileName, file.path), [], importedAt),
+          });
+        }
+        if (entries.length > 0) {
+          try {
+            const result = await this.writeImports(
+              slug,
+              `Import ${entries.length} ${entries.length === 1 ? 'note' : 'notes'} from ${fileName}`,
+              entries,
+            );
+            lines.push(
+              `Filed ${result.files.length} notes and entities: ${result.files.join(', ')}`,
+            );
+          } catch (error) {
+            if (!(error instanceof InvalidImportError)) throw error;
+            lines.push(`The notes were not imported: ${error.message}`);
+          }
+        }
+      }
+      if (archive.skipped.length > 0) {
+        lines.push(
+          `Skipped ${archive.skipped.length}:`,
+          ...archive.skipped.map((entry) => `- ${entry}`),
+        );
+      }
+      return { book: this.summary(slug), output: lines.join('\n') };
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
   }
 
   /** The manuscript for reading, under the book lock so it never catches a write halfway. */
@@ -1163,6 +1300,91 @@ function storyCommandWrites(command: string, options: StoryOptions): boolean {
   return (WRITING_FLAGS[command] ?? []).some(
     (flag) => options[flag] !== undefined && options[flag] !== false,
   );
+}
+
+/** Sorts `chapter-2` before `chapter-10`, as `story import` reads a folder. */
+const naturalOrder = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
+/**
+ * File names for a folder of chapters that `story import` reads in natural
+ * order: the file's own name when every name is distinct, otherwise its
+ * archive path with `/` as `-`, so folders keep their files together.
+ */
+function flatChapterNames(paths: readonly string[]): string[] {
+  const names = paths.map((path) => path.slice(path.lastIndexOf('/') + 1));
+  if (new Set(names.map((name) => name.toLowerCase())).size === names.length) return names;
+  return paths.map((path) => path.replaceAll('/', '-'));
+}
+
+/** The provenance of one file inside an uploaded zip. */
+function archiveOrigin(zipName: string, path: string): SourceOrigin {
+  const mediaType = /\.txt$/iu.test(path) ? 'text/plain' : 'text/markdown';
+  return { type: 'file', fileName: `${zipName}: ${path}`.slice(0, 255), mediaType };
+}
+
+/** One archive file converted for import, or null when it has no readable text. */
+async function convertArchiveFile(
+  path: string,
+  data: Buffer,
+): Promise<{ title: string; markdown: string; format: SourcePreview['format'] } | null> {
+  try {
+    const preview = await convertUpload(data, path.slice(path.lastIndexOf('/') + 1));
+    const entry = preview.entries[0];
+    return entry ? { ...entry, format: preview.format } : null;
+  } catch (error) {
+    if (error instanceof InvalidImportError) return null;
+    throw error;
+  }
+}
+
+/** At most 20 notes of at most 500 characters, as the preview schema allows. */
+function capNotes(notes: readonly string[]): string[] {
+  const clipped = notes.map((note) => (note.length > 500 ? `${note.slice(0, 499)}…` : note));
+  return clipped.length <= 20
+    ? clipped
+    : [...clipped.slice(0, 19), `…and ${clipped.length - 19} more notes.`];
+}
+
+/** Previews every Markdown and text file of a zip for import into an existing book. */
+async function previewArchive(bytes: Buffer, fileName: string): Promise<BookImportPreview> {
+  const archive = await unpackProjectZip(bytes);
+  if (archive.kind === 'project') {
+    throw new InvalidImportError(
+      'This zip is a whole story project (it has story.md). Import it from the library as a new book.',
+    );
+  }
+  const files = [...archive.files].sort((a, b) => naturalOrder.compare(a.path, b.path));
+  const entries: BookImportPreview['entries'] = [];
+  const notes: string[] = [];
+  for (const file of files) {
+    const converted = await convertArchiveFile(file.path, file.data);
+    if (converted === null) {
+      notes.push(`Skipped ${file.path}: it has no readable text.`);
+      continue;
+    }
+    entries.push({
+      title: converted.title,
+      markdown: converted.markdown,
+      ...suggestImportKind(converted.markdown, converted.format, {
+        title: converted.title,
+        path: file.path,
+      }),
+      origin: archiveOrigin(fileName, file.path),
+    });
+  }
+  if (entries.length === 0) {
+    throw new InvalidImportError('The zip has no Markdown or text files with readable text.');
+  }
+  if (entries.length > 1_000) {
+    throw new InvalidImportError('The zip holds more than 1,000 files to import.');
+  }
+  notes.push(...archive.skipped.map((entry) => `Skipped ${entry}.`));
+  return {
+    format: 'markdown',
+    origin: { type: 'file', fileName, mediaType: 'application/zip' },
+    conversionNotes: capNotes(notes),
+    entries,
+  };
 }
 
 /** One entry to write into a book: its content, target kind, and provenance lines. */

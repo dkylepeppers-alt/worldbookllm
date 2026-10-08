@@ -567,6 +567,79 @@ describe('builds and project import', () => {
     expect(link.getAttribute('download')).toBe('the-salt-road.epub');
   });
 
+  it('adds reviewed files to the book from the Project tab', async () => {
+    const zipOrigin = { type: 'file' as const, fileName: 'more.zip', mediaType: 'application/zip' };
+    const previewBookImport = vi.fn(() =>
+      Promise.resolve({
+        format: 'markdown' as const,
+        origin: zipOrigin,
+        conversionNotes: ['Skipped more.zip/cover.png (not a Markdown or text file).'],
+        entries: [
+          {
+            title: 'Chapter 2: The Mill',
+            markdown: 'Flour dust.\n',
+            suggestedKind: 'chapter' as const,
+            entityFile: false,
+            origin: { ...zipOrigin, fileName: 'more.zip: ch-2.md', mediaType: 'text/markdown' },
+          },
+          {
+            title: 'Mill notes',
+            markdown: 'Grinding stones.\n',
+            suggestedKind: 'research' as const,
+            entityFile: false,
+            origin: {
+              ...zipOrigin,
+              fileName: 'more.zip: notes/mill.md',
+              mediaType: 'text/markdown',
+            },
+          },
+        ],
+      }),
+    );
+    const importBookEntries = vi.fn(() =>
+      Promise.resolve({
+        files: ['chapters/chapter-02.md'],
+        checkpointId: '00000000-0000-4000-8000-000000000001',
+        validation: null,
+      }),
+    );
+    renderAt('/books/the-salt-road/project', { previewBookImport, importBookEntries });
+    const user = userEvent.setup();
+    await user.upload(
+      await screen.findByLabelText(/Choose files/u),
+      new File([new Uint8Array([0x50, 0x4b])], 'more.zip', { type: 'application/zip' }),
+    );
+
+    const list = await screen.findByRole('list', { name: 'Files to add' });
+    expect(
+      within(list)
+        .getAllByLabelText('As')
+        .map((select) => (select as HTMLSelectElement).value),
+    ).toEqual(['chapter', 'research']);
+    expect(screen.getByRole('list', { name: 'Conversion notes' }).textContent).toContain(
+      'cover.png',
+    );
+    await user.click(within(list).getAllByLabelText('Add')[1]!);
+    await user.click(screen.getByRole('button', { name: 'Add 1 entry to the book' }));
+
+    expect(importBookEntries).toHaveBeenCalledWith('the-salt-road', {
+      origin: { ...zipOrigin, fileName: 'more.zip: ch-2.md', mediaType: 'text/markdown' },
+      conversionNotes: [],
+      entries: [
+        {
+          title: 'Chapter 2: The Mill',
+          markdown: 'Flour dust.\n',
+          kind: 'chapter',
+          origin: { ...zipOrigin, fileName: 'more.zip: ch-2.md', mediaType: 'text/markdown' },
+        },
+      ],
+    });
+    expect((await screen.findByRole('status', { name: 'Added files' })).textContent).toContain(
+      'chapters/chapter-02.md',
+    );
+    expect(screen.queryByRole('list', { name: 'Files to add' })).toBeNull();
+  });
+
   it('opens an imported project with its import report', async () => {
     const importManuscript = vi.fn(() =>
       Promise.resolve({
@@ -577,7 +650,7 @@ describe('builds and project import', () => {
     );
     renderAt('/books', { importManuscript });
     const user = userEvent.setup();
-    const input = await screen.findByLabelText(/Import a manuscript or project/u);
+    const input = await screen.findByLabelText(/Import a manuscript, a project/u);
     await user.upload(
       input,
       new File([new Uint8Array([0x50, 0x4b])], 'salt.zip', { type: 'application/zip' }),

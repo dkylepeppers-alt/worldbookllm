@@ -174,24 +174,35 @@ function extensionOf(path: string): string {
 }
 
 interface ProjectArchiveFile {
-  /** Book-relative POSIX path. */
+  /** Book-relative POSIX path (for loose documents, the path inside the archive). */
   path: string;
   data: Buffer;
 }
 
 export interface ProjectArchive {
+  /**
+   * `project`: a story-skills project, rooted at its `story.md`. `documents`:
+   * no `story.md`, just Markdown and text files (chapters, notes) to build a
+   * book from.
+   */
+  kind: 'project' | 'documents';
   files: ProjectArchiveFile[];
   /** Archive paths that were left out, each with the reason. */
   skipped: string[];
 }
 
+/** What a loose-documents archive keeps: manuscript and note text. */
+const DOCUMENT_EXTENSIONS = new Set(['md', 'markdown', 'txt']);
+
 /**
- * Unpacks a zipped story-skills project (ADR 0020). The project root is the
- * folder holding `story.md`: the archive root, or a single top-level folder.
- * Markdown, plain-text notes, and cover images are kept; build output
- * (`dist/`), dot-entries, macOS resource forks, symlinks, and other file
- * types are skipped and reported. An entry whose path could escape the
- * project rejects the whole archive.
+ * Unpacks an uploaded book archive (ADR 0020, ADR 0024). With a `story.md`,
+ * it is a story-skills project: the project root is the folder holding it,
+ * the archive root or a single top-level folder, and Markdown, plain-text
+ * notes, and cover images are kept. Without one, its Markdown and text files
+ * are kept at their archive paths. Build output (`dist/`), dot-entries,
+ * macOS resource forks, symlinks, and other file types are skipped and
+ * reported. An entry whose path could escape the book rejects the whole
+ * archive.
  */
 export async function unpackProjectZip(
   bytes: Buffer,
@@ -212,23 +223,23 @@ export async function unpackProjectZip(
       .filter(({ segments }) => segments.at(-1) === 'story.md' && !isNoise(segments))
       .map(({ segments }) => segments.slice(0, -1).join('/')),
   );
-  if (roots.size === 0) {
-    throw invalid('The archive is not a story-skills project: it has no story.md.');
-  }
   if (roots.size > 1) {
     throw invalid('The archive holds several books. Import them one zip at a time.');
   }
-  const root = [...roots][0]!;
-  if (root.includes('/')) {
+  const root = roots.size === 1 ? [...roots][0]! : null;
+  if (root?.includes('/')) {
     throw invalid('Zip the book folder itself: story.md must be at the top of the archive.');
   }
+  const kind = root === null ? 'documents' : 'project';
+  const keptExtensions = kind === 'project' ? KEPT_EXTENSIONS : DOCUMENT_EXTENSIONS;
 
   const kept: Array<{ entry: ZipEntry; path: string }> = [];
   const keptPaths = new Set<string>();
   const skipped: string[] = [];
   let total = 0;
   for (const { entry, segments } of files) {
-    const inside = root === '' ? segments : segments[0] === root ? segments.slice(1) : null;
+    const inside =
+      root === null || root === '' ? segments : segments[0] === root ? segments.slice(1) : null;
     const path = inside?.join('/') ?? '';
     const skip = (reason: string) => skipped.push(`${entry.name} (${reason})`);
     if (isNoise(segments)) {
@@ -239,8 +250,8 @@ export async function unpackProjectZip(
       skip('build output');
     } else if (entry.symlink) {
       skip('symbolic link');
-    } else if (!KEPT_EXTENSIONS.has(extensionOf(path))) {
-      skip('not a project file type');
+    } else if (!keptExtensions.has(extensionOf(path))) {
+      skip(kind === 'project' ? 'not a project file type' : 'not a Markdown or text file');
     } else if (entry.size > PROJECT_ZIP_LIMITS.maxFileBytes) {
       throw invalid(`${entry.name} is larger than 25 MiB.`);
     } else if (keptPaths.has(path)) {
@@ -254,6 +265,9 @@ export async function unpackProjectZip(
       kept.push({ entry, path });
     }
   }
+  if (kind === 'documents' && kept.length === 0) {
+    throw invalid('The archive has no story.md and no Markdown or text files to import.');
+  }
 
   const started = Date.now();
   const unpacked: ProjectArchiveFile[] = [];
@@ -263,7 +277,7 @@ export async function unpackProjectZip(
       throw invalid(`The archive took more than ${deadlineMs / 1000}s to unpack.`);
     }
   }
-  return { files: unpacked, skipped };
+  return { kind, files: unpacked, skipped };
 }
 
 /** Dot-entries and macOS resource forks, at any depth. */

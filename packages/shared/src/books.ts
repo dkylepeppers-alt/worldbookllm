@@ -311,8 +311,9 @@ export type BookSearchResult = z.infer<typeof bookSearchResultSchema>;
 /**
  * Book ingestion (ADR 0014 decision 5). Previews reuse the source converters;
  * each entry carries the entity kind it should become, suggested from its
- * frontmatter or format and changeable at review. Chapters and scenes come in
- * through manuscript import, not here.
+ * frontmatter, format, title, or folder and changeable at review. A chapter
+ * is appended after the book's last chapter. An entry from a zip carries its
+ * own file origin.
  */
 export const BOOK_IMPORT_KINDS = [
   'research',
@@ -327,6 +328,7 @@ export const BOOK_IMPORT_KINDS = [
   'clue',
   'term',
   'matter',
+  'chapter',
 ] as const;
 
 export const bookImportKindSchema = z.enum(BOOK_IMPORT_KINDS);
@@ -343,6 +345,8 @@ export const bookImportPreviewSchema = z.strictObject({
         suggestedKind: bookImportKindSchema,
         /** The entry is already a story-skills entity file and keeps its own frontmatter. */
         entityFile: z.boolean(),
+        /** Where this entry came from, when it differs from the upload (a file inside a zip). */
+        origin: sourceOriginSchema.optional(),
       }),
     )
     .min(1)
@@ -358,6 +362,7 @@ export const createBookImportSchema = z.strictObject({
         title: sourceTitleSchema,
         markdown: z.string().min(1).max(10_485_760),
         kind: bookImportKindSchema,
+        origin: sourceOriginSchema.optional(),
       }),
     )
     .min(1)

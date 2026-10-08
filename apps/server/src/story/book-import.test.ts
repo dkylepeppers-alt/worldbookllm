@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  archiveDocumentKind,
+  chapterTitle,
   entityKindOf,
+  fillCreatedChapter,
   fillCreatedEntity,
   importedBody,
   kebabId,
   provenanceLines,
   renderEntityFile,
   splitFrontmatter,
+  suggestImportKind,
 } from './book-import.js';
 
 describe('entityKindOf', () => {
@@ -91,5 +95,56 @@ describe('kebabId', () => {
     expect(kebabId("Sera's Reclamation")).toBe('seras-reclamation');
     expect(kebabId('Café  Noir!')).toBe('cafe-noir');
     expect(kebabId('Пётр')).toBe('');
+  });
+});
+
+describe('chapter imports', () => {
+  it('suggests chapters from titles, file names, and folders, but not in notes folders', () => {
+    const kind = (markdown: string, hint: { title?: string; path?: string }) =>
+      suggestImportKind(markdown, 'markdown', hint).suggestedKind;
+    expect(kind('Text', { title: 'Chapter 3: The Harbor' })).toBe('chapter');
+    expect(kind('Text', { title: 'Prologue' })).toBe('chapter');
+    expect(kind('Text', { path: 'ch02.md' })).toBe('chapter');
+    expect(kind('Text', { path: 'manuscript/the-harbor.md' })).toBe('chapter');
+    expect(kind('Text', { path: 'notes/chapter-ideas.md' })).toBe('research');
+    expect(kind('Text', { title: 'Harbor notes', path: 'harbor.md' })).toBe('research');
+    expect(kind('Text', { title: 'Characterization tips' })).toBe('research');
+  });
+
+  it('files every loose zip document as a chapter unless it is a note or an entity', () => {
+    expect(archiveDocumentKind('draft/the-harbor.md', 'Prose.')).toBe('chapter');
+    expect(archiveDocumentKind('research/salt.md', '# Salt')).toBe('research');
+    expect(
+      archiveDocumentKind('bram.md', '---\nname: Bram\nrole: supporting\nstatus: alive\n---\n'),
+    ).toBe('character');
+  });
+
+  it('strips the chapter number from a title, keeping a bare one', () => {
+    expect(chapterTitle('Chapter 3: The Harbor')).toBe('The Harbor');
+    expect(chapterTitle('CHAPTER ONE — Arrival')).toBe('Arrival');
+    expect(chapterTitle('Chapter 12')).toBe('Chapter 12');
+    expect(chapterTitle('The Harbor')).toBe('The Harbor');
+  });
+
+  it('puts imported prose under Chapter Text and keeps stray frontmatter outside it', () => {
+    const created =
+      '---\ntitle: Arrival\nnumber: 2\nstatus: outline\n---\n\n# Chapter 2: Arrival\n\n## Outline\n\n1. Beat\n\n---\n\n## Chapter Text\n';
+    const filled = fillCreatedChapter(
+      created,
+      '---\nmood: grim\n---\n# Chapter 2: Arrival\n\nThe ferry docked.\n',
+      'Arrival',
+      ['origin-type: "paste"'],
+    );
+    expect(filled).toBe(
+      '---\ntitle: Arrival\nnumber: 2\nstatus: draft\norigin-type: "paste"\n---\n\n# Chapter 2: Arrival\n\n## Imported Frontmatter\n\n```yaml\nmood: grim\n```\n\n## Chapter Text\n\nThe ferry docked.\n',
+    );
+    const ownLayout = fillCreatedChapter(
+      created,
+      '---\ntitle: Arrival\nstatus: final\n---\n\n# Chapter 9: Arrival\n\n## Chapter Text\n\nOwn prose.\n',
+      'Arrival',
+      [],
+    );
+    expect(ownLayout).toContain('## Chapter Text\n\nOwn prose.\n');
+    expect(ownLayout).not.toContain('Imported Frontmatter');
   });
 });

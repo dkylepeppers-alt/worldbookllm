@@ -89,10 +89,27 @@ describe('unpackProjectZip', () => {
     ).rejects.toThrow(message);
   });
 
-  it('rejects archives that are not one story-skills project', async () => {
-    await expect(unpackProjectZip(makeZip([{ name: 'notes.md', data: 'x' }]))).rejects.toThrow(
-      'has no story.md',
+  it('keeps the Markdown and text files of an archive without story.md', async () => {
+    const archive = await unpackProjectZip(
+      makeZip([
+        { name: 'draft/chapter-1.md', data: '# Chapter 1' },
+        { name: 'draft/notes/harbor.txt', data: 'Fog.' },
+        { name: 'draft/cover.png', data: 'png' },
+        { name: 'draft/.DS_Store', data: 'x' },
+      ]),
     );
+    expect(archive.kind).toBe('documents');
+    expect(archive.files.map((file) => file.path)).toEqual([
+      'draft/chapter-1.md',
+      'draft/notes/harbor.txt',
+    ]);
+    expect(archive.skipped).toEqual(['draft/cover.png (not a Markdown or text file)']);
+    await expect(unpackProjectZip(makeZip([{ name: 'cover.png', data: 'x' }]))).rejects.toThrow(
+      'no story.md and no Markdown or text files',
+    );
+  });
+
+  it('rejects archives that are not one story-skills project', async () => {
     await expect(
       unpackProjectZip(
         makeZip([

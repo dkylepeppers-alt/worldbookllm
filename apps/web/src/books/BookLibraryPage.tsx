@@ -154,7 +154,9 @@ export function BookLibraryPage() {
           </button>
         </div>
         <label className="button-secondary file-button">
-          {busy === 'import' ? 'Importing…' : 'Import a manuscript or project (.md, .txt, .zip)'}
+          {busy === 'import'
+            ? 'Importing…'
+            : 'Import a manuscript, a project, or a zip of chapters (.md, .txt, .zip)'}
           <input
             type="file"
             accept=".md,.markdown,.txt,.zip,text/markdown,text/plain,application/zip"

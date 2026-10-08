@@ -13,6 +13,8 @@ import {
   type BookConflict,
   bookFileDetailSchema,
   bookFileSchema,
+  bookImportPreviewSchema,
+  bookImportResultSchema,
   bookSearchResultSchema,
   bookSummarySchema,
   bookTreeSchema,
@@ -63,7 +65,10 @@ import {
   type ConnectionTestResponse,
   type CreateAgentChatInput,
   type AddSeriesBookInput,
+  type BookImportPreview,
+  type BookImportResult,
   type CreateBookBuildInput,
+  type CreateBookImportInput,
   type CreateBookInput,
   type CreateSeriesInput,
   type MoveBookToSeriesInput,
@@ -130,6 +135,12 @@ export interface ApiClient {
     signal?: AbortSignal,
   ): Promise<BookSummary>;
   importManuscript(file: File, signal?: AbortSignal): Promise<ManuscriptImportResult>;
+  previewBookImport(slug: string, file: File, signal?: AbortSignal): Promise<BookImportPreview>;
+  importBookEntries(
+    slug: string,
+    input: CreateBookImportInput,
+    signal?: AbortSignal,
+  ): Promise<BookImportResult>;
   trashBook(slug: string, signal?: AbortSignal): Promise<void>;
   getBookTree(slug: string, signal?: AbortSignal): Promise<BookTree>;
   readBookFile(slug: string, path: string, signal?: AbortSignal): Promise<BookFileDetail>;
@@ -372,6 +383,23 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         signal,
       });
     },
+    previewBookImport: (slug, file, signal) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return request(`${book(slug)}/previews/file`, {
+        method: 'POST',
+        formData,
+        schema: bookImportPreviewSchema,
+        signal,
+      });
+    },
+    importBookEntries: (slug, input, signal) =>
+      request(`${book(slug)}/imports`, {
+        method: 'POST',
+        body: input,
+        schema: bookImportResultSchema,
+        signal,
+      }),
     trashBook: (slug, signal) => request(book(slug), { method: 'DELETE', signal }),
     getBookTree: (slug, signal) =>
       request(`${book(slug)}/tree`, { schema: bookTreeSchema, signal }),
