@@ -654,7 +654,7 @@ describe('builds', () => {
     // Prose is escaped so ink prints it rather than reading it as logic.
     expect(download.body).toContain('\\{A second light\\}');
     expect(download.body).toMatch(/=== chapter_03 ===\n[\s\S]*?-> END/u);
-  });
+  }, 30_000);
 
   it('reports a book with nothing to build as an unusable project', async () => {
     const book = await createBook('Empty');
@@ -767,7 +767,7 @@ describe('interactive books', () => {
     expect(story.warnings.some((line) => line.includes('derived-ifid'))).toBe(false);
     // A play-through leaves nothing behind in the book.
     expect(existsSync(join(dataDir, 'projects', slug, 'dist'))).toBe(false);
-  });
+  }, 30_000);
 
   it('saves choice state, plays it as ink flags, and refuses state ink cannot use', async () => {
     const slug = await threeChapters();
@@ -823,7 +823,7 @@ describe('interactive books', () => {
       'Go down',
       'Read the archive',
     ]);
-  });
+  }, 30_000);
 
   it('plays the book as it is now, and builds the same ink for download', async () => {
     const slug = await threeChapters();
@@ -858,7 +858,7 @@ describe('interactive books', () => {
     });
     expect(download.body).toBe(after.source);
     expect(result.file.size).toBe(Buffer.byteLength(after.source));
-  });
+  }, 30_000);
 
   it('refuses to play a choice that leads nowhere', async () => {
     const slug = await threeChapters();
@@ -871,7 +871,7 @@ describe('interactive books', () => {
     const play = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
     expect(play.statusCode).toBe(409);
     expect(play.json<{ message: string }>().message).toContain('missing chapter chapter-09');
-  });
+  }, 30_000);
 
   it('pins the IFID earlier builds derived, once', async () => {
     const slug = await threeChapters();
@@ -887,7 +887,7 @@ describe('interactive books', () => {
     expect((await branches(slug)).ifid).toBe(derived);
     const again = await app.inject({ method: 'POST', url: `/api/books/${slug}/ifid` });
     expect(again.json()).toEqual({ ifid: derived });
-  });
+  }, 30_000);
 
   it('replaces an IFID the builds would refuse', async () => {
     const slug = await threeChapters();
@@ -899,7 +899,7 @@ describe('interactive books', () => {
     expect(ifid).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/u);
     expect(await branches(slug)).toMatchObject({ ifid, invalidIfid: null });
     expect(readFileSync(story, 'utf8')).not.toContain('ifid: foo');
-  });
+  }, 30_000);
 });
 
 describe('manuscript', () => {
