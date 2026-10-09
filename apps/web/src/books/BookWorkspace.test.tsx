@@ -603,7 +603,14 @@ describe('builds and project import', () => {
     expect(screen.queryByLabelText('Trim size')).toBeNull();
     await user.selectOptions(screen.getByLabelText('Format'), 'print');
     screen.getByLabelText('Trim size');
+    expect(screen.queryByText(/choices/u)).toBeNull();
+    await user.selectOptions(screen.getByLabelText('Format'), 'ink');
+    expect(screen.getByLabelText('Format').getAttribute('aria-describedby')).toBe(
+      'build-format-hint',
+    );
+    expect(document.getElementById('build-format-hint')?.textContent).toContain('choices');
     await user.selectOptions(screen.getByLabelText('Format'), 'epub');
+    expect(screen.getByLabelText('Format').getAttribute('aria-describedby')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Build' }));
 
     expect(createBuild).toHaveBeenCalledWith('the-salt-road', { format: 'epub' });

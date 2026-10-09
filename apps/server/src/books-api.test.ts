@@ -593,6 +593,66 @@ describe('builds', () => {
     expect(result.output).toContain('empty-chapter');
   });
 
+  it('builds a branching book as ink from chapter choices, and refuses a choice to nowhere', async () => {
+    const book = await createBook();
+    for (const name of ['Harbor Wall', 'Down to the Water', 'The Archive']) {
+      expect((await addEntity(book.slug, 'chapter', name)).statusCode).toBe(201);
+    }
+    const chapters = join(dataDir, 'projects', book.slug, 'chapters');
+    const write = (file: string, frontmatter: string, prose: string) => {
+      const path = join(chapters, file);
+      writeFileSync(
+        path,
+        `${readFileSync(path, 'utf8').replace(/^---\n/u, `---\n${frontmatter}`)}\n${prose}\n`,
+      );
+    };
+    write(
+      'chapter-01.md',
+      'choices:\n  - text: Follow the light\n    to: chapter-02\n  - text: Fetch Venn\n    to: chapter-99\n',
+      'Mara climbs the wall. {A second light} burns on the water.',
+    );
+    write('chapter-02.md', '', 'The steps are slick.');
+    write('chapter-03.md', '', 'Venn is still awake.');
+
+    const refused = await app.inject({
+      method: 'POST',
+      url: `/api/books/${book.slug}/builds`,
+      payload: { format: 'ink' },
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: 'story_unusable_project' });
+    expect(refused.json<{ message: string }>().message).toContain(
+      'choices[1] references missing chapter chapter-99',
+    );
+
+    const first = join(chapters, 'chapter-01.md');
+    writeFileSync(first, readFileSync(first, 'utf8').replace('chapter-99', 'chapter-03'));
+    const built = await app.inject({
+      method: 'POST',
+      url: `/api/books/${book.slug}/builds`,
+      payload: { format: 'ink' },
+    });
+    expect(built.statusCode).toBe(201);
+    const result = built.json<BookBuildResult>();
+    expect(result.file.name).toBe('the-salt-road.ink');
+    // No ifid in story.md yet: the build derives one and says how to pin it.
+    expect(result.output).toContain('derived-ifid');
+
+    const download = await app.inject({
+      method: 'GET',
+      url: `/api/books/${book.slug}/builds/the-salt-road.ink`,
+    });
+    expect(download.headers['content-type']).toBe('text/plain; charset=utf-8');
+    expect(download.body).toContain('# title: The Salt Road');
+    expect(download.body).toContain('-> chapter_01');
+    expect(download.body).toContain('=== chapter_01 ===');
+    expect(download.body).toContain('+ [Follow the light] -> chapter_02');
+    expect(download.body).toContain('+ [Fetch Venn] -> chapter_03');
+    // Prose is escaped so ink prints it rather than reading it as logic.
+    expect(download.body).toContain('\\{A second light\\}');
+    expect(download.body).toMatch(/=== chapter_03 ===\n[\s\S]*?-> END/u);
+  });
+
   it('reports a book with nothing to build as an unusable project', async () => {
     const book = await createBook('Empty');
     const response = await app.inject({
