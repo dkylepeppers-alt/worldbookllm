@@ -5,6 +5,7 @@ import {
   type CreateBookBuildInput,
 } from '@worldbookllm/shared';
 import { type FormEvent, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { buildDownloadUrl } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
@@ -27,13 +28,16 @@ const FORMAT_LABELS: Readonly<Record<BookBuildFormat, string>> = {
 };
 
 /** Twee and ink read chapter `choices`, which nothing else in a build does. */
-const INTERACTIVE_HINT = (
-  <p id="build-format-hint">
-    Each chapter becomes a passage. A chapter's <code>choices</code> link it to the chapters the
-    reader can pick next; without any, the chapters run in order. Add an <code>ifid</code> to
-    story.md before sharing, so retitling the book keeps the story's identity.
-  </p>
-);
+function InteractiveHint({ slug }: { slug: string }) {
+  return (
+    <p id="build-format-hint">
+      Each chapter becomes a passage, starting with the first. Until any chapter has choices, the
+      chapters run in order; once one does, a chapter without choices is an ending. Set them up and
+      pin the story&apos;s IFID on the{' '}
+      <Link to={`/books/${encodeURIComponent(slug)}/write/branches`}>Branches</Link> screen.
+    </p>
+  );
+}
 
 /** EPUB first: it is what most writers reach for. */
 const FORMATS: readonly BookBuildFormat[] = [
@@ -165,7 +169,7 @@ export function BuildsSection() {
           {busy ? 'Building…' : 'Build'}
         </button>
       </form>
-      {interactive ? INTERACTIVE_HINT : null}
+      {interactive ? <InteractiveHint slug={slug} /> : null}
       {error === null ? null : (
         <p className="form-error" role="alert">
           {error}

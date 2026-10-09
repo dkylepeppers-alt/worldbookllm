@@ -16,6 +16,13 @@ export function WritePage() {
     <section className="book-panel" aria-labelledby="write-heading">
       <p className="coordinate-label">Manuscript</p>
       <h2 id="write-heading">Chapters</h2>
+      {chapters.length === 0 ? null : (
+        <p className="write-links">
+          <Link to="branches">Branches and choices</Link>
+          <span aria-hidden="true"> · </span>
+          <Link to="play">Play through</Link>
+        </p>
+      )}
       {chapters.length === 0 ? (
         <p className="empty-map">No chapters yet. Add the first one below.</p>
       ) : (

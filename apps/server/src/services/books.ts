@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   bookSlugSchema,
   type AddEntityInput,
@@ -35,6 +37,10 @@ import {
   type StoryEnvelope,
   type StoryOptions,
   type WriteBookFileInput,
+  type BookBranches,
+  type BookPlay,
+  type PinnedIfid,
+  type SetChapterChoicesInput,
 } from '@worldbookllm/shared';
 
 import { ConflictError, InvalidImportError, NotFoundError, StoryCommandError } from '../errors.js';
@@ -63,6 +69,8 @@ import {
 } from '../story/book-builds.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { exportManuscript } from '../story/book-manuscript.js';
+import { buildPlay } from '../story/book-play.js';
+import { branchGraph, setFrontmatterChoices } from '../story/branches.js';
 import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
 import type {
   CheckpointActor,
@@ -1069,6 +1077,91 @@ export class BookService {
   /** The manuscript for reading, under the book lock so it never catches a write halfway. */
   manuscript(slug: string): Promise<BookManuscript> {
     return this.locks.run(slug, () => exportManuscript(this.cli, this.files.root(slug)));
+  }
+
+  /** The chapters as a branch graph: their choices, the start, endings, and what is reachable. */
+  branches(slug: string): Promise<BookBranches> {
+    return this.locks.run(slug, () => this.readBranches(slug));
+  }
+
+  private readBranches(slug: string): BookBranches {
+    this.index.reconcile(slug);
+    const chapters = this.index
+      .list(slug)
+      .filter((file) => file.kind === 'chapter' && file.entityId !== null)
+      .map((file) => {
+        const bytes = this.files.readBytes(slug, file.path);
+        return {
+          id: file.entityId!,
+          title: file.title,
+          path: file.path,
+          hash: file.hash,
+          frontmatter: bytes === null ? null : parseFrontmatter(bytes.toString('utf8')).frontmatter,
+        };
+      });
+    const story = this.files.readBytes(slug, 'story.md')?.toString('utf8') ?? '';
+    const ifid = parseFrontmatter(story).frontmatter?.ifid;
+    return branchGraph(chapters, typeof ifid === 'string' && ifid.trim() !== '' ? ifid : null);
+  }
+
+  /** Replaces a chapter's `choices` as one checkpointed edit of its file. */
+  async setChapterChoices(
+    slug: string,
+    chapterId: string,
+    input: SetChapterChoicesInput,
+  ): Promise<BookBranches> {
+    const chapter = (await this.branches(slug)).chapters.find((entry) => entry.id === chapterId);
+    if (chapter === undefined) throw new NotFoundError(`Chapter ${chapterId} was not found`);
+    const current = this.files.readBytes(slug, chapter.path);
+    if (current === null || sha256(current) !== input.expectedHash) {
+      throw new ConflictError(
+        'file_changed',
+        `${chapter.path} changed since it was loaded. Reload to see the latest choices.`,
+      );
+    }
+    const content = setFrontmatterChoices(current.toString('utf8'), input.choices);
+    await this.writeFile(slug, chapter.path, { content, expectedHash: input.expectedHash });
+    return this.branches(slug);
+  }
+
+  /** The book as a playable story, assembled by the Twee build. */
+  play(slug: string): Promise<BookPlay> {
+    return this.locks.run(slug, () => buildPlay(this.cli, this.files.root(slug)));
+  }
+
+  /**
+   * Pins the story's IFID in story.md, so retitling the book keeps the same
+   * identity. It keeps the IFID earlier builds derived; when the book cannot
+   * build yet (a choice leads nowhere), a fresh one.
+   */
+  pinIfid(slug: string): Promise<PinnedIfid> {
+    return this.locks.run(slug, async () => {
+      const story = this.files.readBytes(slug, 'story.md')?.toString('utf8');
+      if (story === undefined) throw new NotFoundError(`${slug} has no story.md`);
+      const pinned = parseFrontmatter(story).frontmatter?.ifid;
+      if (typeof pinned === 'string' && pinned.trim() !== '') return { ifid: pinned };
+      let ifid: string;
+      try {
+        ifid = (await buildPlay(this.cli, this.files.root(slug))).ifid;
+      } catch (error) {
+        if (!(error instanceof StoryCommandError)) throw error;
+        ifid = '';
+      }
+      if (!/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/iu.test(ifid)) {
+        ifid = randomUUID();
+      }
+      ifid = ifid.toUpperCase();
+      const content = setFrontmatterField(story, 'ifid', ifid);
+      await this.checkpoints.record(
+        slug,
+        'Pin the story IFID',
+        'user',
+        needsReindex('story.md') ? 'book' : { paths: ['story.md'] },
+        () => this.writeAndReindex(slug, 'story.md', content),
+      );
+      this.index.reconcile(slug);
+      return { ifid };
+    });
   }
 
   /** Builds a disposable manuscript file into the book's `dist/` with `story build`. */

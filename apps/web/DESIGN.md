@@ -149,6 +149,10 @@ Book cards, settings cards, check cards, notices, the change summary, the agent'
 
 One centered 68ch column: a collapsible contents card, optional export notes, then the manuscript in Source Serif 4 at 1.8 line height. Chapter headings use the UI sans; a scene break is a short centered rule.
 
+### Branches and Play
+
+Write → Branches lists each chapter as a card: title, id, and small status tags (Start, Ending, and Not reachable in danger), then one row per choice (text field, "Leads to" select, Remove) that stacks on phones. A summary card above names endings, unreachable chapters, and broken choices with links to their cards. Write → Play shows one chapter at a time in the Reader's serif column, its choices as full-width secondary buttons, and "The end." with Play again at an ending; the chapter is in the address, so Back steps back.
+
 ### Dialogs
 
 Bottom sheet on phones (12px top corners), centered card from 620px. `--backdrop` scrim and `--shadow-dialog`.

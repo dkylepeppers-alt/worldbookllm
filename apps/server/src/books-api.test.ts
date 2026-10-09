@@ -11,10 +11,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type {
+  BookBranches,
   BookBuildFile,
   BookBuildResult,
   BookCheckResult,
   BookFileDetail,
+  BookPlay,
   BookSearchResult,
   BookSummary,
   BookTree,
@@ -662,6 +664,128 @@ describe('builds', () => {
     });
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({ error: 'story_unusable_project' });
+  });
+});
+
+describe('interactive books', () => {
+  async function threeChapters(): Promise<string> {
+    const book = await createBook();
+    for (const [name, prose] of [
+      ['Harbor Wall', 'Mara climbs the wall.'],
+      ['Down to the Water', 'The steps are slick.'],
+      ['The Archive', 'Venn is still awake.'],
+    ] as const) {
+      expect((await addEntity(book.slug, 'chapter', name)).statusCode).toBe(201);
+      const index = readdirSync(join(dataDir, 'projects', book.slug, 'chapters')).filter((file) =>
+        /^chapter-\d+\.md$/u.test(file),
+      ).length;
+      const path = join(dataDir, 'projects', book.slug, `chapters/chapter-0${index}.md`);
+      writeFileSync(path, `${readFileSync(path, 'utf8')}\n${prose}\n`);
+    }
+    return book.slug;
+  }
+
+  async function branches(slug: string): Promise<BookBranches> {
+    const response = await app.inject({ method: 'GET', url: `/api/books/${slug}/branches` });
+    expect(response.statusCode).toBe(200);
+    return response.json<BookBranches>();
+  }
+
+  it('edits choices as checkpointed frontmatter, then plays the story they make', async () => {
+    const slug = await threeChapters();
+    const linear = await branches(slug);
+    expect(linear).toMatchObject({ branching: false, ifid: null });
+    expect(linear.chapters.map((chapter) => chapter.id)).toEqual([
+      'chapter-01',
+      'chapter-02',
+      'chapter-03',
+    ]);
+    expect(linear.chapters.every((chapter) => chapter.reachable && !chapter.ending)).toBe(true);
+
+    const first = linear.chapters[0]!;
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: {
+        expectedHash: first.hash,
+        choices: [{ text: 'Follow the light', to: 'chapter-02' }],
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+    const branching = saved.json<BookBranches>();
+    expect(branching.branching).toBe(true);
+    expect(
+      branching.chapters.map((chapter) => [chapter.id, chapter.ending, chapter.reachable]),
+    ).toEqual([
+      ['chapter-01', false, true],
+      ['chapter-02', true, true],
+      ['chapter-03', true, false],
+    ]);
+    const file = readFileSync(join(dataDir, 'projects', slug, first.path), 'utf8');
+    expect(file).toContain('choices:\n  - text: "Follow the light"\n    to: chapter-02\n');
+    expect(file).toContain('Mara climbs the wall.');
+    const checkpoints = await app.inject({ method: 'GET', url: `/api/books/${slug}/checkpoints` });
+    expect(checkpoints.json<Checkpoint[]>()[0]?.label).toBe(`Edit ${first.path}`);
+
+    // The hash the choices were read with is stale now.
+    const stale = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: { expectedHash: first.hash, choices: [] },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: 'file_changed' });
+
+    const unsafe = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: { expectedHash: first.hash, choices: [{ text: 'a -> b', to: 'chapter-02' }] },
+    });
+    expect(unsafe.statusCode).toBe(400);
+
+    const play = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
+    expect(play.statusCode).toBe(200);
+    const story = play.json<BookPlay>();
+    expect(story).toMatchObject({ title: 'The Salt Road', start: 'chapter-01' });
+    expect(story.passages[0]).toEqual({
+      id: 'chapter-01',
+      prose: expect.stringContaining('Mara climbs the wall.') as string,
+      links: [{ text: 'Follow the light', to: 'chapter-02' }],
+    });
+    expect(story.passages[2]?.links).toEqual([]);
+    expect(story.warnings.some((line) => line.includes('chapter-03'))).toBe(true);
+    expect(story.warnings.some((line) => line.includes('derived-ifid'))).toBe(false);
+    // A play-through leaves nothing behind in the book.
+    expect(existsSync(join(dataDir, 'projects', slug, 'dist'))).toBe(false);
+  });
+
+  it('refuses to play a choice that leads nowhere', async () => {
+    const slug = await threeChapters();
+    const first = (await branches(slug)).chapters[0]!;
+    await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: { expectedHash: first.hash, choices: [{ text: 'Go', to: 'chapter-09' }] },
+    });
+    const play = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
+    expect(play.statusCode).toBe(409);
+    expect(play.json<{ message: string }>().message).toContain('missing chapter chapter-09');
+  });
+
+  it('pins the IFID earlier builds derived, once', async () => {
+    const slug = await threeChapters();
+    const derived = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
+    ).json<BookPlay>().ifid;
+    const pinned = await app.inject({ method: 'POST', url: `/api/books/${slug}/ifid` });
+    expect(pinned.statusCode).toBe(200);
+    expect(pinned.json()).toEqual({ ifid: derived });
+    expect(readFileSync(join(dataDir, 'projects', slug, 'story.md'), 'utf8')).toContain(
+      `ifid: ${derived}`,
+    );
+    expect((await branches(slug)).ifid).toBe(derived);
+    const again = await app.inject({ method: 'POST', url: `/api/books/${slug}/ifid` });
+    expect(again.json()).toEqual({ ifid: derived });
   });
 });
 
