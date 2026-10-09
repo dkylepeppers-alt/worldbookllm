@@ -209,6 +209,27 @@ describe('book workspace', () => {
     );
   });
 
+  it('links scenes in scene-number order past 99', async () => {
+    renderAt('/books/the-salt-road', {
+      getBookTree: () =>
+        Promise.resolve({
+          ...tree,
+          files: [
+            ...tree.files,
+            file('scenes/chapter-01-scene-100.md', 'scene', 'chapter-01-scene-100', 'Landfall'),
+            file('scenes/chapter-01-scene-99.md', 'scene', 'chapter-01-scene-99', 'Fog'),
+          ],
+        }),
+    });
+
+    const scenes = await screen.findByRole('list', { name: 'Scenes in Arrival' });
+    expect(
+      within(scenes)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['The ferry', 'Fog', 'Landfall']);
+  });
+
   it('groups the bible by section and adds an entity with story add', async () => {
     const addBookEntity = vi.fn(() =>
       Promise.resolve(

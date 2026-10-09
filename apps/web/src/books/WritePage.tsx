@@ -23,7 +23,9 @@ export function WritePage() {
           {chapters.map((chapter) => {
             const chapterScenes = scenes
               .filter((scene) => scene.entityId?.startsWith(`${chapter.entityId ?? ''}-scene-`))
-              .sort((left, right) => (left.entityId ?? '').localeCompare(right.entityId ?? ''));
+              .sort((left, right) =>
+                (left.entityId ?? '').localeCompare(right.entityId ?? '', 'en', { numeric: true }),
+              );
             const count = chapterScenes.length;
             return (
               <li key={chapter.path}>

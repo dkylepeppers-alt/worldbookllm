@@ -23,8 +23,8 @@ function groupByFolder(files: readonly BookFile[]): Folder[] {
 }
 
 /**
- * Every file in the book, by folder: the same set the agent can list, so
- * nothing on disk is reachable only through the agent.
+ * Every Markdown file the book index holds, by folder (registries included),
+ * so nothing on disk is reachable only through the agent.
  */
 export function AllFilesSection() {
   const { slug, tree } = useBook();
