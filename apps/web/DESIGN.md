@@ -1,240 +1,171 @@
 ---
 name: worldbookllm
-description: A cartographer's field atlas for source-grounded creative writing
+description: A calm, modern writing tool for story-skills books
 colors:
-  paper: '#e8e9e3'
-  surface: '#f8f8f4'
-  ink: '#17212b'
-  blueprint: '#2457c5'
-  vermilion: '#c9442e'
-  lichen: '#5f705a'
-  line: '#b8bdb8'
-  muted: '#5a656d'
+  light:
+    bg: '#f7f7f5'
+    surface: '#ffffff'
+    surface-2: '#f1f1ee'
+    text: '#1d1d1f'
+    prose: '#2a2a2d'
+    muted: '#5e6066'
+    border: '#e3e3df'
+    border-strong: '#878782'
+    accent: '#4f46e5'
+    accent-hover: '#4338ca'
+    on-accent: '#ffffff'
+    danger: '#c0262d'
+    success: '#1f7a3d'
+  dark:
+    bg: '#131315'
+    surface: '#1b1b1e'
+    surface-2: '#232327'
+    text: '#ececee'
+    prose: '#dcdcdf'
+    muted: '#a0a0a8'
+    border: '#2d2d32'
+    border-strong: '#707078'
+    accent: '#8b8cf6'
+    accent-hover: '#a5a6f9'
+    on-accent: '#111114'
+    danger: '#f47174'
+    success: '#5cc98a'
 typography:
-  display:
-    fontFamily: 'Archivo Variable, Archivo, system-ui, sans-serif'
-    fontSize: 'clamp(2rem, 8vw, 4.8rem)'
-    fontWeight: 740
-    lineHeight: 1.02
-    letterSpacing: '-0.035em'
-  headline:
-    fontFamily: 'Archivo Variable, Archivo, system-ui, sans-serif'
-    fontSize: 'clamp(1.4rem, 4vw, 2.25rem)'
-    fontWeight: 700
-    lineHeight: 1.02
-    letterSpacing: '-0.035em'
-  body:
-    fontFamily: 'Source Serif 4 Variable, Georgia, serif'
-    fontSize: 'clamp(1.02rem, 2.5vw, 1.18rem)'
-    fontWeight: 400
-    lineHeight: 1.72
-  label:
-    fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace'
-    fontSize: '0.68rem'
-    fontWeight: 650
-    letterSpacing: '0.095em'
+  ui: "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+  prose: "'Source Serif 4 Variable', Georgia, serif"
+  mono: "ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, monospace"
 rounded:
-  none: '0px'
-  sm: '2px'
-  md: '3px'
-  lg: '4px'
-  dialog: '8px'
-spacing:
-  xs: '0.35rem'
-  sm: '0.65rem'
-  md: '1rem'
-  lg: '2rem'
-  xl: '6rem'
-components:
-  button-primary:
-    backgroundColor: '{colors.blueprint}'
-    textColor: '{colors.surface}'
-    rounded: '{rounded.md}'
-    padding: '0.7rem 1rem'
-  button-primary-hover:
-    backgroundColor: '#193f98'
-  button-danger:
-    backgroundColor: '{colors.vermilion}'
-    textColor: '{colors.surface}'
-    rounded: '{rounded.md}'
-    padding: '0.7rem 1rem'
-  button-secondary:
-    backgroundColor: '{colors.surface}'
-    textColor: '{colors.ink}'
-    rounded: '{rounded.md}'
-    padding: '0.7rem 1rem'
-  input:
-    backgroundColor: '{colors.surface}'
-    textColor: '{colors.ink}'
-    rounded: '{rounded.sm}'
-    padding: '0.75rem 0.8rem'
-  notebook-card:
-    backgroundColor: '{colors.surface}'
-    rounded: '{rounded.none}'
-    padding: '1.25rem'
+  sm: '6px'
+  md: '8px'
+  lg: '12px'
 ---
 
 # Design System: worldbookllm
 
 ## 1. Overview
 
-**Creative North Star: "The Field Atlas"**
+**North star: a quiet writing tool.** worldbookllm should feel like a well-made editor — iA Writer, Linear, Things — not a themed object. The interface is neutral and gets out of the way; the writer's words, set in a serif, are the only thing on screen with a voice. Structure comes from spacing, hairline borders, and type weight, not from decoration.
 
-worldbookllm reads like a working reference document, not a screen designed to be admired: cool paper stock under a faint blueprint grid, coordinate-style labels, indexed entries, and stamped-flat cards that behave like survey marks rather than floating tiles. It is built for use in the field — legible under scrutiny, precise about what it shows — not for display on a shelf. The metaphor is deliberate: a notebook is unmapped territory being surveyed and logged (the "atlas" of notebooks, "charting" as a loading state, "plotted territories" as an empty state, "route interrupted" as an error state), and every screen keeps that cartographic voice consistent rather than reaching for generic app chrome.
+**Key characteristics:**
 
-This system explicitly rejects the generic-SaaS-dashboard look — no cream/sand card grids, no gradient text, no hero-metric tiles — and rejects the stock-AI-chatbot skin, where a bare message-bubble list dominates the screen. Sources and their Markdown stay visually primary; chat is one region among several, reached for rather than defaulted into.
+- A neutral page with white (or near-black) surfaces laid on it; no textures, grids, or gradients.
+- System sans for everything the app says; Source Serif 4 only for what the writer wrote.
+- One accent (indigo) for interaction and current state. Red only for danger, green only for "done/working".
+- Soft corners (8px controls, 12px cards) and one quiet card shadow.
+- Light and dark themes that follow the operating system, built from the same tokens.
 
-**Key Characteristics:**
+All of it lives in `src/styles.css` as CSS custom properties on `:root`, redefined under `@media (prefers-color-scheme: dark)`. Components use the variables, never raw colors.
 
-- Cool, slightly green-grey paper background with a faint blueprint-blue grid, never a warm cream/sand neutral
-- Serif body copy (Source Serif 4) against sans-serif structural type (Archivo) — an editorial contrast pairing, not two similar sans faces
-- Flat, hard-edged cards with offset "stamp" shadows instead of soft blur — the system's signature elevation move
-- Monospace, uppercase, letter-spaced micro-labels for anything that behaves like metadata (coordinates, counts, timestamps, indices)
-- Two accent colors doing distinct jobs: blueprint for navigation/primary action, vermilion for danger/focus/active state — never interchangeable
+## 2. Color
 
-## 2. Colors
+| Token             | Job                                                                          |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `--bg`            | Page background.                                                             |
+| `--surface`       | Cards, panels, inputs, header, tab bar, dialogs.                             |
+| `--surface-2`     | Recessed areas: `pre` blocks, segmented-control tracks.                      |
+| `--text`          | UI text and headings.                                                        |
+| `--prose`         | Markdown and manuscript text (slightly softer than `--text` for long reads). |
+| `--muted`         | Secondary text: labels, paths, timestamps, hints. Kept at 4.5:1 or better.   |
+| `--border`        | Hairlines: dividers, card borders.                                           |
+| `--border-strong` | Control borders (buttons, inputs); at least 3:1 against every surface.       |
+| `--accent`        | Links, primary buttons, focus rings, the current tab, pressed toggles.       |
+| `--accent-soft`   | Tinted background for the current tab, pressed toggles, selected rows.       |
+| `--on-accent`     | Text on accent or danger fills.                                              |
+| `--danger`        | Destructive buttons, error borders, failed status.                           |
+| `--success`       | Ready/applied/done status and added diff lines.                              |
+| `--backdrop`      | Dialog scrim.                                                                |
 
-A cool, desaturated paper-and-ink base carries the page; blueprint and vermilion are the only two colors allowed to raise their voice, each with one job.
+**One accent rule.** Indigo means "interactive or current". Don't introduce a second hue for emphasis; use weight, size, or `--accent-soft`. Red and green are status colors, never decoration.
 
-### Primary
-
-- **Blueprint Blue** (#2457c5): primary actions, links, the faint background grid, active navigation, the "ready" pulse animation. The system's default accent — used liberally for anything interactive or structural.
-
-### Secondary
-
-- **Vermilion** (#c9442e): danger actions (delete), focus rings, the active state of the wordmark's compass dot, active tab/list indicators, blockquote rules. Reserved for "this needs attention" — never decorative.
-
-### Tertiary
-
-- **Lichen Green** (#5f705a): status-ready and active-marker text only (connection tested, provider active). The quietest accent; a single, specific "this is working" signal.
-
-### Neutral
-
-- **Cool Paper** (#e8e9e3): the page background — cool grey-green, never warm cream or sand.
-- **Warm Surface** (#f8f8f4): cards, panels, dialogs, inputs — one step lighter and warmer than the paper background, so surfaces read as laid-on-top without needing a shadow to prove it.
-- **Deep Ink** (#17212b): primary text, borders, headings — a near-black navy, not pure black.
-- **Line** (#b8bdb8): dividers, input borders, dashed empty-state borders — quiet structural grey with a hint of the paper's green.
-- **Muted** (#5a656d): secondary text (timestamps, helper copy, provider notes) — blue-grey, always checked against its background for the 4.5:1 body-text minimum.
-
-### Named Rules
-
-**The Two-Accent Rule.** Blueprint and vermilion never swap jobs. Blueprint means "go / select / structural"; vermilion means "danger / focus / active-right-now." A screen that needs a third signal reaches for lichen, not a new hue.
+Contrast targets WCAG 2.1 AA in both themes. The dark palette is not an inversion: surfaces step up in lightness (`bg` → `surface` → `surface-2`) and the accent is lightened so it holds 4.5:1 on dark surfaces.
 
 ## 3. Typography
 
-**Display Font:** Archivo Variable (with Archivo, system-ui, sans-serif)
-**Body Font:** Source Serif 4 Variable (with Georgia, serif)
-**Label/Mono Font:** ui-monospace, SFMono-Regular, Consolas, monospace
+- **UI — system sans** (`--font-ui`): navigation, buttons, labels, headings, helper copy, dialogs. Fast, native, and familiar on every platform; no web font to load.
+- **Prose — Source Serif 4** (`--font-prose`): `.markdown-body` and the Reader. The serif marks the writer's own words.
+- **Mono** (`--font-mono`): file paths, frontmatter keys, tool names, diffs, and the raw Markdown editor.
 
-**Character:** A geometric, condensable grotesque (Archivo, pulled narrower via `wdth 90` on headings) paired against a warm, classical serif body — structure and voice kept visually distinct, the way a survey report pairs stamped headers with typewritten notes.
+Scale: `h1` `clamp(1.6rem, 5vw, 2.25rem)` / 650; `h2` `clamp(1.2rem, 3.2vw, 1.5rem)` / 620; `h3` 1.05rem / 620; body 1rem; labels 0.875rem / 550; metadata (`.coordinate-label`) 0.8rem / 550 in `--muted`. Headings use −0.015em tracking. No uppercase labels and no letter-spaced small caps; sentence case everywhere.
 
-### Hierarchy
+Prose reads at `clamp(1.02rem, 2.5vw, 1.18rem)`, 1.72 line height (1.8 in the Reader), capped at 78ch (68ch in the Reader).
 
-- **Display** (740 weight, `clamp(2rem, 8vw, 4.8rem)`, 1.02 line-height, -0.035em tracking): page-level h1s — "Notebook atlas," source titles.
-- **Headline** (700 weight, `clamp(1.4rem, 4vw, 2.25rem)`, 1.02 line-height, -0.035em tracking): section h2s — region headers, dialog titles.
-- **Body** (400 weight, `clamp(1.02rem, 2.5vw, 1.18rem)`, 1.72 line-height, serif): source Markdown content and any long-form prose (page intros, provider notes, dialog copy). Capped at 78ch.
-- **Label** (650 weight, 0.68rem, 0.095em tracking, monospace, uppercase): coordinate labels, source order/word-count, timestamps, legend text — anything that behaves like a data annotation rather than prose.
+## 4. Shape and elevation
 
-### Named Rules
-
-**The Serif-Is-Canon Rule.** Source Serif 4 is reserved for content that came from — or reads like — the user's own material: Markdown bodies, page intros, dialog copy, provider notes. Archivo owns UI chrome, controls, and structural headings. If a string is describing the app, it's Archivo; if it's the user's words or long-form reading, it's the serif.
-
-## 4. Elevation
-
-The system is stamped, not floating. Cards and buttons carry hard-edged offset shadows with zero blur (`5px 5px 0 rgb(36 87 197 / 15%)` on notebook cards, `4px 4px 0 rgb(36 87 197 / 12%)` on settings cards) — the visual equivalent of an ink stamp landing slightly off-register on paper, not a tile hovering above a surface. The one exception is the dialog sheet, which uses a genuine soft ambient shadow (`0 18px 50px rgb(23 33 43 / 14%)`) because it is the one element actually lifting off the page into an overlay.
-
-### Shadow Vocabulary
-
-- **Stamp** (`box-shadow: 5px 5px 0 rgb(36 87 197 / 15%)`): notebook cards — a hard offset in blueprint blue, no blur.
-- **Stamp, quiet** (`box-shadow: 4px 4px 0 rgb(36 87 197 / 12%)`): provider settings cards — the same move at lower opacity for a denser grid.
-- **Sheet lift** (`box-shadow: 0 18px 50px rgb(23 33 43 / 14%)`): the dialog card only — soft, ambient, ink-tinted.
-
-### Named Rules
-
-**The One Soft Shadow Rule.** Blur is reserved for the dialog sheet, the only element genuinely floating above the page. Every other elevated surface uses a hard offset instead — if it isn't overlaying the page, it doesn't get blur.
+- **Radius:** `--radius-sm` 6px, `--radius` 8px for buttons, inputs, and chips, `--radius-lg` 12px for cards, panels, and dialogs.
+- **Borders first:** cards are a 1px `--border` hairline on `--surface`.
+- **Shadows:** `--shadow-card` (barely there) on cards; `--shadow-raised` on hover for clickable cards; `--shadow-dialog` only on dialogs. Nothing else casts a shadow.
 
 ## 5. Components
 
-Every interactive surface reads as an instrument on a drafting table: square corners, visible 1px ink borders, and uppercase micro-labels doing the work that color-coding does elsewhere.
-
 ### Buttons
 
-- **Shape:** 3px corner radius, 1px ink border, 44px minimum touch height.
-- **Primary:** blueprint background (#2457c5), surface-colored text, darkens to #193f98 on hover.
-- **Danger:** vermilion background (#c9442e), surface-colored text — delete and destructive actions only.
-- **Secondary:** surface background, ink border and text — the default, low-emphasis action.
-- **Disabled:** 0.58 opacity, `cursor: wait` (the app treats disabled-while-busy as "working," not "unavailable").
+44px minimum height, 8px radius, weight 550.
 
-### Inputs / Fields
+- **Primary:** accent fill, `--on-accent` text; `--accent-hover` on hover.
+- **Secondary:** surface fill, `--border-strong` border.
+- **Danger:** `--danger` fill — destructive actions only.
+- **Text button:** no border, underlined.
+- **Disabled:** 0.55 opacity, `cursor: wait` (disabled means "working").
 
-- **Style:** 1px line-colored border with an ink-colored bottom edge (a drafting-table "ruled line" effect), 2px radius, surface background.
-- **Labels:** monospace, uppercase, 0.055em tracking, 720 weight — sit above the field, styled as a field-tag rather than soft placeholder-style copy.
-- **Focus:** 3px solid vermilion outline, 3px offset — deliberately loud, never a soft glow.
-- **Textareas:** monospace type, 1.55 line-height, vertically resizable only.
+The file-picker label (`.file-button`) is styled as a secondary button.
 
-### Cards / Containers
+### Inputs
 
-- **Corner style:** square (0px radius) on notebook and provider cards — no rounding, reinforcing the "stamped card" language.
-- **Background:** warm surface (#f8f8f4) against the cool paper page.
-- **Shadow strategy:** the Stamp shadow from Elevation — hard offset, no blur.
-- **Border:** 1px ink on notebook/provider cards; list rows use a 1px line-colored divider instead of a full border.
-- **Signature detail:** the `map-index` — a large, low-opacity blueprint-blue numeral (e.g. "01") positioned top-right on each notebook card, styled as a page/plate number rather than a decorative icon.
+Surface background, `--border-strong` border, 8px radius. Focus turns the border accent with a soft accent halo. Labels sit above the field in sentence case. Textareas use mono.
 
-### Navigation
+### Focus
 
-- **Site header:** 58px minimum height, 1px ink bottom border, translucent surface background over the grid. The wordmark carries a small compass-dot mark (a vermilion-filled circle with a blueprint ring) before the text.
-- **Site nav links:** uppercase, monospace-adjacent weight (720), no underline.
-- **Mobile tabs:** fixed bottom bar, four equal columns, 58px touch targets, active tab marked by an inset top border in vermilion rather than a filled background — collapses away above the tablet breakpoint where the responsive grid takes over.
+A 2px accent outline with 2px offset on every focusable element (inputs use the border + halo instead). Never remove focus styles.
 
-### Dialogs
+### Header
 
-- **Style:** bottom sheet on mobile (rounded top corners only), centered card from tablet width up (full rounding, 4px radius); the one place blur/soft shadow (Sheet Lift) appears.
-- **Structure:** a monospace "coordinate-label" eyebrow (e.g. "Confirm action") above the heading, serif body copy in `.dialog-copy`, right-aligned action row.
+Surface background with a bottom hairline. The wordmark is a small accent dot plus "worldbookllm" in 650 weight. Nav links are `--muted`; the current page is `--text`.
 
-### Source List Item (signature component)
+### Book tabs
 
-Each source row carries a **spine** — a 4px vertical bar in lichen green along its left edge, switching to vermilion when the item is the active/open source. It behaves like a book spine or a survey flag, not a decorative accent stripe: it is the row's own state indicator, not a border-based callout pattern.
+Write / Reader / Bible / Agent / Health / Project (a series bible has no Reader). On phones: a fixed bottom bar of equal columns on `--surface`, the current tab in accent with a 2px top indicator. From 800px: a side rail card (12px radius, 0.35rem inset) where each tab is an 8px-rounded row and the current one gets an `--accent-soft` fill. While an agent turn runs, the Agent tab shows a small pulsing accent dot.
 
-### Book Tabs
+### Segmented controls
 
-The book workspace's Write / Reader / Bible / Agent / Health / Project tabs are a fixed bottom bar of equal columns on phones (six on a book; a series bible has no Reader, so five), with label tracking tightened below 420px so all six fit, and a bordered side rail from 800px, active tab marked in vermilion (inset top border on the bar, inset left border on the rail). While an agent turn runs, the Agent tab carries a small blueprint pulse dot.
+`.section-switch` (Bible sections) and `.mode-switch` (Read / Edit / Rename): the pressed option uses `--accent-soft` with accent text and border (section switch) or a raised surface chip on a `--surface-2` track (mode switch).
 
-### Agent Turn
+### Lists
 
-- **Tool chips:** each tool call is a collapsed `<details>` row with a line border: monospace tool name, the file, query, or story command it acted on in muted text, and an uppercase status (running in blueprint, done in lichen, failed in vermilion with a vermilion border). Expanding shows the arguments and result as `pre` blocks on paper.
-- **Change summary:** a stamped card (quiet stamp shadow, ink border) after the turn's text: a "Changed N files" coordinate label, one row per file with its change kind (new / edited / deleted) as a monospace label and the path as a blueprint button that opens the diff, then Undo turn. An undone summary drops the shadow, turns the border to line grey, and strikes the paths through.
-- **Diff dialog:** a dialog sheet with a monospace line list; added lines get a faint lichen tint and a `+` mark, removed lines a faint vermilion tint and a `−` mark (screen readers hear "Added"/"Removed"), and unchanged runs fold into an uppercase "N unchanged lines" label.
-- **Proposed changes (review mode):** the same stamped card, labelled "Proposed N changes · M awaiting review". Each row keeps the change-kind and path button and adds a secondary **Apply** button and an underlined **Skip** text button; resolved rows show "applied" in lichen or strike a skipped path through. Apply all (primary) and Skip all appear when more than one file is pending. While the turn still runs the card shows its files without actions.
-- **Chat settings row:** under the chat title, an Agent select and a "Review changes before they apply" checkbox, a plain-text toggle (`.agent-review-toggle`: a 44px row with sentence-case label, not a field tag). A "· from Settings" coordinate label marks a chat following the global default.
+`.entry-list` rows are separated by hairlines; the title is an accent link, metadata sits underneath as a muted label. Chapters on the Write tab list their scenes indented beneath them.
+
+### Cards and panels
+
+Book cards, settings cards, check cards, notices, the change summary, the agent's question card, the story commands panel, the Reader's contents, and the Project tab's file folders all share one treatment: `--surface`, 1px `--border`, 12px radius, `--shadow-card`. Clickable book cards raise on hover.
+
+### Agent turn
+
+- **Tool chips:** collapsed `<details>` rows; mono tool name, the target in muted text, and a status word (running in accent, done in success, failed in danger with a danger border). Expanding shows arguments and result in `pre` blocks on `--surface-2`.
+- **Change summary:** a card listing each changed file with its change kind and an accent path button that opens the diff, then Undo turn. An undone summary drops its shadow and strikes the paths through.
+- **Diff dialog:** mono lines; added lines on a 14% success tint with `+`, removed on a 12% danger tint with `−` (screen readers hear "Added"/"Removed"), unchanged runs folded.
+- **Review mode:** the same card with Apply / Skip per file and Apply all / Skip all when more than one file is pending.
+- **Questions (`ask_user`):** a card of option buttons; the chosen option gets an accent left edge and `--accent-soft` fill.
 
 ### Reader
 
-The Reader tab is the one screen that is all the writer's prose. The whole page sits in a single centered 68ch column: a `story export` coordinate label, a collapsible **Contents** card (line border, the manuscript's `#` headings as underlined text buttons that scroll to the heading and move focus to it), an optional card of export notes, then the manuscript in Source Serif 4 at 1.8 line height. Chapter headings are Archivo, and a `---` scene break is a short centered rule. Raw HTML, including comments, is not shown.
+One centered 68ch column: a collapsible contents card, optional export notes, then the manuscript in Source Serif 4 at 1.8 line height. Chapter headings use the UI sans; a scene break is a short centered rule.
 
-### Story Commands Panel
+### Dialogs
 
-A native `<details>` card (1px ink border, 3px radius, no shadow) above the Agent tab's message box, collapsed by default and remembered per browser. The summary is an uppercase Archivo label. Inside it, a grid of secondary buttons: the command name in monospace, with a one-line description beneath. The last command run is marked with a blueprint inset rule. The result follows as a coordinate label (`story <command> · ok/exit N · counts`), then the `story next` actions or the findings as an entry list (with file links), then raw data in a nested `<details>`. **Ask the agent about this** (primary) adds a summary of the result to the draft, and **Clear** (text button) removes the result.
+Bottom sheet on phones (12px top corners), centered card from 620px. `--backdrop` scrim and `--shadow-dialog`.
 
-### Agents Page
+## 6. Do's and don'ts
 
-`/agents` reuses the preset studio layout: the Saved library list beside an editor card with Name, Description, Instructions, and a Skills fieldset (every installed skill, or a checklist of chosen ones).
+**Do**
 
-## 6. Do's and Don'ts
+- Use the tokens. If a color you need isn't a token, the design probably doesn't need it.
+- Keep the writer's text in the serif and everything else in the system sans.
+- Check every new screen in both light and dark mode at phone width.
+- Keep touch targets at least 44px and every primary flow one-handed on a phone.
 
-### Do:
+**Don't**
 
-- **Do** keep the page background a cool, desaturated paper (#e8e9e3) with the faint blueprint grid — never a warm cream or sand neutral.
-- **Do** pair Archivo (UI/structure) against Source Serif 4 (user content/long-form prose) — keep that split consistent; don't let Archivo creep into Markdown bodies or vice versa.
-- **Do** use hard offset "stamp" shadows (no blur) on any card or button that sits flat on the page; reserve soft blurred shadows for the dialog sheet alone.
-- **Do** use monospace, uppercase, letter-spaced labels for anything that is metadata (counts, dates, coordinates, indices) — this is the system's substitute for iconography.
-- **Do** keep blueprint for primary/structural and vermilion for danger/focus/active — the Two-Accent Rule.
-- **Do** keep sources and Markdown content visually primary; chat regions are reached for, never the default full-bleed layout.
-
-### Don't:
-
-- **Don't** use a cream/sand/beige body background, gradient text, glassmorphism, or a hero-metric-tile layout — this should never read as a generic SaaS dashboard.
-- **Don't** default to a bare chat-bubble layout where the message list dominates the screen — that's the stock-AI-chatbot skin this system explicitly avoids.
-- **Don't** add soft blurred shadows to cards, buttons, or list items — blur is reserved for the one element actually floating above the page (the dialog sheet).
-- **Don't** use `border-left`/`border-right` as a decorative colored accent on cards or callouts. The source-list spine is the one sanctioned exception, and it functions as a state indicator (default vs. active), not decoration.
-- **Don't** round corners on notebook/provider cards or buttons beyond 3-4px — square-cornered precision is the point, not softness.
-- **Don't** let placeholder or muted text drop below the 4.5:1 contrast minimum against paper or surface; the muted blue-grey (#5a656d) is already tuned to that floor — don't lighten it further "for elegance."
+- Add textures, background patterns, gradients, glassmorphism, or hard offset shadows.
+- Use uppercase or letter-spaced labels.
+- Introduce a second accent hue, or use red/green for anything but status.
+- Let the agent's chat dominate the layout; it is one tab among several.
+- Hard-code colors in components or inline styles.

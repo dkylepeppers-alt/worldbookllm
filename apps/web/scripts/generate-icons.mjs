@@ -1,6 +1,5 @@
-// Regenerates PWA/favicon PNGs from src/brand/mark.svg (the Field Atlas
-// "compass-dot" mark: a vermilion-filled circle inside a blueprint ring, on
-// the cool paper background). Re-run after any edit to mark.svg.
+// Regenerates PWA/favicon PNGs from src/brand/mark.svg (a stack of books with
+// a bookmark and a pen, on the indigo accent). Re-run after any edit to mark.svg.
 //
 //   pnpm --filter @worldbookllm/web generate:icons
 //
@@ -16,10 +15,10 @@ const markSvg = readFileSync(join(webRoot, 'src/brand/mark.svg'));
 const iconsDir = join(webRoot, 'public/icons');
 mkdirSync(iconsDir, { recursive: true });
 
-// The manifest icon at 512/192 doubles as the "maskable" purpose: the ring's
-// outer edge (150 + 34/2 = 167px) sits well inside the W3C maskable safe
-// zone (the inner 80% circle, radius 204.8px on a 512 canvas), so one flat,
-// full-bleed-background render satisfies both purposes.
+// The manifest icon at 512/192 doubles as the "maskable" purpose: the mark's
+// farthest point (the pen tip, about 165px from the centre) sits inside the W3C maskable
+// safe zone (the inner 80% circle, radius 204.8px on a 512 canvas), so one
+// flat, full-bleed-background render satisfies both purposes.
 const targets = [
   { file: 'icon-192.png', size: 192 },
   { file: 'icon-512.png', size: 512 },

@@ -22,21 +22,21 @@ A story-skills workspace in your pocket: the whole book bible, the manuscript, c
 
 ## Brand Personality
 
-A cartographer's field kit: precise, exploratory, tactile. The interface already speaks this — paper-toned surfaces under a faint blueprint grid, a compass-mark wordmark, coordinate-style labels, an "atlas" of books, "charting" and "plotted territories" as loading and empty-state language. The voice treats a book like territory being surveyed and logged, not a folder in a SaaS dashboard: confident, unfussy, a little bit fieldwork-romantic without tipping into whimsy or decoration for its own sake.
+A quiet, capable writing tool. Calm and neutral, like a good editor: the interface is clear and unadorned so the writer's words — set in a serif — carry the voice. Plain language in the UI ("Loading books…", "Something went wrong"), no themed metaphors. Confident and unfussy; it respects the writer's time and files.
 
 ## Anti-references
 
-Not a generic SaaS dashboard — no cream/sand card grids, gradient text, or hero-metric tiles; this shouldn't read as a B2B analytics product. Not a stock AI chatbot skin either — the agent is one tab among several, never the dominant element that pushes the manuscript and bible into the background. The writer's files and their cartographic framing stay visually primary; the agent stays a tool the writer reaches for, not the whole app.
+Not a generic SaaS dashboard — no card grids of hero metrics, gradient text, or marketing chrome. Not a stock AI chatbot skin either — the agent is one tab among several, never the dominant element that pushes the manuscript and bible into the background. Not a themed or skeuomorphic object (paper textures, maps, leather, typewriters); the look comes from type, spacing, and restraint.
 
 ## Design Principles
 
 - Files stay visible and inspectable — never let a UI pattern make the underlying Markdown feel hidden or secondary to the agent.
 - Every change is visible and reversible — the agent does real work, and each turn's edits land as a change summary with diffs and one-tap undo; writers who want to approve first can turn on review mode.
 - Thumb-first — every primary flow works one-handed on a phone; larger screens add panes, never features.
-- Precision over decoration — the cartographic motifs (coordinates, indices, spines, grid) earn their place by organizing real information; add new ones only when they label something true, not for atmosphere alone.
+- Restraint over decoration — structure comes from spacing, hairlines, and type weight; add visual elements only when they label something true.
 - Model-agnostic, not model-flavored — the UI belongs to worldbookllm, not to the look of any single AI provider's chat product.
 - Local-first confidence — the interface should read as something that respects and exposes the user's own files, not one that gates access behind app-only abstractions.
 
 ## Accessibility & Inclusion
 
-WCAG 2.1 AA as the general target: sufficient contrast, full keyboard navigation, visible focus states, and `prefers-reduced-motion` support (already present in the base stylesheet). No additional named user needs beyond standard AA conformance at this time.
+WCAG 2.1 AA as the general target in both light and dark themes: sufficient contrast, full keyboard navigation, visible focus states, and `prefers-reduced-motion` support (already present in the base stylesheet). No additional named user needs beyond standard AA conformance at this time.

@@ -24,8 +24,8 @@ describe('application routes', () => {
     expect(screen.getByRole('link', { name: 'worldbookllm' }).getAttribute('href')).toBe('/books');
     expect(await screen.findByRole('heading', { name: 'Provider settings' })).toBeDefined();
     expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('href')).toBe('/settings');
-    expect(getComputedStyle(document.documentElement).getPropertyValue('--ink').trim()).toBe(
-      '#17212b',
+    expect(getComputedStyle(document.documentElement).getPropertyValue('--text').trim()).toBe(
+      '#1d1d1f',
     );
   });
 
