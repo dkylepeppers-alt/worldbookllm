@@ -1,5 +1,5 @@
-// Regenerates PWA/favicon PNGs from src/brand/mark.svg (a white manuscript
-// page on the indigo accent, DESIGN.md). Re-run after any edit to mark.svg.
+// Regenerates PWA/favicon PNGs from src/brand/mark.svg (a stack of books with
+// a bookmark and a pen, on the indigo accent). Re-run after any edit to mark.svg.
 //
 //   pnpm --filter @worldbookllm/web generate:icons
 //
@@ -15,8 +15,8 @@ const markSvg = readFileSync(join(webRoot, 'src/brand/mark.svg'));
 const iconsDir = join(webRoot, 'public/icons');
 mkdirSync(iconsDir, { recursive: true });
 
-// The manifest icon at 512/192 doubles as the "maskable" purpose: the page's
-// farthest corner (about 165px from the centre) sits inside the W3C maskable
+// The manifest icon at 512/192 doubles as the "maskable" purpose: the mark's
+// farthest point (the pen tip, about 165px from the centre) sits inside the W3C maskable
 // safe zone (the inner 80% circle, radius 204.8px on a 512 canvas), so one
 // flat, full-bleed-background render satisfies both purposes.
 const targets = [
