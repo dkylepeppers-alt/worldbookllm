@@ -5,7 +5,10 @@ import {
   agentChatSchema,
   apiErrorSchema,
   appSettingsSchema,
+  bookBranchesSchema,
   bookBuildFileSchema,
+  bookPlaySchema,
+  pinnedIfidSchema,
   bookBuildResultSchema,
   bookManuscriptSchema,
   bookCheckResultSchema,
@@ -50,7 +53,11 @@ import {
   type AgentStreamEvent,
   type ApiErrorIssue,
   type AppSettings,
+  type BookBranches,
   type BookBuildFile,
+  type BookPlay,
+  type PinnedIfid,
+  type SetChapterChoicesInput,
   type BookBuildResult,
   type BookManuscript,
   type BookCheckCommand,
@@ -197,6 +204,17 @@ export interface ApiClient {
   undoCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<Checkpoint>;
   /** The manuscript as `story export` assembles it, for the Reader tab. */
   getManuscript(slug: string, signal?: AbortSignal): Promise<BookManuscript>;
+  /** The chapters as a branch graph, for the Branches screen. */
+  getBranches(slug: string, signal?: AbortSignal): Promise<BookBranches>;
+  setChapterChoices(
+    slug: string,
+    chapterId: string,
+    input: SetChapterChoicesInput,
+    signal?: AbortSignal,
+  ): Promise<BookBranches>;
+  /** The book as a playable story, assembled by the Twee build. */
+  getPlay(slug: string, signal?: AbortSignal): Promise<BookPlay>;
+  pinIfid(slug: string, signal?: AbortSignal): Promise<PinnedIfid>;
   listBuilds(slug: string, signal?: AbortSignal): Promise<BookBuildFile[]>;
   createBuild(
     slug: string,
@@ -500,6 +518,18 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       }),
     getManuscript: (slug, signal) =>
       request(`${book(slug)}/manuscript`, { schema: bookManuscriptSchema, signal }),
+    getBranches: (slug, signal) =>
+      request(`${book(slug)}/branches`, { schema: bookBranchesSchema, signal }),
+    setChapterChoices: (slug, chapterId, input, signal) =>
+      request(`${book(slug)}/chapters/${encodeURIComponent(chapterId)}/choices`, {
+        method: 'PUT',
+        body: input,
+        schema: bookBranchesSchema,
+        signal,
+      }),
+    getPlay: (slug, signal) => request(`${book(slug)}/play`, { schema: bookPlaySchema, signal }),
+    pinIfid: (slug, signal) =>
+      request(`${book(slug)}/ifid`, { method: 'POST', schema: pinnedIfidSchema, signal }),
     listBuilds: (slug, signal) =>
       request(`${book(slug)}/builds`, { schema: z.array(bookBuildFileSchema), signal }),
     createBuild: (slug, input, signal) =>

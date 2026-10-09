@@ -2380,3 +2380,198 @@ ol.inspector-sections {
     border-radius: var(--radius-lg);
   }
 }
+
+/* Write → Branches: each chapter's choices as a card, and the story map above them. */
+.write-links {
+  margin: 0;
+}
+
+.branches-page,
+.play-page {
+  display: grid;
+  gap: 1rem;
+  max-width: 68ch;
+}
+
+.branches-page > p,
+.play-page > p {
+  margin: 0;
+}
+
+.branches-summary,
+.branch-ifid,
+.branch-card {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 0.9rem 1rem;
+  box-shadow: var(--shadow-card);
+}
+
+.branches-summary p,
+.branch-ifid p,
+.branch-ifid h3,
+.branch-card p {
+  margin: 0;
+}
+
+.branches-summary .button-primary {
+  justify-self: start;
+}
+
+.branch-warning {
+  border-left: 3px solid var(--danger);
+  padding-left: 0.65rem;
+}
+
+.branch-warning ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.branch-list,
+.choice-rows,
+.branch-tags,
+.play-choices {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.branch-card form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.branch-card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+}
+
+.branch-card-heading h3 {
+  margin: 0;
+}
+
+.branch-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.branch-tag {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.05rem 0.45rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 550;
+}
+
+.branch-tag-problem {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.choice-row {
+  display: grid;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.choice-row label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.choice-row .button-secondary {
+  justify-self: start;
+}
+
+.choice-row .form-error {
+  margin: 0;
+}
+
+@media (min-width: 620px) {
+  .choice-row {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .choice-row .form-error {
+    grid-column: 1 / -1;
+  }
+}
+
+.branch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Write → Play: one chapter at a time, its choices as full-width buttons. */
+.play-passage {
+  display: grid;
+  gap: 1rem;
+}
+
+.play-passage > p {
+  margin: 0;
+}
+
+.play-choices .button-secondary {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.play-end {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+}
+
+.play-end p {
+  margin: 0;
+  font-weight: 620;
+}
+
+.play-segment {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.play-segment .markdown-body {
+  padding: 0;
+}
+
+.play-segment .markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.play-segment .markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.play-segment h3 {
+  margin: 0;
+  font-size: clamp(1.2rem, 3.2vw, 1.5rem);
+}
+
+.ink-source {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ink-source pre {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}

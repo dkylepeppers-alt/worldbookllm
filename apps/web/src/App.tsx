@@ -12,7 +12,9 @@ import { BiblePage } from './books/BiblePage.js';
 import { BookFilePage } from './books/BookFilePage.js';
 import { BookLayout } from './books/BookLayout.js';
 import { BookLibraryPage } from './books/BookLibraryPage.js';
+import { BranchesPage } from './books/BranchesPage.js';
 import { HealthPage } from './books/HealthPage.js';
+import { PlayPage } from './books/PlayPage.js';
 import { ProjectPage } from './books/ProjectPage.js';
 import { ReaderPage } from './books/ReaderPage.js';
 import { SeriesPage } from './books/SeriesPage.js';
@@ -33,6 +35,8 @@ export function AppRoutes() {
         <Route path="books/:slug" element={<BookLayout />}>
           <Route index element={<Navigate to="write" replace />} />
           <Route path="write" element={<WritePage />} />
+          <Route path="write/branches" element={<BranchesPage />} />
+          <Route path="write/play" element={<PlayPage />} />
           <Route path="bible" element={<BiblePage />} />
           <Route path="agent" element={<AgentPage />} />
           <Route path="agent/:chatId" element={<AgentChatRoute />} />

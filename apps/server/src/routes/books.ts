@@ -7,6 +7,7 @@ import {
   bookFilePathSchema,
   bookParamsSchema,
   bookSearchQuerySchema,
+  chapterParamsSchema,
   checkpointParamsSchema,
   createBookBuildSchema,
   createBookImportSchema,
@@ -18,6 +19,7 @@ import {
   moveBookToSeriesSchema,
   moveEntitySchema,
   renameEntitySchema,
+  setChapterChoicesSchema,
   writeBookFileSchema,
 } from '@worldbookllm/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -181,6 +183,26 @@ export function registerBookRoutes(app: FastifyInstance): void {
   app.get('/api/books/:book/manuscript', (request) => {
     const { book } = bookParamsSchema.parse(request.params);
     return books().manuscript(book);
+  });
+
+  app.get('/api/books/:book/branches', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return books().branches(book);
+  });
+
+  app.put('/api/books/:book/chapters/:id/choices', (request) => {
+    const { book, id } = chapterParamsSchema.parse(request.params);
+    return books().setChapterChoices(book, id, setChapterChoicesSchema.parse(request.body));
+  });
+
+  app.get('/api/books/:book/play', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return books().play(book);
+  });
+
+  app.post('/api/books/:book/ifid', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return books().pinIfid(book);
   });
 
   app.get('/api/books/:book/builds', (request) => {
