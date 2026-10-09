@@ -1,6 +1,6 @@
 # ADR 0027 — Edit chapter choices in the app and play the ink build with inkjs
 
-**Status:** accepted · 2026-10-09 · builds on ADR 0014
+**Status:** accepted · 2026-10-09 · builds on ADR 0014 · decision 3 superseded by ADR 0028 (Play runs worldbookllm's ink)
 
 ## Context
 

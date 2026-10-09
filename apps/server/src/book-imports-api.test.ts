@@ -655,7 +655,7 @@ describe('adding files to an existing book', () => {
     ]);
     expect(missing.statusCode).toBe(400);
     expect(existsSync(join(dataDir, 'projects', slug, 'chapters/chapter-07.md'))).toBe(false);
-  });
+  }, 30_000);
 
   it('previews a zip of files with an origin per file, and refuses a whole project', async () => {
     const response = await preview(

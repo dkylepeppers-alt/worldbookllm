@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   bookSlugSchema,
@@ -40,10 +40,16 @@ import {
   type BookBranches,
   type BookPlay,
   type PinnedIfid,
-  type SetChapterChoicesInput,
+  type SetChapterChoices,
 } from '@worldbookllm/shared';
 
-import { ConflictError, InvalidImportError, NotFoundError, StoryCommandError } from '../errors.js';
+import {
+  ConflictError,
+  InvalidImportError,
+  NotFoundError,
+  StoryCommandError,
+  ValidationError,
+} from '../errors.js';
 import type { BookFileStore } from '../story/book-files.js';
 import {
   IMPORT_KIND_DIRECTORIES,
@@ -66,11 +72,12 @@ import {
   listBuildFiles,
   readBuildFile,
   removeBuildFile,
+  writeBuildFile,
 } from '../story/book-builds.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { exportManuscript } from '../story/book-manuscript.js';
 import { buildPlay } from '../story/book-play.js';
-import { branchGraph, isIfid, setFrontmatterChoices } from '../story/branches.js';
+import { branchGraph, isIfid, setFrontmatterChoices, stateProblem } from '../story/branches.js';
 import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
 import type {
   CheckpointActor,
@@ -143,6 +150,7 @@ function linkField(frontmatter: Record<string, unknown> | null, key: string): st
 export class BookService {
   private readonly locks = new KeyedMutex();
   private readonly checkCache = new Map<string, { revision: number; result: BookCheckResult }>();
+  private readonly playCache = new Map<string, { key: string; play: BookPlay }>();
   private chatLifecycle: BookChatLifecycle | null = null;
 
   constructor(
@@ -498,32 +506,41 @@ export class BookService {
     actor: CheckpointActor = 'user',
   ): Promise<{ file: BookFile; checkpoint: Checkpoint | null }> {
     assertWritablePath(path);
-    return this.locks.run(slug, async () => {
-      const current = this.files.readBytes(slug, path);
-      const currentHash = current === null ? null : sha256(current);
-      if (currentHash !== input.expectedHash) {
-        throw new ConflictError(
-          'file_changed',
-          current === null
-            ? `${path} does not exist anymore.`
-            : input.expectedHash === null
-              ? `${path} already exists.`
-              : `${path} changed since it was loaded.`,
-        );
-      }
-      const label = `${current === null ? 'Create' : 'Edit'} ${path}`;
-      const { checkpoint } = await this.checkpoints.record(
-        slug,
-        label,
-        actor,
-        needsReindex(path) ? 'book' : { paths: [path] },
-        () => this.writeAndReindex(slug, path, input.content),
+    return this.locks.run(slug, () => this.writeFileLocked(slug, path, input, actor));
+  }
+
+  /** writeFile for a caller that already holds the book lock. */
+  private async writeFileLocked(
+    slug: string,
+    path: string,
+    input: WriteBookFileInput,
+    actor: CheckpointActor,
+  ): Promise<{ file: BookFile; checkpoint: Checkpoint | null }> {
+    assertWritablePath(path);
+    const current = this.files.readBytes(slug, path);
+    const currentHash = current === null ? null : sha256(current);
+    if (currentHash !== input.expectedHash) {
+      throw new ConflictError(
+        'file_changed',
+        current === null
+          ? `${path} does not exist anymore.`
+          : input.expectedHash === null
+            ? `${path} already exists.`
+            : `${path} changed since it was loaded.`,
       );
-      this.index.reconcile(slug);
-      const file = this.index.get(slug, path);
-      if (!file) throw new NotFoundError(`${path} was not found in ${slug}`);
-      return { file, checkpoint };
-    });
+    }
+    const label = `${current === null ? 'Create' : 'Edit'} ${path}`;
+    const { checkpoint } = await this.checkpoints.record(
+      slug,
+      label,
+      actor,
+      needsReindex(path) ? 'book' : { paths: [path] },
+      () => this.writeAndReindex(slug, path, input.content),
+    );
+    this.index.reconcile(slug);
+    const file = this.index.get(slug, path);
+    if (!file) throw new NotFoundError(`${path} was not found in ${slug}`);
+    return { file, checkpoint };
   }
 
   search(slug: string, query: string): BookSearchResult[] {
@@ -1107,28 +1124,67 @@ export class BookService {
   async setChapterChoices(
     slug: string,
     chapterId: string,
-    input: SetChapterChoicesInput,
+    input: SetChapterChoices,
   ): Promise<BookBranches> {
-    const chapter = (await this.branches(slug)).chapters.find((entry) => entry.id === chapterId);
-    if (chapter === undefined) throw new NotFoundError(`Chapter ${chapterId} was not found`);
-    const current = this.files.readBytes(slug, chapter.path);
-    if (current === null || sha256(current) !== input.expectedHash) {
-      throw new ConflictError(
-        'file_changed',
-        `${chapter.path} changed since it was loaded. Reload to see the latest choices.`,
+    // One lock from reading the graph to the write, so no other chapter can
+    // be added or renamed between checking the flags and saving them.
+    return this.locks.run(slug, async () => {
+      const graph = this.readBranches(slug);
+      const chapter = graph.chapters.find((entry) => entry.id === chapterId);
+      if (chapter === undefined) throw new NotFoundError(`Chapter ${chapterId} was not found`);
+      const ids = new Set(graph.chapters.map((entry) => entry.id));
+      const problems = input.choices.flatMap((choice, index) =>
+        (['sets', 'requires'] as const).flatMap((key) =>
+          choice[key].flatMap((entry) => {
+            const problem = stateProblem(entry, key, ids);
+            return problem === null ? [] : [`Choice ${index + 1} ${key}: ${problem}`];
+          }),
+        ),
       );
-    }
-    const content = setFrontmatterChoices(current.toString('utf8'), input.choices);
-    await this.writeFile(slug, chapter.path, { content, expectedHash: input.expectedHash });
-    return this.branches(slug);
+      if (problems.length > 0) throw new ValidationError(problems.join('\n'));
+      const current = this.files.readBytes(slug, chapter.path);
+      if (current === null || sha256(current) !== input.expectedHash) {
+        throw new ConflictError(
+          'file_changed',
+          `${chapter.path} changed since it was loaded. Reload to see the latest choices.`,
+        );
+      }
+      const content = setFrontmatterChoices(current.toString('utf8'), input.choices);
+      await this.writeFileLocked(
+        slug,
+        chapter.path,
+        { content, expectedHash: input.expectedHash },
+        'user',
+      );
+      return this.readBranches(slug);
+    });
   }
 
   /** The book as a playable ink story: the ink build, compiled with inkjs. */
   play(slug: string): Promise<BookPlay> {
-    return this.locks.run(slug, () => {
-      const chapters = this.readBranches(slug).chapters.map(({ id, title }) => ({ id, title }));
-      return buildPlay(this.cli, this.files.root(slug), chapters);
-    });
+    return this.locks.run(slug, () => this.readPlay(slug));
+  }
+
+  /**
+   * The play-through, built at most once per state of the book: keyed by
+   * every file's hash, so any edit (a chapter, a choice, story.md) rebuilds
+   * it. Caller holds the book lock.
+   */
+  private async readPlay(slug: string): Promise<BookPlay> {
+    const branches = this.readBranches(slug);
+    const key = createHash('sha256')
+      .update(
+        this.index
+          .list(slug)
+          .map((file) => `${file.path}\0${file.hash}`)
+          .join('\n'),
+      )
+      .digest('hex');
+    const cached = this.playCache.get(slug);
+    if (cached?.key === key) return cached.play;
+    const play = await buildPlay(this.cli, this.files.root(slug), branches);
+    this.playCache.set(slug, { key, play });
+    return play;
   }
 
   /**
@@ -1145,7 +1201,7 @@ export class BookService {
       if (isIfid(pinned)) return { ifid: pinned };
       let ifid: string;
       try {
-        ifid = (await buildPlay(this.cli, this.files.root(slug), [])).ifid;
+        ifid = (await this.readPlay(slug)).ifid;
       } catch (error) {
         if (!(error instanceof StoryCommandError) && !(error instanceof ConflictError)) throw error;
         ifid = '';
@@ -1195,7 +1251,20 @@ export class BookService {
           output || 'story build finished but wrote no file to dist/',
         );
       }
-      return { file, output };
+      if (input.format !== 'ink') return { file, output };
+      // The ink a reader gets is worldbookllm's (ADR 0028): the same story
+      // Play runs, written over story-skills' file under its name.
+      try {
+        writeBuildFile(root, file.name, (await this.readPlay(slug)).source);
+      } catch (error) {
+        removeBuildFile(root, file.name);
+        throw error;
+      }
+      const written = listBuildFiles(root).find((entry) => entry.name === file.name) ?? file;
+      return {
+        file: written,
+        output: `${output}\nWritten by worldbookllm's ink writer: headings and lists keep their lines, and choices carry their sets and requires.`,
+      };
     });
   }
 

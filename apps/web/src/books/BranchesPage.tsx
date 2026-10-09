@@ -2,6 +2,7 @@ import {
   CHOICE_TEXT_RULE,
   CHOICE_TEXT_UNSAFE,
   MAX_CHAPTER_CHOICES,
+  choiceStateEntrySchema,
   type BookBranches,
   type BranchChapter,
   type ChapterChoice,
@@ -15,11 +16,49 @@ import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
-/** Why a draft choice cannot be saved, or null. */
-function choiceError(choice: ChapterChoice): string | null {
+/** A choice as the form edits it: its state as typed, comma-separated. */
+interface DraftChoice {
+  text: string;
+  to: string;
+  sets: string;
+  requires: string;
+}
+
+function toDraft(choice: ChapterChoice): DraftChoice {
+  return { ...choice, sets: choice.sets.join(', '), requires: choice.requires.join(', ') };
+}
+
+function entries(value: string): string[] {
+  return value
+    .split(',')
+    .map((entry) => entry.trim().replace(/\s+/gu, ' '))
+    .filter((entry) => entry !== '');
+}
+
+function fromDraft(choice: DraftChoice): ChapterChoice {
+  return {
+    text: choice.text.trim(),
+    to: choice.to,
+    sets: entries(choice.sets),
+    requires: entries(choice.requires),
+  };
+}
+
+/** Why a draft choice cannot be saved, or null. The server checks the rest. */
+function choiceError(choice: DraftChoice, chapterIds: ReadonlySet<string>): string | null {
   const text = choice.text.trim();
   if (text === '') return 'Add the words the reader picks.';
   if (CHOICE_TEXT_UNSAFE.test(text)) return CHOICE_TEXT_RULE;
+  for (const entry of [...entries(choice.sets), ...entries(choice.requires)]) {
+    if (!choiceStateEntrySchema.safeParse(entry).success) {
+      return `${entry} is not a flag: use letters, digits, and underscores, or "not" and a flag.`;
+    }
+  }
+  for (const entry of entries(choice.sets)) {
+    if (chapterIds.has(entry.replace(/^not\s+/u, ''))) {
+      return `${entry} is a chapter: a choice can require a chapter, not set one.`;
+    }
+  }
   return null;
 }
 
@@ -125,6 +164,28 @@ function BranchesView({
           </Link>
         ) : null}
       </div>
+
+      <section className="branch-ifid" aria-labelledby="state-heading">
+        <h3 id="state-heading">Game state</h3>
+        <p>
+          A choice can set flags the story remembers, and appear only when they hold. Write flags as
+          names like <code>found_coat</code>, separated by commas; <code>not lamp_lit</code> sets or
+          checks that a flag is false. In <em>Only if</em>, a chapter id such as{' '}
+          <code>chapter-03</code> means the reader has read that chapter. Flags are part of the ink
+          build and Play; the Twine build and story-skills&apos; continuity checks ignore them.
+        </p>
+        {branches.flags.length > 0 ? (
+          <p className="coordinate-label">
+            Flags in this book:{' '}
+            {branches.flags.map((flag, index) => (
+              <span key={flag}>
+                {index > 0 ? ', ' : ''}
+                <code>{flag}</code>
+              </span>
+            ))}
+          </p>
+        ) : null}
+      </section>
 
       <IfidPanel
         slug={slug}
@@ -235,22 +296,22 @@ function ChapterChoices({
   onSaved: () => void;
 }) {
   const api = useApi();
-  const [draft, setDraft] = useState<ChapterChoice[]>(chapter.choices);
+  const [draft, setDraft] = useState<DraftChoice[]>(() => chapter.choices.map(toDraft));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
 
   const ids = new Set(chapters.map((entry) => entry.id));
-  const dirty = JSON.stringify(draft) !== JSON.stringify(chapter.choices);
+  const dirty = JSON.stringify(draft.map(fromDraft)) !== JSON.stringify(chapter.choices);
   // Saving also rewrites malformed entries, so a chapter with problems can always save.
   const canSave = dirty || chapter.problems.length > 0;
-  const errors = draft.map(choiceError);
+  const errors = draft.map((choice) => choiceError(choice, ids));
   const headingId = `branch-${chapter.id}-heading`;
   // A choice can lead back to its own chapter, so even a one-chapter book can branch.
   const defaultTarget =
     next?.id ?? chapters.find((entry) => entry.id !== chapter.id)?.id ?? chapter.id;
 
-  function update(index: number, change: Partial<ChapterChoice>) {
+  function update(index: number, change: Partial<DraftChoice>) {
     setDraft((current) =>
       current.map((choice, at) => (at === index ? { ...choice, ...change } : choice)),
     );
@@ -267,7 +328,7 @@ function ChapterChoices({
     try {
       await api.setChapterChoices(slug, chapter.id, {
         expectedHash: chapter.hash,
-        choices: draft.map((choice) => ({ text: choice.text.trim(), to: choice.to })),
+        choices: draft.map(fromDraft),
       });
       onSaved();
     } catch (caught) {
@@ -284,6 +345,12 @@ function ChapterChoices({
             <Link to={fileHref(slug, chapter.path)}>{chapter.title}</Link>
           </h3>
           <span className="coordinate-label">{chapter.id}</span>
+          <Link
+            className="coordinate-label"
+            to={`/books/${encodeURIComponent(slug)}/write/play?from=${encodeURIComponent(chapter.id)}`}
+          >
+            Play from here
+          </Link>
           <ul className="branch-tags" aria-label="Status">
             {chapter.start ? <li className="branch-tag">Start</li> : null}
             {chapter.ending && chapter.reachable ? <li className="branch-tag">Ending</li> : null}
@@ -358,6 +425,26 @@ function ChapterChoices({
                   >
                     Remove
                   </button>
+                  <div className="choice-state">
+                    <label>
+                      Sets flags
+                      <input
+                        value={choice.sets}
+                        placeholder="found_coat, not lamp_lit"
+                        spellCheck={false}
+                        onChange={(event) => update(index, { sets: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Only if
+                      <input
+                        value={choice.requires}
+                        placeholder="lamp_lit, not met_venn, chapter-03"
+                        spellCheck={false}
+                        onChange={(event) => update(index, { requires: event.target.value })}
+                      />
+                    </label>
+                  </div>
                   {ids.has(choice.to) ? null : (
                     <p className="form-error">
                       {choice.to} is not a chapter in this book. Pick where this choice leads.
@@ -379,7 +466,12 @@ function ChapterChoices({
             <button
               type="button"
               className="button-secondary"
-              onClick={() => setDraft((current) => [...current, { text: '', to: defaultTarget }])}
+              onClick={() =>
+                setDraft((current) => [
+                  ...current,
+                  { text: '', to: defaultTarget, sets: '', requires: '' },
+                ])
+              }
             >
               Add a choice
             </button>
@@ -388,7 +480,7 @@ function ChapterChoices({
             <button
               type="button"
               className="button-secondary"
-              onClick={() => setDraft([{ text: 'Continue', to: next.id }])}
+              onClick={() => setDraft([{ text: 'Continue', to: next.id, sets: '', requires: '' }])}
             >
               Continue to {next.title}
             </button>
@@ -403,7 +495,7 @@ function ChapterChoices({
               type="button"
               className="text-button"
               onClick={() => {
-                setDraft(chapter.choices);
+                setDraft(chapter.choices.map(toDraft));
                 setShowErrors(false);
                 setError(null);
               }}

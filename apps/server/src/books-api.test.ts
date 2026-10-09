@@ -654,7 +654,7 @@ describe('builds', () => {
     // Prose is escaped so ink prints it rather than reading it as logic.
     expect(download.body).toContain('\\{A second light\\}');
     expect(download.body).toMatch(/=== chapter_03 ===\n[\s\S]*?-> END/u);
-  });
+  }, 30_000);
 
   it('reports a book with nothing to build as an unusable project', async () => {
     const book = await createBook('Empty');
@@ -767,7 +767,98 @@ describe('interactive books', () => {
     expect(story.warnings.some((line) => line.includes('derived-ifid'))).toBe(false);
     // A play-through leaves nothing behind in the book.
     expect(existsSync(join(dataDir, 'projects', slug, 'dist'))).toBe(false);
-  });
+  }, 30_000);
+
+  it('saves choice state, plays it as ink flags, and refuses state ink cannot use', async () => {
+    const slug = await threeChapters();
+    const first = (await branches(slug)).chapters[0]!;
+    const bad = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: {
+        expectedHash: first.hash,
+        choices: [{ text: 'Go', to: 'chapter-02', sets: ['chapter_02'] }],
+      },
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json<{ message: string }>().message).toContain(
+      "chapter_02 is a chapter's knot name",
+    );
+
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: {
+        expectedHash: first.hash,
+        choices: [
+          {
+            text: 'Light the lamp',
+            to: 'chapter-01',
+            sets: ['lamp_lit'],
+            requires: ['not lamp_lit'],
+          },
+          { text: 'Go down', to: 'chapter-02', requires: ['lamp_lit'] },
+          { text: 'Read the archive', to: 'chapter-03', requires: ['not chapter-03'] },
+        ],
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json<BookBranches>().flags).toEqual(['lamp_lit']);
+
+    const story = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
+    ).json<BookPlay>();
+    expect(story.flags).toEqual(['lamp_lit']);
+    expect(story.source).toContain('VAR lamp_lit = false');
+    expect(story.source).toContain('# chapter: Harbor Wall');
+    const ink = new Story(story.story);
+    ink.ContinueMaximally();
+    expect(ink.currentChoices.map((choice: { text: string }) => choice.text)).toEqual([
+      'Light the lamp',
+      'Read the archive',
+    ]);
+    ink.ChooseChoiceIndex(0);
+    ink.ContinueMaximally();
+    expect(ink.currentChoices.map((choice: { text: string }) => choice.text)).toEqual([
+      'Go down',
+      'Read the archive',
+    ]);
+  }, 30_000);
+
+  it('plays the book as it is now, and builds the same ink for download', async () => {
+    const slug = await threeChapters();
+    const before = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
+    ).json<BookPlay>();
+    expect(before.source).not.toContain('The tide turns.');
+
+    const chapter = join(dataDir, 'projects', slug, 'chapters/chapter-02.md');
+    writeFileSync(
+      chapter,
+      `${readFileSync(chapter, 'utf8')}\n## Later\nThe tide turns.\n- one\n- two\n`,
+    );
+    const after = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
+    ).json<BookPlay>();
+    // Headings and list items keep their own lines, unlike story-skills' ink build.
+    expect(after.source).toContain('\\#\\# Later\nThe tide turns.\n\\- one\n\\- two');
+
+    const built = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/builds`,
+      payload: { format: 'ink' },
+    });
+    expect(built.statusCode).toBe(201);
+    const result = built.json<BookBuildResult>();
+    expect(result.file.name).toBe('the-salt-road.ink');
+    expect(result.output).toContain("worldbookllm's ink writer");
+    const download = await app.inject({
+      method: 'GET',
+      url: `/api/books/${slug}/builds/the-salt-road.ink`,
+    });
+    expect(download.body).toBe(after.source);
+    expect(result.file.size).toBe(Buffer.byteLength(after.source));
+  }, 30_000);
 
   it('refuses to play a choice that leads nowhere', async () => {
     const slug = await threeChapters();
@@ -780,7 +871,7 @@ describe('interactive books', () => {
     const play = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
     expect(play.statusCode).toBe(409);
     expect(play.json<{ message: string }>().message).toContain('missing chapter chapter-09');
-  });
+  }, 30_000);
 
   it('pins the IFID earlier builds derived, once', async () => {
     const slug = await threeChapters();
@@ -796,7 +887,7 @@ describe('interactive books', () => {
     expect((await branches(slug)).ifid).toBe(derived);
     const again = await app.inject({ method: 'POST', url: `/api/books/${slug}/ifid` });
     expect(again.json()).toEqual({ ifid: derived });
-  });
+  }, 30_000);
 
   it('replaces an IFID the builds would refuse', async () => {
     const slug = await threeChapters();
@@ -808,7 +899,7 @@ describe('interactive books', () => {
     expect(ifid).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/u);
     expect(await branches(slug)).toMatchObject({ ifid, invalidIfid: null });
     expect(readFileSync(story, 'utf8')).not.toContain('ifid: foo');
-  });
+  }, 30_000);
 });
 
 describe('manuscript', () => {

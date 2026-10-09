@@ -1,11 +1,7 @@
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-
 import matter from 'gray-matter';
 import { describe, expect, it } from 'vitest';
 
-import { compileInk, inkKnotName } from './book-play.js';
+import { compileInk } from './book-play.js';
 import { branchGraph, setFrontmatterChoices, type ChapterSource } from './branches.js';
 
 const HASH = 'a'.repeat(64);
@@ -50,8 +46,8 @@ describe('branchGraph', () => {
     expect(graph.ifid).toBe('649C4AC9-78FE-4B32-B821-24D0802D1DD9');
     const [first, second, third] = graph.chapters;
     expect(first?.choices).toEqual([
-      { text: 'Follow the light', to: 'chapter-02' },
-      { text: 'Ghost', to: 'chapter-99' },
+      { text: 'Follow the light', to: 'chapter-02', sets: [], requires: [] },
+      { text: 'Ghost', to: 'chapter-99', sets: [], requires: [] },
     ]);
     expect(first?.problems).toEqual([
       'Choice 3 text cannot contain [, ], |, ->, <-, or a line break, or end in <',
@@ -84,6 +80,66 @@ describe('branchGraph', () => {
     expect(branchGraph([], 'foo')).toMatchObject({ ifid: null, invalidIfid: 'foo' });
     expect(branchGraph([], 42)).toMatchObject({ ifid: null, invalidIfid: '42' });
     expect(branchGraph([], undefined)).toMatchObject({ ifid: null, invalidIfid: null });
+  });
+
+  it('reads choice state, drops what ink cannot use, and lists the flags', () => {
+    const graph = branchGraph(
+      [
+        chapter('chapter-01', 1, [
+          {
+            text: 'Light the lamp',
+            to: 'chapter-02',
+            sets: 'lamp_lit',
+            requires: ['not lamp_lit', 'chapter-02', 'and'],
+          },
+          { text: 'Ring', to: 'chapter-02', sets: ['chapter_02', 'chapter-02'], requires: 7 },
+        ]),
+        chapter('chapter-02', 2),
+      ],
+      null,
+    );
+    expect(graph.chapters[0]?.choices).toEqual([
+      {
+        text: 'Light the lamp',
+        to: 'chapter-02',
+        sets: ['lamp_lit'],
+        requires: ['not lamp_lit', 'chapter-02'],
+      },
+      { text: 'Ring', to: 'chapter-02', sets: [], requires: [] },
+    ]);
+    expect(graph.chapters[0]?.problems).toEqual([
+      'Choice 2 requires must be flag names',
+      'Choice 1 requires: and is a word ink reserves',
+      "Choice 2 sets: chapter_02 is a chapter's knot name in ink",
+      'Choice 2 sets: chapter-02 is a chapter: a choice can require it, not set it',
+    ]);
+    expect(graph.flags).toEqual(['lamp_lit']);
+  });
+
+  it('numbers a problem by its place in the file, and accepts chapter ids that start with a digit', () => {
+    const graph = branchGraph(
+      [
+        chapter('1-prologue', 1, [
+          { to: 'chapter-02' },
+          {
+            text: 'Go',
+            to: 'chapter-02',
+            sets: ['and'],
+            requires: ['1-prologue', 'not 1-prologue'],
+          },
+        ]),
+        chapter('chapter-02', 2),
+      ],
+      null,
+    );
+    expect(graph.chapters[0]?.problems).toEqual([
+      'Choice 1 needs text: the words the reader picks',
+      'Choice 2 sets: and is a word ink reserves',
+    ]);
+    expect(graph.chapters[0]?.choices).toEqual([
+      { text: 'Go', to: 'chapter-02', sets: [], requires: ['1-prologue', 'not 1-prologue'] },
+    ]);
+    expect(graph.flags).toEqual([]);
   });
 
   it('reports a choices field that is not a list', () => {
@@ -129,6 +185,20 @@ describe('setFrontmatterChoices', () => {
     ]);
   });
 
+  it('writes sets and requires only when a choice has them', () => {
+    const result = setFrontmatterChoices(file, [
+      { text: 'Light the lamp', to: 'chapter-02', sets: ['lamp_lit'], requires: ['not lamp_lit'] },
+      { text: 'Wait', to: 'chapter-03' },
+    ]);
+    expect(result).toContain(
+      'choices:\n  - text: "Light the lamp"\n    to: chapter-02\n    sets: ["lamp_lit"]\n    requires: ["not lamp_lit"]\n  - text: "Wait"\n    to: chapter-03\n\nnumber: 1',
+    );
+    expect(matter(result).data.choices).toEqual([
+      { text: 'Light the lamp', to: 'chapter-02', sets: ['lamp_lit'], requires: ['not lamp_lit'] },
+      { text: 'Wait', to: 'chapter-03' },
+    ]);
+  });
+
   it('removes the field for an empty list and adds it where there was none', () => {
     const removed = setFrontmatterChoices(file, []);
     expect(removed).not.toContain('choices');
@@ -164,28 +234,11 @@ describe('setFrontmatterChoices', () => {
   });
 });
 
-describe('ink', () => {
-  async function upstreamKnotName(): Promise<(id: string) => string> {
-    const root = dirname(createRequire(import.meta.url).resolve('story-skills/package.json'));
-    const module = (await import(pathToFileURL(join(root, 'src', 'ink.js')).href)) as {
-      inkKnotName: (id: string) => string;
-    };
-    return module.inkKnotName;
-  }
-
-  it('names knots exactly as the pinned story-skills ink build does', async () => {
-    const upstream = await upstreamKnotName();
-    for (const id of ['chapter-01', '01', '1st-light', 'true', 'function', 'temp', 'prologue']) {
-      expect(inkKnotName(id)).toBe(upstream(id));
-    }
-  });
-
-  it('compiles ink with every visit counted, and reports what does not compile', () => {
-    const { story, tags } = compileInk(
-      '# title: The Gull Rock Light\n-> chapter_01\n=== chapter_01 ===\nThe tower door stands open.\n-> END\n',
-    );
-    expect(tags).toEqual(['title: The Gull Rock Light']);
-    expect(JSON.parse(story)).toMatchObject({ inkVersion: expect.any(Number) as number });
+describe('compileInk', () => {
+  it('reports ink that does not compile', () => {
+    expect(JSON.parse(compileInk('Hello.\n-> END\n').story)).toMatchObject({
+      inkVersion: expect.any(Number) as number,
+    });
     expect(() => compileInk('-> nowhere\n')).toThrow(/does not compile:\n.*nowhere/su);
   });
 });
