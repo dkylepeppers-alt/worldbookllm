@@ -318,6 +318,7 @@ describe('ink writer', () => {
     expect(flagProblem('found_coat', knots)).toBeNull();
     expect(flagProblem('chapter_01', knots)).toMatch(/knot name/u);
     expect(flagProblem('and', knots)).toMatch(/reserves/u);
+    expect(flagProblem('not', knots)).toMatch(/reserves/u);
     expect(flagProblem('1st', knots)).toMatch(/not a flag name/u);
     expect(flagProblem('has space', knots)).toMatch(/not a flag name/u);
   });

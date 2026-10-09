@@ -8,6 +8,7 @@ import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
+import { markdownOf } from './play-markdown.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 type InkRuntime = typeof import('inkjs');
@@ -288,7 +289,7 @@ function Passage({
           {segment.lines.length === 0 ? null : (
             <div className="markdown-body reader-text">
               <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-                {segment.lines.join('\n\n')}
+                {markdownOf(segment.lines)}
               </ReactMarkdown>
             </div>
           )}

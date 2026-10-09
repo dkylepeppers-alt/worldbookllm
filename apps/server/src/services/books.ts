@@ -506,32 +506,41 @@ export class BookService {
     actor: CheckpointActor = 'user',
   ): Promise<{ file: BookFile; checkpoint: Checkpoint | null }> {
     assertWritablePath(path);
-    return this.locks.run(slug, async () => {
-      const current = this.files.readBytes(slug, path);
-      const currentHash = current === null ? null : sha256(current);
-      if (currentHash !== input.expectedHash) {
-        throw new ConflictError(
-          'file_changed',
-          current === null
-            ? `${path} does not exist anymore.`
-            : input.expectedHash === null
-              ? `${path} already exists.`
-              : `${path} changed since it was loaded.`,
-        );
-      }
-      const label = `${current === null ? 'Create' : 'Edit'} ${path}`;
-      const { checkpoint } = await this.checkpoints.record(
-        slug,
-        label,
-        actor,
-        needsReindex(path) ? 'book' : { paths: [path] },
-        () => this.writeAndReindex(slug, path, input.content),
+    return this.locks.run(slug, () => this.writeFileLocked(slug, path, input, actor));
+  }
+
+  /** writeFile for a caller that already holds the book lock. */
+  private async writeFileLocked(
+    slug: string,
+    path: string,
+    input: WriteBookFileInput,
+    actor: CheckpointActor,
+  ): Promise<{ file: BookFile; checkpoint: Checkpoint | null }> {
+    assertWritablePath(path);
+    const current = this.files.readBytes(slug, path);
+    const currentHash = current === null ? null : sha256(current);
+    if (currentHash !== input.expectedHash) {
+      throw new ConflictError(
+        'file_changed',
+        current === null
+          ? `${path} does not exist anymore.`
+          : input.expectedHash === null
+            ? `${path} already exists.`
+            : `${path} changed since it was loaded.`,
       );
-      this.index.reconcile(slug);
-      const file = this.index.get(slug, path);
-      if (!file) throw new NotFoundError(`${path} was not found in ${slug}`);
-      return { file, checkpoint };
-    });
+    }
+    const label = `${current === null ? 'Create' : 'Edit'} ${path}`;
+    const { checkpoint } = await this.checkpoints.record(
+      slug,
+      label,
+      actor,
+      needsReindex(path) ? 'book' : { paths: [path] },
+      () => this.writeAndReindex(slug, path, input.content),
+    );
+    this.index.reconcile(slug);
+    const file = this.index.get(slug, path);
+    if (!file) throw new NotFoundError(`${path} was not found in ${slug}`);
+    return { file, checkpoint };
   }
 
   search(slug: string, query: string): BookSearchResult[] {
@@ -1117,29 +1126,38 @@ export class BookService {
     chapterId: string,
     input: SetChapterChoices,
   ): Promise<BookBranches> {
-    const graph = await this.branches(slug);
-    const chapter = graph.chapters.find((entry) => entry.id === chapterId);
-    if (chapter === undefined) throw new NotFoundError(`Chapter ${chapterId} was not found`);
-    const ids = new Set(graph.chapters.map((entry) => entry.id));
-    const problems = input.choices.flatMap((choice, index) =>
-      (['sets', 'requires'] as const).flatMap((key) =>
-        choice[key].flatMap((entry) => {
-          const problem = stateProblem(entry, key, ids);
-          return problem === null ? [] : [`Choice ${index + 1} ${key}: ${problem}`];
-        }),
-      ),
-    );
-    if (problems.length > 0) throw new ValidationError(problems.join('\n'));
-    const current = this.files.readBytes(slug, chapter.path);
-    if (current === null || sha256(current) !== input.expectedHash) {
-      throw new ConflictError(
-        'file_changed',
-        `${chapter.path} changed since it was loaded. Reload to see the latest choices.`,
+    // One lock from reading the graph to the write, so no other chapter can
+    // be added or renamed between checking the flags and saving them.
+    return this.locks.run(slug, async () => {
+      const graph = this.readBranches(slug);
+      const chapter = graph.chapters.find((entry) => entry.id === chapterId);
+      if (chapter === undefined) throw new NotFoundError(`Chapter ${chapterId} was not found`);
+      const ids = new Set(graph.chapters.map((entry) => entry.id));
+      const problems = input.choices.flatMap((choice, index) =>
+        (['sets', 'requires'] as const).flatMap((key) =>
+          choice[key].flatMap((entry) => {
+            const problem = stateProblem(entry, key, ids);
+            return problem === null ? [] : [`Choice ${index + 1} ${key}: ${problem}`];
+          }),
+        ),
       );
-    }
-    const content = setFrontmatterChoices(current.toString('utf8'), input.choices);
-    await this.writeFile(slug, chapter.path, { content, expectedHash: input.expectedHash });
-    return this.branches(slug);
+      if (problems.length > 0) throw new ValidationError(problems.join('\n'));
+      const current = this.files.readBytes(slug, chapter.path);
+      if (current === null || sha256(current) !== input.expectedHash) {
+        throw new ConflictError(
+          'file_changed',
+          `${chapter.path} changed since it was loaded. Reload to see the latest choices.`,
+        );
+      }
+      const content = setFrontmatterChoices(current.toString('utf8'), input.choices);
+      await this.writeFileLocked(
+        slug,
+        chapter.path,
+        { content, expectedHash: input.expectedHash },
+        'user',
+      );
+      return this.readBranches(slug);
+    });
   }
 
   /** The book as a playable ink story: the ink build, compiled with inkjs. */

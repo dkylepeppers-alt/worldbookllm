@@ -116,6 +116,32 @@ describe('branchGraph', () => {
     expect(graph.flags).toEqual(['lamp_lit']);
   });
 
+  it('numbers a problem by its place in the file, and accepts chapter ids that start with a digit', () => {
+    const graph = branchGraph(
+      [
+        chapter('1-prologue', 1, [
+          { to: 'chapter-02' },
+          {
+            text: 'Go',
+            to: 'chapter-02',
+            sets: ['and'],
+            requires: ['1-prologue', 'not 1-prologue'],
+          },
+        ]),
+        chapter('chapter-02', 2),
+      ],
+      null,
+    );
+    expect(graph.chapters[0]?.problems).toEqual([
+      'Choice 1 needs text: the words the reader picks',
+      'Choice 2 sets: and is a word ink reserves',
+    ]);
+    expect(graph.chapters[0]?.choices).toEqual([
+      { text: 'Go', to: 'chapter-02', sets: [], requires: ['1-prologue', 'not 1-prologue'] },
+    ]);
+    expect(graph.flags).toEqual([]);
+  });
+
   it('reports a choices field that is not a list', () => {
     const graph = branchGraph([chapter('chapter-01', 1, 'chapter-02')], null);
     expect(graph.chapters[0]?.problems).toEqual(['choices must be a list of { text, to } entries']);

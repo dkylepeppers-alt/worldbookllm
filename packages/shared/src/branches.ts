@@ -30,7 +30,8 @@ export const MAX_CHAPTER_CHOICES = 20;
 export const choiceStateEntrySchema = z
   .string()
   .trim()
-  .regex(/^(?:not\s+)?[A-Za-z_][A-Za-z0-9_-]*$/u, {
+  // A flag name, or any chapter id (which can start with a digit: `1-prologue`).
+  .regex(/^(?:not\s+)?(?:[A-Za-z_][A-Za-z0-9_-]*|[a-z0-9]+(?:-[a-z0-9]+)*)$/u, {
     message: 'Use a flag name of letters, digits, and underscores, or "not" and a flag name',
   });
 

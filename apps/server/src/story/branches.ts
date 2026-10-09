@@ -58,6 +58,8 @@ interface ReadChoice {
   to: string;
   sets: string[];
   requires: string[];
+  /** Its place in the frontmatter list, so problems name it as the writer counts. */
+  at: number;
 }
 
 /** A `sets` or `requires` value: one entry or a list of them. */
@@ -106,7 +108,7 @@ function readChoices(frontmatter: Record<string, unknown> | null): {
     // Malformed state is reported but does not drop the choice, which the builds keep.
     const sets = readState(record.sets, at, 'sets', problems);
     const requires = readState(record.requires, at, 'requires', problems);
-    choices.push({ text, to, sets, requires });
+    choices.push({ text, to, sets, requires, at: index + 1 });
   });
   return { choices, problems };
 }
@@ -142,11 +144,11 @@ export function branchGraph(sources: readonly ChapterSource[], ifid: unknown): B
   const ids = new Set(ordered.map((source) => source.id));
   const parsed = ordered.map((source) => {
     const read = readChoices(source.frontmatter);
-    read.choices.forEach((choice, index) => {
+    read.choices.forEach((choice) => {
       for (const key of ['sets', 'requires'] as const) {
         const valid = choice[key].filter((entry) => {
           const problem = stateProblem(entry, key, ids);
-          if (problem !== null) read.problems.push(`Choice ${index + 1} ${key}: ${problem}`);
+          if (problem !== null) read.problems.push(`Choice ${choice.at} ${key}: ${problem}`);
           return problem === null;
         });
         choice[key] = valid;
@@ -179,15 +181,15 @@ export function branchGraph(sources: readonly ChapterSource[], ifid: unknown): B
     }
   }
 
-  const chapters: BranchChapter[] = parsed.map(({ source, choices, problems }) => ({
+  const chapters: BranchChapter[] = parsed.map(({ source, choices: read, problems }) => ({
     id: source.id,
     title: source.title,
     path: source.path,
     hash: source.hash,
-    choices,
+    choices: read.map(({ text, to, sets, requires }) => ({ text, to, sets, requires })),
     problems,
     start: source.id === start,
-    ending: branching && choices.length === 0,
+    ending: branching && read.length === 0,
     reachable: reached.has(source.id),
   }));
   const present = ifid !== undefined && ifid !== null && ifid !== '';

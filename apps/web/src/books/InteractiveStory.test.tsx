@@ -16,6 +16,7 @@ import { AppRoutes } from '../App.js';
 import { ApiProvider } from '../api/ApiContext.js';
 import { ApiClientError, type ApiClient } from '../api/client.js';
 import { createTestClient } from '../test/createTestClient.js';
+import { markdownOf } from './play-markdown.js';
 
 const HASH = 'a'.repeat(64);
 
@@ -435,5 +436,43 @@ describe('Play', () => {
         .getByRole('link', { name: 'Fix the choices on the Branches screen' })
         .getAttribute('href'),
     ).toBe('/books/gull-rock/write/branches');
+  });
+});
+
+describe('markdownOf', () => {
+  it('keeps code, table rows, and list items together, and paragraphs apart', () => {
+    expect(
+      markdownOf([
+        'The tide turns.',
+        '```',
+        'let x = 1',
+        '',
+        '```',
+        '| a | b |',
+        '|---|---|',
+        '| 1 | 2 |',
+        '- one',
+        '- two',
+        'Night falls.',
+      ]),
+    ).toBe(
+      [
+        'The tide turns.',
+        '',
+        '```',
+        'let x = 1',
+        '',
+        '```',
+        '',
+        '| a | b |',
+        '|---|---|',
+        '| 1 | 2 |',
+        '',
+        '- one',
+        '- two',
+        '',
+        'Night falls.',
+      ].join('\n'),
+    );
   });
 });
