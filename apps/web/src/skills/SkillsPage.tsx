@@ -166,7 +166,7 @@ export function SkillsPage() {
     }
   }
 
-  if (state.status === 'loading') return <LoadingState>Charting skills…</LoadingState>;
+  if (state.status === 'loading') return <LoadingState>Loading skills…</LoadingState>;
   if (state.status === 'error') {
     return (
       <ErrorState

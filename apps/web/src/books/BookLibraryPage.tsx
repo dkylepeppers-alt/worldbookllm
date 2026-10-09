@@ -16,12 +16,9 @@ function countLabel(book: BookSummary): string {
   return `${chapters} ${chapters === 1 ? 'chapter' : 'chapters'} · ${cast} in cast`;
 }
 
-function BookCard({ book, index, label }: { book: BookSummary; index: number; label?: string }) {
+function BookCard({ book, label }: { book: BookSummary; label?: string }) {
   return (
     <li className="book-card">
-      <span className="map-index" aria-hidden="true">
-        {String(index + 1).padStart(2, '0')}
-      </span>
       {label === undefined ? null : <p className="coordinate-label">{label}</p>}
       <Link className="book-link" to={`/books/${book.slug}`}>
         <h2>{book.title}</h2>
@@ -179,7 +176,7 @@ export function BookLibraryPage() {
         />
       )}
 
-      {books.status === 'loading' ? <LoadingState>Charting books…</LoadingState> : null}
+      {books.status === 'loading' ? <LoadingState>Loading books…</LoadingState> : null}
       {books.status === 'error' ? (
         <ErrorState title="Books could not load" message={books.message} onRetry={books.reload} />
       ) : null}
@@ -198,13 +195,12 @@ export function BookLibraryPage() {
 
 function LibraryGroupsView({ books }: { books: BookSummary[] }) {
   const { standalone, series } = groupLibrary(books);
-  let index = 0;
   return (
     <>
       {standalone.length === 0 ? null : (
         <ul className="book-grid" aria-label="Books">
           {standalone.map((book) => (
-            <BookCard key={book.slug} book={book} index={index++} />
+            <BookCard key={book.slug} book={book} />
           ))}
         </ul>
       )}
@@ -234,7 +230,6 @@ function LibraryGroupsView({ books }: { books: BookSummary[] }) {
                   <BookCard
                     key={book.slug}
                     book={book}
-                    index={index++}
                     label={book.bookNumber === null ? undefined : `Book ${book.bookNumber}`}
                   />
                 ))}

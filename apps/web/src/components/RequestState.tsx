@@ -20,7 +20,7 @@ interface ErrorStateProps {
 export function ErrorState({ title, message, onRetry }: ErrorStateProps) {
   return (
     <section className="request-state request-error" role="alert">
-      <p className="coordinate-label">Route interrupted</p>
+      <p className="coordinate-label">Something went wrong</p>
       <h2>{title}</h2>
       <p>{message}</p>
       {onRetry === undefined ? null : (

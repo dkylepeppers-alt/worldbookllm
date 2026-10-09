@@ -1,4 +1,3 @@
-import '@fontsource-variable/archivo/wght.css';
 import '@fontsource-variable/source-serif-4/opsz.css';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 

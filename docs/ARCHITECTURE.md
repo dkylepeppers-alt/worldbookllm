@@ -108,7 +108,7 @@ A series chat may pass a same-series slug to `read_file`, `list_files`, or `sear
 
 In production, `apps/server` serves the built `apps/web/dist` directly — one process, one port, as ADR 0002 always intended (see ADR 0010 for why this took a follow-up decision to actually implement, and for the installable-PWA work bundled with it). Client-side routes that aren't real files (e.g. `/books/:slug/write`) fall back to `index.html` so React Router can handle them; `/api/*` paths that don't match a route still return the same JSON 404 shape as always.
 
-The web app is an installable PWA: a manifest and generated icon set (Field Atlas branding) plus a service worker that precaches the static app shell for instant loads. Because this is a local-first tool — a book's real state lives in the user's own SQLite database and files, not a cloud backend — the service worker deliberately caches only the shell, never `/api/*`; there is no offline data-mutation queue. See ADR 0010 for the full reasoning.
+The web app is an installable PWA: a manifest and generated icon set (built from `apps/web/src/brand/mark.svg`) plus a service worker that precaches the static app shell for instant loads. Because this is a local-first tool — a book's real state lives in the user's own SQLite database and files, not a cloud backend — the service worker deliberately caches only the shell, never `/api/*`; there is no offline data-mutation queue. See ADR 0010 for the full reasoning.
 
 ## Context strategy
 

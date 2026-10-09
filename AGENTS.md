@@ -30,4 +30,4 @@ All from the repo root (pnpm 10, Node ≥ 24):
 
 ## Design context
 
-`apps/web` has captured Impeccable design context: `apps/web/PRODUCT.md` (register: product, platform: web — users, purpose, positioning, anti-references) and `apps/web/DESIGN.md` (the "Field Atlas" visual system: paper/blueprint/vermilion palette, Archivo + Source Serif 4 pairing, stamped card shadows). Read both before making UI changes in `apps/web`.
+`apps/web/PRODUCT.md` (users, purpose, positioning, anti-references) and `apps/web/DESIGN.md` (the visual system: neutral light/dark tokens, system sans UI with Source Serif 4 for prose, one indigo accent, soft corners) describe the web app's design. Read both before making UI changes in `apps/web`.
