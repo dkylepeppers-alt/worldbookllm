@@ -1214,7 +1214,8 @@ label {
 
 /* Reader tab: the manuscript as `story export` assembles it, set for reading. */
 .reader-contents,
-.reader-notes {
+.reader-notes,
+.file-folder {
   margin-bottom: 0.75rem;
   border: 1px solid var(--line);
   border-radius: 3px;
@@ -1222,7 +1223,8 @@ label {
 }
 
 .reader-contents > summary,
-.reader-notes > summary {
+.reader-notes > summary,
+.file-folder > summary {
   display: flex;
   min-height: 44px;
   align-items: center;
@@ -2258,4 +2260,30 @@ ol.inspector-sections {
 .agent-asked-options {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+/* Project tab: every book file, one collapsible folder at a time. */
+.file-folder > .entry-list {
+  margin: 0;
+  padding: 0 0.75rem 0.5rem;
+}
+
+.file-folder > summary {
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+/* Write tab: a chapter's scenes, indented under it. */
+.entry-list .scene-list {
+  margin: 0.2rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.entry-list .scene-list li {
+  border-bottom: 0;
+  padding: 0.3rem 0;
+}
+
+.entry-list .scene-list a {
+  font-weight: 500;
 }

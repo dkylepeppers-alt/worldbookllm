@@ -4,7 +4,7 @@ import { AddEntityForm } from './AddEntityForm.js';
 import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
 
-/** The manuscript: chapters in reading order, each with its scenes. */
+/** The manuscript: chapters in reading order, each with links to its scenes. */
 export function WritePage() {
   const { slug, tree } = useBook();
   const chapters = tree.files
@@ -21,15 +21,27 @@ export function WritePage() {
       ) : (
         <ol className="entry-list">
           {chapters.map((chapter) => {
-            const count = scenes.filter((scene) =>
-              scene.entityId?.startsWith(`${chapter.entityId ?? ''}-scene-`),
-            ).length;
+            const chapterScenes = scenes
+              .filter((scene) => scene.entityId?.startsWith(`${chapter.entityId ?? ''}-scene-`))
+              .sort((left, right) =>
+                (left.entityId ?? '').localeCompare(right.entityId ?? '', 'en', { numeric: true }),
+              );
+            const count = chapterScenes.length;
             return (
               <li key={chapter.path}>
                 <Link to={fileHref(slug, chapter.path)}>{chapter.title}</Link>
                 <span className="coordinate-label">
                   {chapter.entityId} · {count} {count === 1 ? 'scene' : 'scenes'}
                 </span>
+                {count === 0 ? null : (
+                  <ol className="scene-list" aria-label={`Scenes in ${chapter.title}`}>
+                    {chapterScenes.map((scene) => (
+                      <li key={scene.path}>
+                        <Link to={fileHref(slug, scene.path)}>{scene.title}</Link>
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </li>
             );
           })}

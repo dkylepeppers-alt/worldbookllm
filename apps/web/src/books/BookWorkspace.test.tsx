@@ -199,10 +199,35 @@ describe('book workspace', () => {
     expect(await screen.findByRole('heading', { name: 'Chapters' })).toBeDefined();
     expect(screen.getByRole('link', { name: 'Arrival' })).toBeDefined();
     expect(screen.getByText('chapter-01 · 1 scene')).toBeDefined();
+    const scenes = screen.getByRole('list', { name: 'Scenes in Arrival' });
+    expect(within(scenes).getByRole('link', { name: 'The ferry' }).getAttribute('href')).toBe(
+      '/books/the-salt-road/files/scenes/chapter-01-scene-01.md',
+    );
     const tabs = screen.getByRole('navigation', { name: 'Book' });
     expect(within(tabs).getByRole('link', { name: 'Write' }).getAttribute('aria-current')).toBe(
       'page',
     );
+  });
+
+  it('links scenes in scene-number order past 99', async () => {
+    renderAt('/books/the-salt-road', {
+      getBookTree: () =>
+        Promise.resolve({
+          ...tree,
+          files: [
+            ...tree.files,
+            file('scenes/chapter-01-scene-100.md', 'scene', 'chapter-01-scene-100', 'Landfall'),
+            file('scenes/chapter-01-scene-99.md', 'scene', 'chapter-01-scene-99', 'Fog'),
+          ],
+        }),
+    });
+
+    const scenes = await screen.findByRole('list', { name: 'Scenes in Arrival' });
+    expect(
+      within(scenes)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['The ferry', 'Fog', 'Landfall']);
   });
 
   it('groups the bible by section and adds an entity with story add', async () => {
@@ -437,6 +462,29 @@ describe('book health and project', () => {
     expect(screen.getByText('Fix broken links')).toBeDefined();
     const findings = screen.getByRole('list', { name: 'Findings' });
     expect(within(findings).getByRole('link', { name: 'characters/mara-quill.md' })).toBeDefined();
+  });
+
+  it('lists every book file by folder, including ones no other tab shows', async () => {
+    renderAt('/books/the-salt-road/project', {
+      getBookTree: () =>
+        Promise.resolve({
+          ...tree,
+          files: [...tree.files, file('notes/drafts/old-opening.md', 'other', null, 'Old opening')],
+        }),
+      listCheckpoints: () => Promise.resolve([]),
+    });
+
+    expect(await screen.findByRole('heading', { name: 'All files' })).toBeDefined();
+    const root = screen.getByRole('list', { name: 'Book folder', hidden: true });
+    expect(within(root).getByRole('link', { name: 'The Salt Road', hidden: true })).toBeDefined();
+    const notes = screen.getByRole('list', { name: 'notes/drafts', hidden: true });
+    expect(
+      within(notes).getByRole('link', { name: 'Old opening', hidden: true }).getAttribute('href'),
+    ).toBe('/books/the-salt-road/files/notes/drafts/old-opening.md');
+    const registries = screen.getByRole('list', { name: 'characters', hidden: true });
+    expect(
+      within(registries).getByRole('link', { name: 'characters/_index.md', hidden: true }),
+    ).toBeDefined();
   });
 
   it('lists history and undoes only the latest live change', async () => {
