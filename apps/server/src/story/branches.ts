@@ -1,8 +1,14 @@
-import type { BookBranches, BranchChapter, ChapterChoice } from '@worldbookllm/shared';
+import type {
+  BookBranches,
+  BranchChapter,
+  ChapterChoice,
+  ChapterChoiceInput,
+} from '@worldbookllm/shared';
 import { CHOICE_TEXT_UNSAFE } from '@worldbookllm/shared';
 import matter from 'gray-matter';
 
 import { ConflictError } from '../errors.js';
+import { flagProblem, inkKnotName, parseFlag } from './ink/ink-writer.js';
 
 /** A chapter file as the branch graph reads it. */
 export interface ChapterSource {
@@ -47,13 +53,30 @@ export function isIfid(value: unknown): value is string {
   );
 }
 
+interface ReadChoice {
+  text: string;
+  to: string;
+  sets: string[];
+  requires: string[];
+}
+
+/** A `sets` or `requires` value: one entry or a list of them. */
+function readState(value: unknown, at: string, key: string, problems: string[]): string[] {
+  if (value === undefined || value === null) return [];
+  const entries = Array.isArray(value) ? value : [value];
+  const valid = entries.filter((entry): entry is string => typeof entry === 'string');
+  if (valid.length !== entries.length) problems.push(`${at} ${key} must be flag names`);
+  return valid.map((entry) => entry.trim()).filter((entry) => entry !== '');
+}
+
 /**
  * A chapter's `choices`, read the way story-skills 0.23.0 reads them
  * (`chapterChoices` in its scan.js): well-formed entries, and a description
- * of each malformed one, which the builds refuse.
+ * of each malformed one, which the builds refuse. `sets` and `requires` are
+ * worldbookllm's (ADR 0028); story-skills ignores them.
  */
 function readChoices(frontmatter: Record<string, unknown> | null): {
-  choices: { text: string; to: string }[];
+  choices: ReadChoice[];
   problems: string[];
 } {
   const value = frontmatter?.choices;
@@ -61,7 +84,7 @@ function readChoices(frontmatter: Record<string, unknown> | null): {
   if (!Array.isArray(value)) {
     return { choices: [], problems: ['choices must be a list of { text, to } entries'] };
   }
-  const choices: { text: string; to: string }[] = [];
+  const choices: ReadChoice[] = [];
   const problems: string[] = [];
   value.forEach((entry: unknown, index) => {
     const at = `Choice ${index + 1}`;
@@ -79,9 +102,30 @@ function readChoices(frontmatter: Record<string, unknown> | null): {
     }
     if (to.trim() === '') problems.push(`${at} needs to: the chapter it leads to`);
     else if (!KEBAB.test(to)) problems.push(`${at} leads to ${to}, which is not a chapter id`);
-    if (problems.length === before) choices.push({ text, to });
+    if (problems.length > before) return;
+    // Malformed state is reported but does not drop the choice, which the builds keep.
+    const sets = readState(record.sets, at, 'sets', problems);
+    const requires = readState(record.requires, at, 'requires', problems);
+    choices.push({ text, to, sets, requires });
   });
   return { choices, problems };
+}
+
+/**
+ * Why a `sets` or `requires` entry cannot be used in this book, or null. A
+ * chapter id in `requires` tests that the reader has read it; anything else
+ * is a flag, which cannot share a name with a chapter's knot.
+ */
+export function stateProblem(
+  entry: string,
+  key: 'sets' | 'requires',
+  chapterIds: ReadonlySet<string>,
+): string | null {
+  const { name } = parseFlag(entry);
+  if (chapterIds.has(name)) {
+    return key === 'requires' ? null : `${name} is a chapter: a choice can require it, not set it`;
+  }
+  return flagProblem(name, new Set([...chapterIds].map(inkKnotName)));
 }
 
 /**
@@ -95,9 +139,22 @@ export function branchGraph(sources: readonly ChapterSource[], ifid: unknown): B
     (left, right) =>
       chapterNumber(left) - chapterNumber(right) || left.path.localeCompare(right.path, 'en'),
   );
-  const parsed = ordered.map((source) => ({ source, ...readChoices(source.frontmatter) }));
-  const branching = parsed.some((entry) => entry.choices.length > 0);
   const ids = new Set(ordered.map((source) => source.id));
+  const parsed = ordered.map((source) => {
+    const read = readChoices(source.frontmatter);
+    read.choices.forEach((choice, index) => {
+      for (const key of ['sets', 'requires'] as const) {
+        const valid = choice[key].filter((entry) => {
+          const problem = stateProblem(entry, key, ids);
+          if (problem !== null) read.problems.push(`Choice ${index + 1} ${key}: ${problem}`);
+          return problem === null;
+        });
+        choice[key] = valid;
+      }
+    });
+    return { source, ...read };
+  });
+  const branching = parsed.some((entry) => entry.choices.length > 0);
 
   const links = new Map<string, string[]>(
     parsed.map((entry, position) => [
@@ -134,8 +191,18 @@ export function branchGraph(sources: readonly ChapterSource[], ifid: unknown): B
     reachable: reached.has(source.id),
   }));
   const present = ifid !== undefined && ifid !== null && ifid !== '';
+  const flags = new Set<string>();
+  for (const { choices } of parsed) {
+    for (const choice of choices) {
+      for (const entry of [...choice.sets, ...choice.requires]) {
+        const { name } = parseFlag(entry);
+        if (!ids.has(name)) flags.add(name);
+      }
+    }
+  }
   return {
     branching,
+    flags: [...flags].sort(),
     ifid: isIfid(ifid) ? ifid : null,
     invalidIfid: present && !isIfid(ifid) ? String(ifid) : null,
     chapters,
@@ -149,6 +216,8 @@ function choicesYaml(choices: readonly ChapterChoice[]): string[] {
     ...choices.flatMap((choice) => [
       `  - text: ${JSON.stringify(choice.text)}`,
       `    to: ${choice.to}`,
+      ...(choice.sets.length > 0 ? [`    sets: ${JSON.stringify(choice.sets)}`] : []),
+      ...(choice.requires.length > 0 ? [`    requires: ${JSON.stringify(choice.requires)}`] : []),
     ]),
   ];
 }
@@ -164,7 +233,16 @@ function continues(line: string): boolean {
  * parse back to exactly the intended frontmatter (unusual YAML around the
  * field), the frontmatter is rewritten whole instead.
  */
-export function setFrontmatterChoices(markdown: string, choices: readonly ChapterChoice[]): string {
+export function setFrontmatterChoices(
+  markdown: string,
+  input: readonly ChapterChoiceInput[],
+): string {
+  const choices: ChapterChoice[] = input.map((choice) => ({
+    text: choice.text,
+    to: choice.to,
+    sets: choice.sets ?? [],
+    requires: choice.requires ?? [],
+  }));
   const original = parsedData(markdown);
   if (original === null) {
     throw new ConflictError(
@@ -191,7 +269,14 @@ export function setFrontmatterChoices(markdown: string, choices: readonly Chapte
 
   const intended = { ...original };
   delete intended.choices;
-  if (choices.length > 0) intended.choices = choices.map(({ text, to }) => ({ text, to }));
+  if (choices.length > 0) {
+    intended.choices = choices.map(({ text, to, sets, requires }) => ({
+      text,
+      to,
+      ...(sets.length > 0 ? { sets } : {}),
+      ...(requires.length > 0 ? { requires } : {}),
+    }));
+  }
   const reparsed = parsedData(result);
   if (reparsed !== null && sameData(reparsed, intended)) return result;
   return matter.stringify(body, intended);

@@ -26,6 +26,8 @@ interface Turn {
   chosen: string | null;
   /** A choice in the address that the story no longer offers. */
   stale: boolean;
+  /** Each flag's value now. */
+  state: { flag: string; value: boolean }[];
 }
 
 /**
@@ -33,17 +35,25 @@ interface Turn {
  * come from. The story is compiled with every visit counted, so the knots a
  * line entered are the ones whose visit count went up.
  */
-function runToChoice(story: InkStory, knots: readonly PlayKnot[]): Segment[] {
-  const counts = () =>
-    knots.map((entry) => {
-      try {
-        return story.state.VisitCountAtPathString(entry.knot);
-      } catch {
-        return 0;
-      }
-    });
+function visitCounts(story: InkStory, knots: readonly PlayKnot[]): number[] {
+  return knots.map((entry) => {
+    try {
+      return story.state.VisitCountAtPathString(entry.knot) ?? 0;
+    } catch {
+      return 0;
+    }
+  });
+}
+
+function runToChoice(
+  story: InkStory,
+  knots: readonly PlayKnot[],
+  // Counts from before a jump, which counts its knot's visit at once.
+  from: number[] = visitCounts(story, knots),
+): Segment[] {
+  const counts = () => visitCounts(story, knots);
   const segments: Segment[] = [];
-  let before = counts();
+  let before = from;
   while (story.canContinue) {
     const line = story.Continue()?.trim() ?? '';
     const after = counts();
@@ -57,31 +67,38 @@ function runToChoice(story: InkStory, knots: readonly PlayKnot[]): Segment[] {
   return segments;
 }
 
-/** Plays the story from the start through the choices in `path`. */
-function replay(runtime: InkRuntime, play: BookPlay, path: readonly number[]): Turn {
+/**
+ * Plays the story through the choices in `path`, from the start or, with
+ * `from`, from that chapter's knot (flags then start false, as on a first
+ * reading that jumped there).
+ */
+function replay(
+  runtime: InkRuntime,
+  play: BookPlay,
+  from: string | null,
+  path: readonly number[],
+): Turn {
   const story = new runtime.Story(play.story);
-  let segments = runToChoice(story, play.knots);
+  const knot = play.knots.find((entry) => entry.chapterId === from)?.knot;
+  const initial = visitCounts(story, play.knots);
+  if (knot !== undefined) story.ChoosePathString(knot);
+  let segments = runToChoice(story, play.knots, initial);
   let chosen: string | null = null;
+  const turn = (stale: boolean): Turn => ({
+    segments,
+    choices: story.currentChoices.map((entry) => entry.text),
+    chosen,
+    stale,
+    state: play.flags.map((flag) => ({ flag, value: story.variablesState.$(flag) === true })),
+  });
   for (const index of path) {
     const choice = story.currentChoices[index];
-    if (choice === undefined) {
-      return {
-        segments,
-        choices: story.currentChoices.map((entry) => entry.text),
-        chosen,
-        stale: true,
-      };
-    }
+    if (choice === undefined) return turn(true);
     chosen = choice.text;
     story.ChooseChoiceIndex(index);
     segments = runToChoice(story, play.knots);
   }
-  return {
-    segments,
-    choices: story.currentChoices.map((entry) => entry.text),
-    chosen,
-    stale: false,
-  };
+  return turn(false);
 }
 
 function parsePath(value: string | null): number[] {
@@ -135,6 +152,9 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
   const [params, setParams] = useSearchParams();
   const pathParam = params.get('path');
   const path = useMemo(() => parsePath(pathParam), [pathParam]);
+  const from = params.get('from');
+  const start: Record<string, string> = from === null ? {} : { from };
+  const fromKnot = play.knots.find((entry) => entry.chapterId === from);
 
   // The ink runtime loads with this screen, not with the app.
   useEffect(() => {
@@ -155,11 +175,11 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
   const turn = useMemo(() => {
     if (runtime === null) return null;
     try {
-      return replay(runtime, play, path);
+      return replay(runtime, play, from, path);
     } catch (error) {
       return errorMessage(error);
     }
-  }, [runtime, play, path]);
+  }, [runtime, play, from, path]);
 
   if (loadError !== null) {
     return <ErrorState title="The ink runtime could not load" message={loadError} />;
@@ -181,18 +201,39 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
           </ul>
         </details>
       ) : null}
+      {fromKnot === undefined ? null : (
+        <p className="coordinate-label">
+          Playing from {fromKnot.title}, with every flag false.{' '}
+          <button type="button" className="text-button" onClick={() => setParams({})}>
+            Play from the start
+          </button>
+        </p>
+      )}
       <Passage
         slug={slug}
         turn={turn}
-        step={path.join('.')}
-        onChoose={(index) => setParams({ path: [...path, index].join('.') })}
-        onRestart={() => setParams({})}
+        step={`${from ?? ''}:${path.join('.')}`}
+        atStart={path.length === 0}
+        onChoose={(index) => setParams({ ...start, path: [...path, index].join('.') })}
+        onRestart={() => setParams(start)}
       />
+      {turn.state.length > 0 ? (
+        <section className="play-state" aria-labelledby="play-state-heading">
+          <h3 id="play-state-heading">Story state</h3>
+          <ul>
+            {turn.state.map(({ flag, value }) => (
+              <li key={flag}>
+                <code>{flag}</code> {value ? 'true' : 'false'}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <details className="ink-source">
         <summary>ink source</summary>
         <p className="coordinate-label">
-          What <code>story build --format ink</code> writes for this book, compiled here with inkjs.
-          Download it from Project → Build to open it in Inky.
+          The ink worldbookllm writes for this book, compiled here with inkjs. Download it from
+          Project → Build to open it in Inky.
         </p>
         <pre className="build-output">{play.source}</pre>
       </details>
@@ -204,12 +245,14 @@ function Passage({
   slug,
   turn,
   step,
+  atStart,
   onChoose,
   onRestart,
 }: {
   slug: string;
   turn: Turn;
   step: string;
+  atStart: boolean;
   onChoose: (index: number) => void;
   onRestart: () => void;
 }) {
@@ -273,7 +316,7 @@ function Passage({
         {chapter === undefined ? null : (
           <Link to={fileHref(slug, chapter.path)}>Edit {chapter.title}</Link>
         )}
-        {step === '' || turn.stale ? null : (
+        {atStart || turn.stale ? null : (
           <>
             {chapter === undefined ? null : ' · '}
             <button type="button" className="text-button" onClick={onRestart}>

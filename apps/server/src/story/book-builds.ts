@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { BookBuildFile } from '@worldbookllm/shared';
@@ -38,6 +38,11 @@ function buildFilePath(root: string, name: string): string {
 
 export function readBuildFile(root: string, name: string): Buffer {
   return readFileSync(buildFilePath(root, name));
+}
+
+/** Replaces an existing build file's content, as a build that rewrites its output would. */
+export function writeBuildFile(root: string, name: string, content: string): void {
+  writeFileSync(buildFilePath(root, name), content);
 }
 
 export function removeBuildFile(root: string, name: string): void {

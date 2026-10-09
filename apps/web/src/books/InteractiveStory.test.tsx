@@ -94,6 +94,7 @@ describe('Branches', () => {
       branching: false,
       ifid: null,
       invalidIfid: null,
+      flags: [],
       chapters: [chapter('chapter-01'), chapter('chapter-02'), chapter('chapter-03')],
     };
     renderAt('/books/gull-rock/write', { getBranches: () => Promise.resolve(linear) });
@@ -115,6 +116,7 @@ describe('Branches', () => {
       branching: false,
       ifid: null,
       invalidIfid: null,
+      flags: [],
       chapters: [chapter('chapter-01'), chapter('chapter-02'), chapter('chapter-03')],
     };
     const setChapterChoices = vi.fn(() => Promise.resolve(linear));
@@ -140,7 +142,7 @@ describe('Branches', () => {
 
     expect(setChapterChoices).toHaveBeenCalledWith('gull-rock', 'chapter-01', {
       expectedHash: HASH,
-      choices: [{ text: 'Climb the tower', to: 'chapter-03' }],
+      choices: [{ text: 'Climb the tower', to: 'chapter-03', sets: [], requires: [] }],
     });
   });
 
@@ -149,11 +151,12 @@ describe('Branches', () => {
       branching: true,
       ifid: null,
       invalidIfid: null,
+      flags: [],
       chapters: [
         chapter('chapter-01', {
           choices: [
-            { text: 'Search the rocks', to: 'chapter-02' },
-            { text: 'Ghost', to: 'chapter-09' },
+            { text: 'Search the rocks', to: 'chapter-02', sets: [], requires: [] },
+            { text: 'Ghost', to: 'chapter-09', sets: [], requires: [] },
           ],
         }),
         chapter('chapter-02', { ending: true }),
@@ -195,6 +198,7 @@ describe('Branches', () => {
           branching: false,
           ifid,
           invalidIfid: null,
+          flags: [],
           chapters: [chapter('chapter-01')],
         }),
       // Pinning writes story.md, so the tree reloads with a new hash.
@@ -215,7 +219,7 @@ describe('Branches', () => {
 describe('Branches edge cases', () => {
   it('lets a one-chapter book branch back to itself', async () => {
     const setChapterChoices = vi.fn(() =>
-      Promise.resolve({ branching: true, ifid: null, invalidIfid: null, chapters: [] }),
+      Promise.resolve({ branching: true, ifid: null, invalidIfid: null, flags: [], chapters: [] }),
     );
     renderAt('/books/gull-rock/write/branches', {
       getBranches: () =>
@@ -223,6 +227,7 @@ describe('Branches edge cases', () => {
           branching: false,
           ifid: null,
           invalidIfid: null,
+          flags: [],
           chapters: [chapter('chapter-01')],
         }),
       setChapterChoices,
@@ -234,8 +239,67 @@ describe('Branches edge cases', () => {
     await user.click(within(only).getByRole('button', { name: 'Save choices' }));
     expect(setChapterChoices).toHaveBeenCalledWith('gull-rock', 'chapter-01', {
       expectedHash: HASH,
-      choices: [{ text: 'Try again', to: 'chapter-01' }],
+      choices: [{ text: 'Try again', to: 'chapter-01', sets: [], requires: [] }],
     });
+  });
+
+  it('saves the flags a choice sets and requires, and checks them as typed', async () => {
+    const setChapterChoices = vi.fn(() =>
+      Promise.resolve({ branching: true, ifid: null, invalidIfid: null, flags: [], chapters: [] }),
+    );
+    renderAt('/books/gull-rock/write/branches', {
+      getBranches: () =>
+        Promise.resolve({
+          branching: false,
+          ifid: null,
+          invalidIfid: null,
+          flags: ['lamp_lit'],
+          chapters: [chapter('chapter-01'), chapter('chapter-02')],
+        }),
+      setChapterChoices,
+    });
+    const user = userEvent.setup();
+    expect((await screen.findByText(/Flags in this book/u)).textContent).toContain('lamp_lit');
+    const first = screen.getByRole('form', { name: 'Harbor Wall' });
+    await user.click(within(first).getByRole('button', { name: 'Add a choice' }));
+    await user.type(within(first).getByLabelText('Choice 1'), 'Search the rocks');
+    await user.type(within(first).getByLabelText('Sets flags'), 'chapter-02');
+    await user.click(within(first).getByRole('button', { name: 'Save choices' }));
+    expect(within(first).getByText(/chapter-02 is a chapter: a choice can require/u)).toBeTruthy();
+    expect(setChapterChoices).not.toHaveBeenCalled();
+
+    await user.clear(within(first).getByLabelText('Sets flags'));
+    await user.type(within(first).getByLabelText('Sets flags'), 'found_coat,  not  lamp_lit, ');
+    await user.type(within(first).getByLabelText('Only if'), 'lamp_lit, chapter-02');
+    await user.click(within(first).getByRole('button', { name: 'Save choices' }));
+    expect(setChapterChoices).toHaveBeenCalledWith('gull-rock', 'chapter-01', {
+      expectedHash: HASH,
+      choices: [
+        {
+          text: 'Search the rocks',
+          to: 'chapter-02',
+          sets: ['found_coat', 'not lamp_lit'],
+          requires: ['lamp_lit', 'chapter-02'],
+        },
+      ],
+    });
+  });
+
+  it('links each chapter to a play-through that starts there', async () => {
+    renderAt('/books/gull-rock/write/branches', {
+      getBranches: () =>
+        Promise.resolve({
+          branching: false,
+          ifid: null,
+          invalidIfid: null,
+          flags: [],
+          chapters: [chapter('chapter-01'), chapter('chapter-03')],
+        }),
+    });
+    const lamp = await screen.findByRole('form', { name: 'The Lamp' });
+    expect(within(lamp).getByRole('link', { name: 'Play from here' }).getAttribute('href')).toBe(
+      '/books/gull-rock/write/play?from=chapter-03',
+    );
   });
 
   it('offers to replace an IFID the builds would refuse', async () => {
@@ -245,6 +309,7 @@ describe('Branches edge cases', () => {
           branching: false,
           ifid: null,
           invalidIfid: 'foo',
+          flags: [],
           chapters: [chapter('chapter-01')],
         }),
     });
@@ -259,12 +324,16 @@ describe('Play', () => {
     '# title: The Gull Rock Light',
     '# ifid: 649C4AC9-78FE-4B32-B821-24D0802D1DD9',
     '',
+    'VAR found_coat = false',
+    '',
     '-> chapter_01',
     '',
     '=== chapter_01 ===',
     'The tower door stands *open*.',
     '',
-    '+ [Search the rocks] -> chapter_02',
+    '+ [Search the rocks]',
+    '    ~ found_coat = true',
+    '    -> chapter_02',
     '+ [Climb the tower] -> chapter_03',
     '',
     '=== chapter_02 ===',
@@ -291,6 +360,7 @@ describe('Play', () => {
         chapterId: id,
         title: TITLES[id],
       })),
+      flags: ['found_coat'],
       warnings: [],
     };
   }
@@ -310,6 +380,32 @@ describe('Play', () => {
     expect(screen.getByText('The end.')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Play again' }));
+    expect(screen.getByRole('heading', { name: 'Harbor Wall' })).toBeTruthy();
+  });
+
+  it('shows the story state as choices change it', async () => {
+    renderAt('/books/gull-rock/write/play', { getPlay: () => Promise.resolve(play()) });
+    const user = userEvent.setup();
+    const state = await screen.findByRole('region', { name: 'Story state' });
+    expect(state.textContent).toContain('found_coat false');
+    await user.click(screen.getByRole('button', { name: 'Search the rocks' }));
+    expect(screen.getByRole('region', { name: 'Story state' }).textContent).toContain(
+      'found_coat true',
+    );
+  });
+
+  it('plays from a chapter, and back from the start', async () => {
+    renderAt('/books/gull-rock/write/play?from=chapter-03', {
+      getPlay: () => Promise.resolve(play()),
+    });
+    const user = userEvent.setup();
+    expect(await screen.findByRole('heading', { name: 'The Lamp' })).toBeTruthy();
+    expect(screen.getByText(/Playing from The Lamp, with every flag false/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Play again' }));
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/books/gull-rock/write/play?from=chapter-03',
+    );
+    await user.click(screen.getByRole('button', { name: 'Play from the start' }));
     expect(screen.getByRole('heading', { name: 'Harbor Wall' })).toBeTruthy();
   });
 

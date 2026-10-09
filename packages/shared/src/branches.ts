@@ -21,6 +21,21 @@ export const chapterIdSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, {
 
 export const MAX_CHAPTER_CHOICES = 20;
 
+/**
+ * A `sets` or `requires` entry: a flag name (`found_coat`), or `not` and a
+ * flag name. In `requires` it can also be a chapter id, meaning the reader
+ * has read that chapter. The server checks what needs the book: that a flag
+ * is not a chapter's ink knot name or a word ink reserves.
+ */
+export const choiceStateEntrySchema = z
+  .string()
+  .trim()
+  .regex(/^(?:not\s+)?[A-Za-z_][A-Za-z0-9_-]*$/u, {
+    message: 'Use a flag name of letters, digits, and underscores, or "not" and a flag name',
+  });
+
+export const MAX_CHOICE_STATE = 10;
+
 export const chapterChoiceSchema = z.strictObject({
   /** The words the reader picks. */
   text: z
@@ -31,6 +46,10 @@ export const chapterChoiceSchema = z.strictObject({
     .refine((text) => !CHOICE_TEXT_UNSAFE.test(text), { message: CHOICE_TEXT_RULE }),
   /** The id of the chapter it leads to. */
   to: chapterIdSchema,
+  /** Flags choosing it sets: `name` true, `not name` false (worldbookllm's ink, ADR 0028). */
+  sets: z.array(choiceStateEntrySchema).max(MAX_CHOICE_STATE).default([]),
+  /** All must hold for the choice to be offered: flags, or chapter ids already read. */
+  requires: z.array(choiceStateEntrySchema).max(MAX_CHOICE_STATE).default([]),
 });
 
 /** Replaces a chapter's choices; an empty list removes the field. */
@@ -51,7 +70,14 @@ export const branchChapterSchema = z.strictObject({
   path: bookFilePathSchema,
   hash: sha256Schema,
   /** Well-formed choices, in file order; `to` may name a chapter that does not exist. */
-  choices: z.array(z.strictObject({ text: z.string(), to: z.string() })),
+  choices: z.array(
+    z.strictObject({
+      text: z.string(),
+      to: z.string(),
+      sets: z.array(z.string()),
+      requires: z.array(z.string()),
+    }),
+  ),
   /** Malformed choice entries, which the builds refuse, described for the writer. */
   problems: z.array(z.string()),
   /** The first chapter, where the reader starts. */
@@ -69,6 +95,8 @@ export const bookBranchesSchema = z.strictObject({
   ifid: z.string().nullable(),
   /** An `ifid` in story.md that is not a version 4 UUID, which the builds refuse. */
   invalidIfid: z.string().nullable(),
+  /** Every flag the book's choices set or require, for suggestions. */
+  flags: z.array(z.string()),
   chapters: z.array(branchChapterSchema),
 });
 
@@ -83,11 +111,13 @@ export const playKnotSchema = z.strictObject({
 export const bookPlaySchema = z.strictObject({
   title: z.string(),
   ifid: z.string(),
-  /** The ink source `story build --format ink` writes. */
+  /** The ink source worldbookllm's ink writer makes from the build (ADR 0028). */
   source: z.string(),
   /** That source compiled by inkjs to ink's JSON story format. */
   story: z.string(),
   knots: z.array(playKnotSchema),
+  /** The story's flags, which the Play screen shows as they change. */
+  flags: z.array(z.string()),
   /** What the build and the ink compiler warned about. */
   warnings: z.array(z.string()),
 });
@@ -95,7 +125,10 @@ export const bookPlaySchema = z.strictObject({
 export const pinnedIfidSchema = z.strictObject({ ifid: z.string() });
 
 export type ChapterChoice = z.infer<typeof chapterChoiceSchema>;
-export type SetChapterChoicesInput = z.infer<typeof setChapterChoicesSchema>;
+export type ChapterChoiceInput = z.input<typeof chapterChoiceSchema>;
+/** What a client sends; `sets` and `requires` may be left out. */
+export type SetChapterChoicesInput = z.input<typeof setChapterChoicesSchema>;
+export type SetChapterChoices = z.infer<typeof setChapterChoicesSchema>;
 export type BranchChapter = z.infer<typeof branchChapterSchema>;
 export type BookBranches = z.infer<typeof bookBranchesSchema>;
 export type PlayKnot = z.infer<typeof playKnotSchema>;
