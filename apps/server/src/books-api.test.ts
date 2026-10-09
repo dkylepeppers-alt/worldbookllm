@@ -797,6 +797,18 @@ describe('interactive books', () => {
     const again = await app.inject({ method: 'POST', url: `/api/books/${slug}/ifid` });
     expect(again.json()).toEqual({ ifid: derived });
   });
+
+  it('replaces an IFID the builds would refuse', async () => {
+    const slug = await threeChapters();
+    const story = join(dataDir, 'projects', slug, 'story.md');
+    writeFileSync(story, readFileSync(story, 'utf8').replace(/^---\n/u, '---\nifid: foo\n'));
+    expect(await branches(slug)).toMatchObject({ ifid: null, invalidIfid: 'foo' });
+    const pinned = await app.inject({ method: 'POST', url: `/api/books/${slug}/ifid` });
+    const { ifid } = pinned.json<{ ifid: string }>();
+    expect(ifid).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/u);
+    expect(await branches(slug)).toMatchObject({ ifid, invalidIfid: null });
+    expect(readFileSync(story, 'utf8')).not.toContain('ifid: foo');
+  });
 });
 
 describe('manuscript', () => {

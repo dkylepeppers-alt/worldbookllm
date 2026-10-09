@@ -67,6 +67,8 @@ export const bookBranchesSchema = z.strictObject({
   branching: z.boolean(),
   /** The IFID pinned in story.md, or null while builds derive one from the title. */
   ifid: z.string().nullable(),
+  /** An `ifid` in story.md that is not a version 4 UUID, which the builds refuse. */
+  invalidIfid: z.string().nullable(),
   chapters: z.array(branchChapterSchema),
 });
 

@@ -126,7 +126,12 @@ function BranchesView({
         ) : null}
       </div>
 
-      <IfidPanel slug={slug} ifid={branches.ifid} onChanged={onChanged} />
+      <IfidPanel
+        slug={slug}
+        ifid={branches.ifid}
+        invalidIfid={branches.invalidIfid}
+        onChanged={onChanged}
+      />
 
       <ol className="branch-list" aria-label="Chapters and their choices">
         {chapters.map((chapter, position) => (
@@ -149,10 +154,12 @@ function BranchesView({
 function IfidPanel({
   slug,
   ifid,
+  invalidIfid,
   onChanged,
 }: {
   slug: string;
   ifid: string | null;
+  invalidIfid: string | null;
   onChanged: () => void;
 }) {
   const api = useApi();
@@ -177,18 +184,25 @@ function IfidPanel({
       <h3 id="ifid-heading">Story identity</h3>
       {ifid === null ? (
         <>
-          <p>
-            Twine and story archives tell stories apart by an IFID. This book has none pinned yet,
-            so each build makes one from the title, and retitling the book would change it. Pin it
-            before you share the story.
-          </p>
+          {invalidIfid === null ? (
+            <p>
+              Twine and story archives tell stories apart by an IFID. This book has none pinned yet,
+              so each build makes one from the title, and retitling the book would change it. Pin it
+              before you share the story.
+            </p>
+          ) : (
+            <p className="branch-warning">
+              story.md has <code>ifid: {invalidIfid}</code>, which is not a valid IFID (a version 4
+              UUID), so the Twine and ink builds refuse it. Replace it with a valid one.
+            </p>
+          )}
           <button
             type="button"
             className="button-secondary"
             disabled={busy}
             onClick={() => void pin()}
           >
-            {busy ? 'Pinning…' : 'Pin the IFID'}
+            {busy ? 'Pinning…' : invalidIfid === null ? 'Pin the IFID' : 'Replace the IFID'}
           </button>
         </>
       ) : (
@@ -232,7 +246,9 @@ function ChapterChoices({
   const canSave = dirty || chapter.problems.length > 0;
   const errors = draft.map(choiceError);
   const headingId = `branch-${chapter.id}-heading`;
-  const defaultTarget = next?.id ?? chapters.find((entry) => entry.id !== chapter.id)?.id;
+  // A choice can lead back to its own chapter, so even a one-chapter book can branch.
+  const defaultTarget =
+    next?.id ?? chapters.find((entry) => entry.id !== chapter.id)?.id ?? chapter.id;
 
   function update(index: number, change: Partial<ChapterChoice>) {
     setDraft((current) =>
@@ -359,7 +375,7 @@ function ChapterChoices({
         )}
 
         <div className="branch-actions">
-          {defaultTarget !== undefined && draft.length < MAX_CHAPTER_CHOICES ? (
+          {draft.length < MAX_CHAPTER_CHOICES ? (
             <button
               type="button"
               className="button-secondary"

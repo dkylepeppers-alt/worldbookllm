@@ -44,10 +44,10 @@ describe('branchGraph', () => {
         chapter('chapter-02', 2),
         chapter('chapter-03', 3),
       ],
-      'IFID',
+      '649C4AC9-78FE-4B32-B821-24D0802D1DD9',
     );
     expect(graph.branching).toBe(true);
-    expect(graph.ifid).toBe('IFID');
+    expect(graph.ifid).toBe('649C4AC9-78FE-4B32-B821-24D0802D1DD9');
     const [first, second, third] = graph.chapters;
     expect(first?.choices).toEqual([
       { text: 'Follow the light', to: 'chapter-02' },
@@ -59,6 +59,31 @@ describe('branchGraph', () => {
     ]);
     expect(second).toMatchObject({ ending: true, reachable: true });
     expect(third).toMatchObject({ ending: true, reachable: false });
+  });
+
+  it('orders chapters without a valid number by their file name, as story-skills does', () => {
+    const graph = branchGraph(
+      [
+        { ...chapter('chapter-03', 0), frontmatter: { number: 'three' } },
+        { ...chapter('chapter-02', 0), frontmatter: {} },
+        { ...chapter('prologue', 0), frontmatter: {} },
+      ],
+      null,
+    );
+    expect(graph.chapters.map((entry) => entry.id)).toEqual([
+      'prologue',
+      'chapter-02',
+      'chapter-03',
+    ]);
+    expect(graph.chapters[0]?.start).toBe(true);
+  });
+
+  it('accepts only a version 4 UUID as the pinned IFID', () => {
+    const valid = '649C4AC9-78FE-4B32-B821-24D0802D1DD9';
+    expect(branchGraph([], valid)).toMatchObject({ ifid: valid, invalidIfid: null });
+    expect(branchGraph([], 'foo')).toMatchObject({ ifid: null, invalidIfid: 'foo' });
+    expect(branchGraph([], 42)).toMatchObject({ ifid: null, invalidIfid: '42' });
+    expect(branchGraph([], undefined)).toMatchObject({ ifid: null, invalidIfid: null });
   });
 
   it('reports a choices field that is not a list', () => {

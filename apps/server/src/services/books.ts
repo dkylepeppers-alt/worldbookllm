@@ -70,7 +70,7 @@ import {
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { exportManuscript } from '../story/book-manuscript.js';
 import { buildPlay } from '../story/book-play.js';
-import { branchGraph, setFrontmatterChoices } from '../story/branches.js';
+import { branchGraph, isIfid, setFrontmatterChoices } from '../story/branches.js';
 import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
 import type {
   CheckpointActor,
@@ -1100,8 +1100,7 @@ export class BookService {
         };
       });
     const story = this.files.readBytes(slug, 'story.md')?.toString('utf8') ?? '';
-    const ifid = parseFrontmatter(story).frontmatter?.ifid;
-    return branchGraph(chapters, typeof ifid === 'string' && ifid.trim() !== '' ? ifid : null);
+    return branchGraph(chapters, parseFrontmatter(story).frontmatter?.ifid);
   }
 
   /** Replaces a chapter's `choices` as one checkpointed edit of its file. */
@@ -1142,7 +1141,8 @@ export class BookService {
       const story = this.files.readBytes(slug, 'story.md')?.toString('utf8');
       if (story === undefined) throw new NotFoundError(`${slug} has no story.md`);
       const pinned = parseFrontmatter(story).frontmatter?.ifid;
-      if (typeof pinned === 'string' && pinned.trim() !== '') return { ifid: pinned };
+      // An invalid one is replaced: the builds refuse anything but a version 4 UUID.
+      if (isIfid(pinned)) return { ifid: pinned };
       let ifid: string;
       try {
         ifid = (await buildPlay(this.cli, this.files.root(slug), [])).ifid;
@@ -1150,7 +1150,7 @@ export class BookService {
         if (!(error instanceof StoryCommandError) && !(error instanceof ConflictError)) throw error;
         ifid = '';
       }
-      if (!/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/iu.test(ifid)) {
+      if (!isIfid(ifid)) {
         ifid = randomUUID();
       }
       ifid = ifid.toUpperCase();

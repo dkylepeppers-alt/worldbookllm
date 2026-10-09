@@ -93,6 +93,7 @@ describe('Branches', () => {
     const linear: BookBranches = {
       branching: false,
       ifid: null,
+      invalidIfid: null,
       chapters: [chapter('chapter-01'), chapter('chapter-02'), chapter('chapter-03')],
     };
     renderAt('/books/gull-rock/write', { getBranches: () => Promise.resolve(linear) });
@@ -113,6 +114,7 @@ describe('Branches', () => {
     const linear: BookBranches = {
       branching: false,
       ifid: null,
+      invalidIfid: null,
       chapters: [chapter('chapter-01'), chapter('chapter-02'), chapter('chapter-03')],
     };
     const setChapterChoices = vi.fn(() => Promise.resolve(linear));
@@ -146,6 +148,7 @@ describe('Branches', () => {
     const branching: BookBranches = {
       branching: true,
       ifid: null,
+      invalidIfid: null,
       chapters: [
         chapter('chapter-01', {
           choices: [
@@ -188,7 +191,12 @@ describe('Branches', () => {
     });
     renderAt('/books/gull-rock/write/branches', {
       getBranches: () =>
-        Promise.resolve({ branching: false, ifid, chapters: [chapter('chapter-01')] }),
+        Promise.resolve({
+          branching: false,
+          ifid,
+          invalidIfid: null,
+          chapters: [chapter('chapter-01')],
+        }),
       // Pinning writes story.md, so the tree reloads with a new hash.
       getBookTree: () =>
         Promise.resolve(
@@ -201,6 +209,47 @@ describe('Branches', () => {
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Pin the IFID' }));
     expect(pinIfid).toHaveBeenCalledWith('gull-rock');
     expect(await screen.findByText('649C4AC9-78FE-4B32-B821-24D0802D1DD9')).toBeTruthy();
+  });
+});
+
+describe('Branches edge cases', () => {
+  it('lets a one-chapter book branch back to itself', async () => {
+    const setChapterChoices = vi.fn(() =>
+      Promise.resolve({ branching: true, ifid: null, invalidIfid: null, chapters: [] }),
+    );
+    renderAt('/books/gull-rock/write/branches', {
+      getBranches: () =>
+        Promise.resolve({
+          branching: false,
+          ifid: null,
+          invalidIfid: null,
+          chapters: [chapter('chapter-01')],
+        }),
+      setChapterChoices,
+    });
+    const user = userEvent.setup();
+    const only = await screen.findByRole('form', { name: 'Harbor Wall' });
+    await user.click(within(only).getByRole('button', { name: 'Add a choice' }));
+    await user.type(within(only).getByLabelText('Choice 1'), 'Try again');
+    await user.click(within(only).getByRole('button', { name: 'Save choices' }));
+    expect(setChapterChoices).toHaveBeenCalledWith('gull-rock', 'chapter-01', {
+      expectedHash: HASH,
+      choices: [{ text: 'Try again', to: 'chapter-01' }],
+    });
+  });
+
+  it('offers to replace an IFID the builds would refuse', async () => {
+    renderAt('/books/gull-rock/write/branches', {
+      getBranches: () =>
+        Promise.resolve({
+          branching: false,
+          ifid: null,
+          invalidIfid: 'foo',
+          chapters: [chapter('chapter-01')],
+        }),
+    });
+    expect(await screen.findByText(/which is not a valid IFID/u)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Replace the IFID' })).toBeTruthy();
   });
 });
 

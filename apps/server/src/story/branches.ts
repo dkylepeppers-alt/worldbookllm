@@ -15,11 +15,36 @@ export interface ChapterSource {
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
-/** story-skills orders chapters by their `number`, then by file. */
+/** story-skills' `isPositiveIntegerValue`: what a valid `number` field holds. */
+function isPositiveInteger(value: unknown): boolean {
+  const number = Number(value);
+  return (
+    value !== '' &&
+    value !== null &&
+    typeof value !== 'boolean' &&
+    Number.isInteger(number) &&
+    number > 0
+  );
+}
+
+/**
+ * The number story-skills 0.23.0 orders a chapter by (`chapterNumber` in its
+ * scan.js): a valid `number` field, else the number in a `chapter-NN.md` file
+ * name, else 0.
+ */
 function chapterNumber(chapter: ChapterSource): number {
   const value = chapter.frontmatter?.number;
-  const number = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(number) ? number : Number.POSITIVE_INFINITY;
+  if (value !== undefined && isPositiveInteger(value)) return Number(value);
+  const match = /^chapter-(\d+)\.md$/u.exec(chapter.path.split('/').at(-1) ?? '');
+  return match ? Number.parseInt(match[1]!, 10) : 0;
+}
+
+/** story-skills' `isIfid`: the builds accept only a version 4 UUID. */
+export function isIfid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
+  );
 }
 
 /**
@@ -65,7 +90,7 @@ function readChoices(frontmatter: Record<string, unknown> | null): {
  * on to the next; once any chapter has a choice, a chapter's links are its
  * choices and one without them is an ending.
  */
-export function branchGraph(sources: readonly ChapterSource[], ifid: string | null): BookBranches {
+export function branchGraph(sources: readonly ChapterSource[], ifid: unknown): BookBranches {
   const ordered = [...sources].sort(
     (left, right) =>
       chapterNumber(left) - chapterNumber(right) || left.path.localeCompare(right.path, 'en'),
@@ -108,7 +133,13 @@ export function branchGraph(sources: readonly ChapterSource[], ifid: string | nu
     ending: branching && choices.length === 0,
     reachable: reached.has(source.id),
   }));
-  return { branching, ifid, chapters };
+  const present = ifid !== undefined && ifid !== null && ifid !== '';
+  return {
+    branching,
+    ifid: isIfid(ifid) ? ifid : null,
+    invalidIfid: present && !isIfid(ifid) ? String(ifid) : null,
+    chapters,
+  };
 }
 
 /** The `choices` block as YAML; JSON strings are valid double-quoted YAML scalars. */
