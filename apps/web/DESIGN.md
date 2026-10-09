@@ -10,7 +10,7 @@ colors:
     prose: '#2a2a2d'
     muted: '#5e6066'
     border: '#e3e3df'
-    border-strong: '#c9c9c4'
+    border-strong: '#878782'
     accent: '#4f46e5'
     accent-hover: '#4338ca'
     on-accent: '#ffffff'
@@ -24,7 +24,7 @@ colors:
     prose: '#dcdcdf'
     muted: '#a0a0a8'
     border: '#2d2d32'
-    border-strong: '#43434a'
+    border-strong: '#707078'
     accent: '#8b8cf6'
     accent-hover: '#a5a6f9'
     on-accent: '#111114'
@@ -67,7 +67,7 @@ All of it lives in `src/styles.css` as CSS custom properties on `:root`, redefin
 | `--prose`         | Markdown and manuscript text (slightly softer than `--text` for long reads). |
 | `--muted`         | Secondary text: labels, paths, timestamps, hints. Kept at 4.5:1 or better.   |
 | `--border`        | Hairlines: dividers, card borders.                                           |
-| `--border-strong` | Control borders (buttons, inputs) and hover.                                 |
+| `--border-strong` | Control borders (buttons, inputs); at least 3:1 against every surface.       |
 | `--accent`        | Links, primary buttons, focus rings, the current tab, pressed toggles.       |
 | `--accent-soft`   | Tinted background for the current tab, pressed toggles, selected rows.       |
 | `--on-accent`     | Text on accent or danger fills.                                              |

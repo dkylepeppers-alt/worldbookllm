@@ -11,7 +11,7 @@
   --prose: #2a2a2d;
   --muted: #5e6066;
   --border: #e3e3df;
-  --border-strong: #c9c9c4;
+  --border-strong: #878782;
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-soft: rgb(79 70 229 / 9%);
@@ -45,7 +45,7 @@
     --prose: #dcdcdf;
     --muted: #a0a0a8;
     --border: #2d2d32;
-    --border-strong: #43434a;
+    --border-strong: #707078;
     --accent: #8b8cf6;
     --accent-hover: #a5a6f9;
     --accent-soft: rgb(139 140 246 / 14%);
