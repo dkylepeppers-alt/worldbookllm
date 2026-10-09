@@ -2522,11 +2522,6 @@ ol.inspector-sections {
   gap: 1rem;
 }
 
-.play-passage h3 {
-  margin: 0;
-  font-size: clamp(1.2rem, 3.2vw, 1.5rem);
-}
-
 .play-passage > p {
   margin: 0;
 }
@@ -2546,4 +2541,37 @@ ol.inspector-sections {
 .play-end p {
   margin: 0;
   font-weight: 620;
+}
+
+.play-segment {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.play-segment .markdown-body {
+  padding: 0;
+}
+
+.play-segment .markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.play-segment .markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.play-segment h3 {
+  margin: 0;
+  font-size: clamp(1.2rem, 3.2vw, 1.5rem);
+}
+
+.ink-source {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ink-source pre {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
 }

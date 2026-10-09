@@ -25,6 +25,7 @@ import type {
   StoryCommandOutcome,
 } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
+import { Story } from 'inkjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildApp } from './app.js';
@@ -746,13 +747,22 @@ describe('interactive books', () => {
     const play = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
     expect(play.statusCode).toBe(200);
     const story = play.json<BookPlay>();
-    expect(story).toMatchObject({ title: 'The Salt Road', start: 'chapter-01' });
-    expect(story.passages[0]).toEqual({
-      id: 'chapter-01',
-      prose: expect.stringContaining('Mara climbs the wall.') as string,
-      links: [{ text: 'Follow the light', to: 'chapter-02' }],
-    });
-    expect(story.passages[2]?.links).toEqual([]);
+    expect(story).toMatchObject({ title: 'The Salt Road' });
+    expect(story.source).toContain('+ [Follow the light] -> chapter_02');
+    expect(story.knots).toEqual([
+      { knot: 'chapter_01', chapterId: 'chapter-01', title: 'Harbor Wall' },
+      { knot: 'chapter_02', chapterId: 'chapter-02', title: 'Down to the Water' },
+      { knot: 'chapter_03', chapterId: 'chapter-03', title: 'The Archive' },
+    ]);
+    // The compiled story runs in inkle's runtime: the first chapter, then its choice.
+    const ink = new Story(story.story);
+    expect(ink.ContinueMaximally()).toContain('Mara climbs the wall.');
+    expect(ink.currentChoices.map((choice: { text: string }) => choice.text)).toEqual([
+      'Follow the light',
+    ]);
+    ink.ChooseChoiceIndex(0);
+    expect(ink.ContinueMaximally()).toContain('The steps are slick.');
+    expect(ink.currentChoices).toEqual([]);
     expect(story.warnings.some((line) => line.includes('chapter-03'))).toBe(true);
     expect(story.warnings.some((line) => line.includes('derived-ifid'))).toBe(false);
     // A play-through leaves nothing behind in the book.

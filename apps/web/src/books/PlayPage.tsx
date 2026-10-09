@@ -1,5 +1,5 @@
-import type { BookPlay } from '@worldbookllm/shared';
-import { useEffect, useRef } from 'react';
+import type { BookPlay, PlayKnot } from '@worldbookllm/shared';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link, useSearchParams } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
@@ -8,13 +8,93 @@ import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
-import { useLoad } from './useLoad.js';
+import { errorMessage, useLoad } from './useLoad.js';
+
+type InkRuntime = typeof import('inkjs');
+type InkStory = InstanceType<InkRuntime['Story']>;
+
+/** The lines of one chapter's knot, or of no knot before the first. */
+interface Segment {
+  knot: PlayKnot | null;
+  lines: string[];
+}
+
+interface Turn {
+  segments: Segment[];
+  choices: string[];
+  /** The choice that led here, or null at the start. */
+  chosen: string | null;
+  /** A choice in the address that the story no longer offers. */
+  stale: boolean;
+}
 
 /**
- * Write → Play: the book as its reader meets it, one chapter at a time with
- * its choices as buttons. The story comes from the Twee build, so it has the
- * same prose, links, and refusals as a real build. The current chapter is in
- * the address (`?at=chapter-03`), so the browser's back button steps back.
+ * Runs ink until the next choice, grouping its lines by the chapter knot they
+ * come from. The story is compiled with every visit counted, so the knots a
+ * line entered are the ones whose visit count went up.
+ */
+function runToChoice(story: InkStory, knots: readonly PlayKnot[]): Segment[] {
+  const counts = () =>
+    knots.map((entry) => {
+      try {
+        return story.state.VisitCountAtPathString(entry.knot);
+      } catch {
+        return 0;
+      }
+    });
+  const segments: Segment[] = [];
+  let before = counts();
+  while (story.canContinue) {
+    const line = story.Continue()?.trim() ?? '';
+    const after = counts();
+    knots.forEach((entry, index) => {
+      if (after[index]! > before[index]!) segments.push({ knot: entry, lines: [] });
+    });
+    before = after;
+    if (segments.length === 0) segments.push({ knot: null, lines: [] });
+    if (line !== '') segments.at(-1)!.lines.push(line);
+  }
+  return segments;
+}
+
+/** Plays the story from the start through the choices in `path`. */
+function replay(runtime: InkRuntime, play: BookPlay, path: readonly number[]): Turn {
+  const story = new runtime.Story(play.story);
+  let segments = runToChoice(story, play.knots);
+  let chosen: string | null = null;
+  for (const index of path) {
+    const choice = story.currentChoices[index];
+    if (choice === undefined) {
+      return {
+        segments,
+        choices: story.currentChoices.map((entry) => entry.text),
+        chosen,
+        stale: true,
+      };
+    }
+    chosen = choice.text;
+    story.ChooseChoiceIndex(index);
+    segments = runToChoice(story, play.knots);
+  }
+  return {
+    segments,
+    choices: story.currentChoices.map((entry) => entry.text),
+    chosen,
+    stale: false,
+  };
+}
+
+function parsePath(value: string | null): number[] {
+  if (value === null || value === '') return [];
+  const steps = value.split('.').map(Number);
+  return steps.every((step) => Number.isInteger(step) && step >= 0) ? steps : [];
+}
+
+/**
+ * Write → Play: the book's ink build, run by inkle's own ink runtime one
+ * passage at a time with its choices as buttons. The choices made so far are
+ * in the address (`?path=1.0`), so the browser's back button steps back and
+ * a link reopens the same moment.
  */
 export function PlayPage() {
   const api = useApi();
@@ -31,7 +111,7 @@ export function PlayPage() {
         <Link to={branchesHref}>Branches</Link>
       </p>
       <h2 id="play-heading">Play</h2>
-      {story.status === 'loading' ? <LoadingState>Assembling the story…</LoadingState> : null}
+      {story.status === 'loading' ? <LoadingState>Building the ink story…</LoadingState> : null}
       {story.status === 'error' ? (
         <>
           <ErrorState
@@ -44,100 +124,164 @@ export function PlayPage() {
           </p>
         </>
       ) : null}
-      {story.status === 'ready' ? <PlayThrough slug={slug} story={story.data} /> : null}
+      {story.status === 'ready' ? <InkPlayer slug={slug} play={story.data} /> : null}
     </section>
   );
 }
 
-function PlayThrough({ slug, story }: { slug: string; story: BookPlay }) {
-  const { tree } = useBook();
+function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
+  const [runtime, setRuntime] = useState<InkRuntime | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
-  const heading = useRef<HTMLHeadingElement>(null);
-  const at = params.get('at') ?? story.start;
-  const passage = story.passages.find((entry) => entry.id === at);
-  const chapter = tree.files.find((file) => file.kind === 'chapter' && file.entityId === at);
-  const title = chapter?.title ?? at;
+  const pathParam = params.get('path');
+  const path = useMemo(() => parsePath(pathParam), [pathParam]);
 
-  // Moving to another chapter moves focus to its heading, as following a link would.
-  const shown = useRef(at);
+  // The ink runtime loads with this screen, not with the app.
   useEffect(() => {
-    if (shown.current !== at) heading.current?.focus();
-    shown.current = at;
-  }, [at]);
+    let live = true;
+    import('inkjs').then(
+      (module) => {
+        if (live) setRuntime(module);
+      },
+      (error: unknown) => {
+        if (live) setLoadError(errorMessage(error));
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
 
-  const restart = () => setParams({});
+  const turn = useMemo(() => {
+    if (runtime === null) return null;
+    try {
+      return replay(runtime, play, path);
+    } catch (error) {
+      return errorMessage(error);
+    }
+  }, [runtime, play, path]);
+
+  if (loadError !== null) {
+    return <ErrorState title="The ink runtime could not load" message={loadError} />;
+  }
+  if (turn === null) return <LoadingState>Starting ink…</LoadingState>;
+  if (typeof turn === 'string') {
+    return <ErrorState title="The ink story stopped with an error" message={turn} />;
+  }
 
   return (
     <>
-      {story.warnings.length > 0 ? (
+      {play.warnings.length > 0 ? (
         <details className="reader-notes">
-          <summary>Build notes ({story.warnings.length})</summary>
+          <summary>Build notes ({play.warnings.length})</summary>
           <ul>
-            {story.warnings.map((warning) => (
+            {play.warnings.map((warning) => (
               <li key={warning}>{warning}</li>
             ))}
           </ul>
         </details>
       ) : null}
+      <Passage
+        slug={slug}
+        turn={turn}
+        step={path.join('.')}
+        onChoose={(index) => setParams({ path: [...path, index].join('.') })}
+        onRestart={() => setParams({})}
+      />
+      <details className="ink-source">
+        <summary>ink source</summary>
+        <p className="coordinate-label">
+          What <code>story build --format ink</code> writes for this book, compiled here with inkjs.
+          Download it from Project → Build to open it in Inky.
+        </p>
+        <pre className="build-output">{play.source}</pre>
+      </details>
+    </>
+  );
+}
 
-      {passage === undefined ? (
-        <div className="play-passage">
-          <p>This story has no chapter {at}.</p>
-          <button type="button" className="button-secondary" onClick={restart}>
-            Start over
-          </button>
-        </div>
-      ) : (
-        <article className="play-passage" aria-labelledby="play-chapter-heading">
-          <h3 id="play-chapter-heading" ref={heading} tabIndex={-1}>
-            {title}
-          </h3>
-          <div className="markdown-body reader-text">
-            {passage.prose === '' ? (
-              <p className="coordinate-label">This chapter has no prose yet.</p>
-            ) : (
+function Passage({
+  slug,
+  turn,
+  step,
+  onChoose,
+  onRestart,
+}: {
+  slug: string;
+  turn: Turn;
+  step: string;
+  onChoose: (index: number) => void;
+  onRestart: () => void;
+}) {
+  const { tree } = useBook();
+  const passage = useRef<HTMLElement>(null);
+
+  // A choice moves focus to the passage it leads to, as following a link would.
+  const shown = useRef(step);
+  useEffect(() => {
+    if (shown.current !== step) {
+      const target = passage.current?.querySelector<HTMLElement>('h3') ?? passage.current;
+      target?.focus();
+    }
+    shown.current = step;
+  }, [step]);
+
+  const last = [...turn.segments].reverse().find((segment) => segment.knot !== null)?.knot;
+  const chapter = tree.files.find(
+    (file) => file.kind === 'chapter' && file.entityId === last?.chapterId,
+  );
+
+  return (
+    <article ref={passage} tabIndex={-1} className="play-passage" aria-label="Story">
+      {turn.stale ? (
+        <p className="branch-warning">
+          The story has changed since these choices were made, so it stops where they no longer fit.
+        </p>
+      ) : null}
+      {turn.chosen === null ? null : <p className="coordinate-label">You chose: {turn.chosen}</p>}
+      {turn.segments.map((segment, index) => (
+        <section key={`${segment.knot?.knot ?? 'start'}:${index}`} className="play-segment">
+          {segment.knot === null ? null : <h3 tabIndex={-1}>{segment.knot.title}</h3>}
+          {segment.lines.length === 0 ? null : (
+            <div className="markdown-body reader-text">
               <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-                {passage.prose}
+                {segment.lines.join('\n\n')}
               </ReactMarkdown>
-            )}
-          </div>
-          {passage.links.length > 0 ? (
-            <ul className="play-choices" aria-label="Choices">
-              {passage.links.map((link) => (
-                <li key={`${link.to}:${link.text}`}>
-                  <button
-                    type="button"
-                    className="button-secondary"
-                    onClick={() => setParams({ at: link.to })}
-                  >
-                    {link.text}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="play-end">
-              <p>The end.</p>
-              <button type="button" className="button-primary" onClick={restart}>
-                Play again
-              </button>
             </div>
           )}
-          <p className="coordinate-label">
-            {chapter === undefined ? null : (
-              <Link to={fileHref(slug, chapter.path)}>Edit this chapter</Link>
-            )}
-            {at === story.start ? null : (
-              <>
-                {chapter === undefined ? null : ' · '}
-                <button type="button" className="text-button" onClick={restart}>
-                  Start over
-                </button>
-              </>
-            )}
-          </p>
-        </article>
+        </section>
+      ))}
+      {turn.choices.length > 0 && !turn.stale ? (
+        <ul className="play-choices" aria-label="Choices">
+          {turn.choices.map((text, index) => (
+            <li key={`${index}:${text}`}>
+              <button type="button" className="button-secondary" onClick={() => onChoose(index)}>
+                {text}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="play-end">
+          {turn.stale ? null : <p>The end.</p>}
+          <button type="button" className="button-primary" onClick={onRestart}>
+            {turn.stale ? 'Start over' : 'Play again'}
+          </button>
+        </div>
       )}
-    </>
+      <p className="coordinate-label">
+        {chapter === undefined ? null : (
+          <Link to={fileHref(slug, chapter.path)}>Edit {chapter.title}</Link>
+        )}
+        {step === '' || turn.stale ? null : (
+          <>
+            {chapter === undefined ? null : ' · '}
+            <button type="button" className="text-button" onClick={onRestart}>
+              Start over
+            </button>
+          </>
+        )}
+      </p>
+    </article>
   );
 }

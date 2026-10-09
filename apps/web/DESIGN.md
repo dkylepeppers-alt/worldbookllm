@@ -151,7 +151,7 @@ One centered 68ch column: a collapsible contents card, optional export notes, th
 
 ### Branches and Play
 
-Write → Branches lists each chapter as a card: title, id, and small status tags (Start, Ending, and Not reachable in danger), then one row per choice (text field, "Leads to" select, Remove) that stacks on phones. A summary card above names endings, unreachable chapters, and broken choices with links to their cards. Write → Play shows one chapter at a time in the Reader's serif column, its choices as full-width secondary buttons, and "The end." with Play again at an ending; the chapter is in the address, so Back steps back.
+Write → Branches lists each chapter as a card: title, id, and small status tags (Start, Ending, and Not reachable in danger), then one row per choice (text field, "Leads to" select, Remove) that stacks on phones. A summary card above names endings, unreachable chapters, and broken choices with links to their cards. Write → Play runs the book's ink build with the inkjs runtime: each passage in the Reader's serif column under its chapter heading, "You chose: …" above it, the choices as full-width secondary buttons, and "The end." with Play again at an ending. The choices made are in the address, so Back steps back. A collapsed "ink source" panel shows the ink the build wrote.
 
 ### Dialogs
 

@@ -2,71 +2,88 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { BookPlay, PlayPassage } from '@worldbookllm/shared';
+import type { BookPlay } from '@worldbookllm/shared';
+import { Compiler, CompilerOptions, Story } from 'inkjs/full';
 
-import { StoryCommandError } from '../errors.js';
+import { ConflictError, StoryCommandError } from '../errors.js';
 import type { StoryCli } from './story-cli.js';
 
 /** Same allowance as `story build` and `story export`. */
 const PLAY_TIMEOUT_MS = 120_000;
 
-/** A link line as story-skills' tweeSource writes it: `[[text->chapter-id]]`. */
-const LINK_LINE = /^\[\[([^[\]]+)->([a-z0-9]+(?:-[a-z0-9]+)*)\]\]$/u;
+const INK_RESERVED = new Set(['true', 'false', 'not', 'else', 'return', 'temp', 'function']);
 
 /**
- * Reads the Twee 3 that `story build --format twee` writes (story-skills
- * 0.23.0 tweeSource): StoryTitle, StoryData with the IFID and start, then one
- * passage per chapter named by its id, its prose, and a link line per choice.
+ * A chapter id's knot in the ink build, as story-skills 0.23.0 names it
+ * (`inkKnotName` in its ink.js): `-` becomes `_`, and a name that starts with
+ * a digit or is reserved in ink takes a leading `_`.
  */
-export function parseTwee(source: string): Omit<BookPlay, 'warnings'> {
-  const sections: { name: string; lines: string[] }[] = [];
-  for (const line of source.replace(/\r\n?/gu, '\n').split('\n')) {
-    if (line.startsWith(':: ')) sections.push({ name: line.slice(3).trim(), lines: [] });
-    // tweeSource escapes a prose line that starts with `::`.
-    else sections.at(-1)?.lines.push(line.startsWith('\\::') ? line.slice(1) : line);
-  }
-  const text = (name: string) =>
-    sections
-      .find((section) => section.name === name)
-      ?.lines.join('\n')
-      .trim() ?? '';
-  const data = JSON.parse(text('StoryData') || '{}') as { ifid?: unknown; start?: unknown };
+export function inkKnotName(id: string): string {
+  const name = id.replace(/-/gu, '_');
+  return /^[0-9]/u.test(name) || INK_RESERVED.has(name) ? `_${name}` : name;
+}
 
-  const passages: PlayPassage[] = sections
-    .filter((section) => section.name !== 'StoryTitle' && section.name !== 'StoryData')
-    .map((section) => {
-      const lines = [...section.lines];
-      while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop();
-      const links: PlayPassage['links'] = [];
-      for (let match = LINK_LINE.exec(lines.at(-1) ?? ''); match;) {
-        links.unshift({ text: match[1]!, to: match[2]! });
-        lines.pop();
-        match = LINK_LINE.exec(lines.at(-1) ?? '');
-      }
-      return { id: section.name, prose: lines.join('\n').trim(), links };
-    });
-  return {
-    title: text('StoryTitle'),
-    start: typeof data.start === 'string' ? data.start : (passages[0]?.id ?? ''),
-    ifid: typeof data.ifid === 'string' ? data.ifid : '',
-    passages,
-  };
+/** `# name: value` among a story's global tags. */
+function globalTag(tags: readonly string[] | null, name: string): string {
+  const prefix = `${name}:`;
+  return (
+    tags
+      ?.find((tag) => tag.startsWith(prefix))
+      ?.slice(prefix.length)
+      .trim() ?? ''
+  );
 }
 
 /**
- * The book as a playable story: built by `story build --format twee` into an
- * operation-specific temporary folder (never the book's `dist/`), so the
- * play-through has exactly the prose, links, and refusals a real build has.
+ * Compiles ink source with inkjs, counting every visit so the Play screen can
+ * tell which chapter's knot each line comes from. An error here means the
+ * build wrote ink that inkle's compiler rejects.
  */
-export async function buildPlay(cli: StoryCli, root: string): Promise<BookPlay> {
+export function compileInk(source: string): { story: string; tags: string[]; warnings: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const compiler = new Compiler(
+    source,
+    new CompilerOptions(null, [], true, (message: string, type: number) => {
+      // ErrorType: 0 author note, 1 warning, 2 error.
+      (type === 2 ? errors : warnings).push(message);
+    }),
+  );
+  let story: Story | null = null;
+  try {
+    story = compiler.Compile();
+  } catch (error) {
+    if (errors.length === 0) errors.push(error instanceof Error ? error.message : String(error));
+  }
+  if (story === null || errors.length > 0) {
+    throw new ConflictError(
+      'ink_compile_failed',
+      `The ink build does not compile:\n${errors.join('\n')}`,
+    );
+  }
+  const json = story.ToJson();
+  if (json === undefined) throw new ConflictError('ink_compile_failed', 'The ink build is empty');
+  return { story: json, tags: new Story(json).globalTags ?? [], warnings };
+}
+
+/**
+ * The book as a playable ink story: built by `story build --format ink` into
+ * an operation-specific temporary folder (never the book's `dist/`), so it is
+ * exactly the ink a real build writes, then compiled with inkjs.
+ */
+export async function buildPlay(
+  cli: StoryCli,
+  root: string,
+  chapters: readonly { id: string; title: string }[],
+): Promise<BookPlay> {
   const workDir = mkdtempSync(join(tmpdir(), 'worldbookllm-play-'));
   try {
-    const out = join(workDir, 'story.twee');
+    const out = join(workDir, 'story.ink');
     const result = await cli.run({
       command: 'build',
       root,
       out,
-      options: { format: 'twee' },
+      options: { format: 'ink' },
       timeoutMs: PLAY_TIMEOUT_MS,
     });
     // Exit 1 means a warning story.md promotes to an error; the file is still written.
@@ -74,13 +91,26 @@ export async function buildPlay(cli: StoryCli, root: string): Promise<BookPlay> 
       const message = result.stderr.trim() || result.stdout.trim();
       throw new StoryCommandError(result.exitCode, message || 'story build failed');
     }
+    const source = readFileSync(out, 'utf8');
+    const compiled = compileInk(source);
     const warnings = `${result.stdout}\n${result.stderr}`
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => /^(warning|error):/u.test(line))
       // The Branches screen offers to pin the IFID; a play-through need not repeat it.
       .filter((line) => !line.endsWith('[derived-ifid]'));
-    return { ...parseTwee(readFileSync(out, 'utf8')), warnings };
+    return {
+      title: globalTag(compiled.tags, 'title'),
+      ifid: globalTag(compiled.tags, 'ifid'),
+      source,
+      story: compiled.story,
+      knots: chapters.map((chapter) => ({
+        knot: inkKnotName(chapter.id),
+        chapterId: chapter.id,
+        title: chapter.title,
+      })),
+      warnings: [...warnings, ...compiled.warnings.map((warning) => `ink: ${warning}`)],
+    };
   } finally {
     rmSync(workDir, { recursive: true, force: true });
   }

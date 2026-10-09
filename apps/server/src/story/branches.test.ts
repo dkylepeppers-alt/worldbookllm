@@ -1,7 +1,11 @@
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import matter from 'gray-matter';
 import { describe, expect, it } from 'vitest';
 
-import { parseTwee } from './book-play.js';
+import { compileInk, inkKnotName } from './book-play.js';
 import { branchGraph, setFrontmatterChoices, type ChapterSource } from './branches.js';
 
 const HASH = 'a'.repeat(64);
@@ -135,41 +139,28 @@ describe('setFrontmatterChoices', () => {
   });
 });
 
-describe('parseTwee', () => {
-  it('reads the title, IFID, start, prose, and links as tweeSource writes them', () => {
-    const twee = [
-      ':: StoryTitle',
-      'The Gull Rock Light',
-      '',
-      ':: StoryData',
-      '{\n  "ifid": "649C4AC9-78FE-4B32-B821-24D0802D1DD9",\n  "start": "chapter-01"\n}',
-      '',
-      ':: chapter-01',
-      'The tower door stands open.',
-      '\\:: not a passage',
-      '',
-      '[[Search the rocks->chapter-02]]',
-      '[[Climb the tower->chapter-03]]',
-      '',
-      ':: chapter-02',
-      'The end.',
-      '',
-    ].join('\n');
-    expect(parseTwee(twee)).toEqual({
-      title: 'The Gull Rock Light',
-      ifid: '649C4AC9-78FE-4B32-B821-24D0802D1DD9',
-      start: 'chapter-01',
-      passages: [
-        {
-          id: 'chapter-01',
-          prose: 'The tower door stands open.\n:: not a passage',
-          links: [
-            { text: 'Search the rocks', to: 'chapter-02' },
-            { text: 'Climb the tower', to: 'chapter-03' },
-          ],
-        },
-        { id: 'chapter-02', prose: 'The end.', links: [] },
-      ],
-    });
+describe('ink', () => {
+  async function upstreamKnotName(): Promise<(id: string) => string> {
+    const root = dirname(createRequire(import.meta.url).resolve('story-skills/package.json'));
+    const module = (await import(pathToFileURL(join(root, 'src', 'ink.js')).href)) as {
+      inkKnotName: (id: string) => string;
+    };
+    return module.inkKnotName;
+  }
+
+  it('names knots exactly as the pinned story-skills ink build does', async () => {
+    const upstream = await upstreamKnotName();
+    for (const id of ['chapter-01', '01', '1st-light', 'true', 'function', 'temp', 'prologue']) {
+      expect(inkKnotName(id)).toBe(upstream(id));
+    }
+  });
+
+  it('compiles ink with every visit counted, and reports what does not compile', () => {
+    const { story, tags } = compileInk(
+      '# title: The Gull Rock Light\n-> chapter_01\n=== chapter_01 ===\nThe tower door stands open.\n-> END\n',
+    );
+    expect(tags).toEqual(['title: The Gull Rock Light']);
+    expect(JSON.parse(story)).toMatchObject({ inkVersion: expect.any(Number) as number });
+    expect(() => compileInk('-> nowhere\n')).toThrow(/does not compile:\n.*nowhere/su);
   });
 });

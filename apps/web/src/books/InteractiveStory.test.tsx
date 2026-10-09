@@ -6,7 +6,8 @@ import type {
   BookTree,
   BranchChapter,
 } from '@worldbookllm/shared';
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import { Compiler, CompilerOptions } from 'inkjs/full';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -204,41 +205,72 @@ describe('Branches', () => {
 });
 
 describe('Play', () => {
-  const story: BookPlay = {
-    title: 'The Gull Rock Light',
-    start: 'chapter-01',
-    ifid: '649C4AC9-78FE-4B32-B821-24D0802D1DD9',
-    warnings: [],
-    passages: [
-      {
-        id: 'chapter-01',
-        prose: 'The tower door stands *open*.',
-        links: [
-          { text: 'Search the rocks', to: 'chapter-02' },
-          { text: 'Climb the tower', to: 'chapter-03' },
-        ],
-      },
-      { id: 'chapter-02', prose: 'An oilskin coat, empty.', links: [] },
-      { id: 'chapter-03', prose: 'The lamp is dark.', links: [] },
-    ],
-  };
+  // The shape story-skills' ink build writes: global tags, one knot per chapter.
+  const source = [
+    '# title: The Gull Rock Light',
+    '# ifid: 649C4AC9-78FE-4B32-B821-24D0802D1DD9',
+    '',
+    '-> chapter_01',
+    '',
+    '=== chapter_01 ===',
+    'The tower door stands *open*.',
+    '',
+    '+ [Search the rocks] -> chapter_02',
+    '+ [Climb the tower] -> chapter_03',
+    '',
+    '=== chapter_02 ===',
+    'An oilskin coat, empty.',
+    '',
+    '-> END',
+    '',
+    '=== chapter_03 ===',
+    'The lamp is dark.',
+    '',
+    '-> END',
+    '',
+  ].join('\n');
 
-  it('plays from the start through a choice to an ending, and starts over', async () => {
-    renderAt('/books/gull-rock/write/play', { getPlay: () => Promise.resolve(story) });
+  function play(): BookPlay {
+    const compiled = new Compiler(source, new CompilerOptions(null, [], true)).Compile().ToJson();
+    return {
+      title: 'The Gull Rock Light',
+      ifid: '649C4AC9-78FE-4B32-B821-24D0802D1DD9',
+      source,
+      story: compiled!,
+      knots: (['chapter-01', 'chapter-02', 'chapter-03'] as const).map((id) => ({
+        knot: id.replace('-', '_'),
+        chapterId: id,
+        title: TITLES[id],
+      })),
+      warnings: [],
+    };
+  }
+
+  it('runs the ink build through a choice to an ending, and starts over', async () => {
+    renderAt('/books/gull-rock/write/play', { getPlay: () => Promise.resolve(play()) });
     const user = userEvent.setup();
     expect(await screen.findByRole('heading', { name: 'Harbor Wall' })).toBeTruthy();
     expect(screen.getByText('open').tagName).toBe('EM');
+    expect(screen.getByText('ink source')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Climb the tower' }));
-    expect(screen.getByTestId('location').textContent).toBe(
-      '/books/gull-rock/write/play?at=chapter-03',
-    );
+    expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock/write/play?path=1');
     const heading = screen.getByRole('heading', { name: 'The Lamp' });
     expect(document.activeElement).toBe(heading);
+    expect(screen.getByText('You chose: Climb the tower')).toBeTruthy();
     expect(screen.getByText('The end.')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Play again' }));
     expect(screen.getByRole('heading', { name: 'Harbor Wall' })).toBeTruthy();
+  });
+
+  it('reopens the moment a link names, and stops where stale choices no longer fit', async () => {
+    renderAt('/books/gull-rock/write/play?path=0', { getPlay: () => Promise.resolve(play()) });
+    expect(await screen.findByRole('heading', { name: 'The Ledge' })).toBeTruthy();
+    cleanup();
+    renderAt('/books/gull-rock/write/play?path=0.3', { getPlay: () => Promise.resolve(play()) });
+    expect(await screen.findByText(/The story has changed since these choices/u)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Start over' })).toBeTruthy();
   });
 
   it('sends a story the build refuses back to the Branches screen', async () => {
@@ -248,7 +280,7 @@ describe('Play', () => {
           new ApiClientError(
             409,
             'story_unusable_project',
-            'Cannot build twee until these are fixed:\nchapters/chapter-01.md choices[1] references missing chapter chapter-09',
+            'Cannot build ink until these are fixed:\nchapters/chapter-01.md choices[1] references missing chapter chapter-09',
           ),
         ),
     });

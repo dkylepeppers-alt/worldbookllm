@@ -9,6 +9,9 @@ catalogs:
     '@vitest/coverage-v8':
       specifier: ^5.0.2
       version: 5.0.3
+    inkjs:
+      specifier: 2.3.2
+      version: 2.3.2
     typescript:
       specifier: ^6.0.3
       version: 6.0.3
@@ -95,6 +98,9 @@ importers:
       gray-matter:
         specifier: 4.0.3
         version: 4.0.3
+      inkjs:
+        specifier: 'catalog:'
+        version: 2.3.2
       linkedom:
         specifier: ^0.18.13
         version: 0.18.13
@@ -144,6 +150,9 @@ importers:
       '@worldbookllm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      inkjs:
+        specifier: 'catalog:'
+        version: 2.3.2
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -2739,6 +2748,10 @@ packages:
 
   inherits@2.0.4:
     resolution: {integrity: sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==}
+
+  inkjs@2.3.2:
+    resolution: {integrity: sha512-iZjrY0lLeRiC+HtDzCfV9IEAP9ExCmBZUrxKkyLy1qIbbGbR1uTXNZ8LDIg8oVkMXZ9TeKKyEFQpQ/m5nQds8w==}
+    hasBin: true
 
   inline-style-parser@0.2.7:
     resolution: {integrity: sha512-Nb2ctOyNR8DqQoR0OwRG95uNWIC0C1lCgf5Naz5H6Ji72KZ8OcFZLz2P5sNgwlyoJ8Yif11oMuYs5pBQa86csA==}
@@ -6625,6 +6638,8 @@ snapshots:
   imurmurhash@0.1.4: {}
 
   inherits@2.0.4: {}
+
+  inkjs@2.3.2: {}
 
   inline-style-parser@0.2.7: {}
 

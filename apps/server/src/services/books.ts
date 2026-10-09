@@ -1124,9 +1124,12 @@ export class BookService {
     return this.branches(slug);
   }
 
-  /** The book as a playable story, assembled by the Twee build. */
+  /** The book as a playable ink story: the ink build, compiled with inkjs. */
   play(slug: string): Promise<BookPlay> {
-    return this.locks.run(slug, () => buildPlay(this.cli, this.files.root(slug)));
+    return this.locks.run(slug, () => {
+      const chapters = this.readBranches(slug).chapters.map(({ id, title }) => ({ id, title }));
+      return buildPlay(this.cli, this.files.root(slug), chapters);
+    });
   }
 
   /**
@@ -1142,9 +1145,9 @@ export class BookService {
       if (typeof pinned === 'string' && pinned.trim() !== '') return { ifid: pinned };
       let ifid: string;
       try {
-        ifid = (await buildPlay(this.cli, this.files.root(slug))).ifid;
+        ifid = (await buildPlay(this.cli, this.files.root(slug), [])).ifid;
       } catch (error) {
-        if (!(error instanceof StoryCommandError)) throw error;
+        if (!(error instanceof StoryCommandError) && !(error instanceof ConflictError)) throw error;
         ifid = '';
       }
       if (!/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/iu.test(ifid)) {

@@ -70,20 +70,23 @@ export const bookBranchesSchema = z.strictObject({
   chapters: z.array(branchChapterSchema),
 });
 
-/** One chapter of the play-through, as the Twee build assembles it. */
-export const playPassageSchema = z.strictObject({
-  id: z.string(),
-  /** The chapter prose as Markdown, without its heading, frontmatter, or outline. */
-  prose: z.string(),
-  links: z.array(z.strictObject({ text: z.string(), to: z.string() })),
+/** A chapter's knot in the ink build: `chapter-03` becomes `chapter_03`. */
+export const playKnotSchema = z.strictObject({
+  knot: z.string(),
+  chapterId: z.string(),
+  title: z.string(),
 });
 
+/** The book as an ink story, for the Play screen to run with inkle's runtime. */
 export const bookPlaySchema = z.strictObject({
   title: z.string(),
-  start: z.string(),
   ifid: z.string(),
-  passages: z.array(playPassageSchema),
-  /** What the build warned about, such as chapters no choice reaches. */
+  /** The ink source `story build --format ink` writes. */
+  source: z.string(),
+  /** That source compiled by inkjs to ink's JSON story format. */
+  story: z.string(),
+  knots: z.array(playKnotSchema),
+  /** What the build and the ink compiler warned about. */
   warnings: z.array(z.string()),
 });
 
@@ -93,6 +96,6 @@ export type ChapterChoice = z.infer<typeof chapterChoiceSchema>;
 export type SetChapterChoicesInput = z.infer<typeof setChapterChoicesSchema>;
 export type BranchChapter = z.infer<typeof branchChapterSchema>;
 export type BookBranches = z.infer<typeof bookBranchesSchema>;
-export type PlayPassage = z.infer<typeof playPassageSchema>;
+export type PlayKnot = z.infer<typeof playKnotSchema>;
 export type BookPlay = z.infer<typeof bookPlaySchema>;
 export type PinnedIfid = z.infer<typeof pinnedIfidSchema>;
