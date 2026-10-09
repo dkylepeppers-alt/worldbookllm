@@ -26,6 +26,15 @@ const FORMAT_LABELS: Readonly<Record<BookBuildFormat, string>> = {
   ink: 'ink story',
 };
 
+/** Twee and ink read chapter `choices`, which nothing else in a build does. */
+const INTERACTIVE_HINT = (
+  <p id="build-format-hint">
+    Each chapter becomes a passage. A chapter's <code>choices</code> link it to the chapters the
+    reader can pick next; without any, the chapters run in order. Add an <code>ifid</code> to
+    story.md before sharing, so retitling the book keeps the story's identity.
+  </p>
+);
+
 /** EPUB first: it is what most writers reach for. */
 const FORMATS: readonly BookBuildFormat[] = [
   'epub',
@@ -59,6 +68,7 @@ export function BuildsSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [output, setOutput] = useState<string | null>(null);
+  const interactive = format === 'twee' || format === 'ink';
 
   async function build(event: FormEvent) {
     event.preventDefault();
@@ -105,6 +115,7 @@ export function BuildsSection() {
           Format
           <select
             value={format}
+            aria-describedby={interactive ? 'build-format-hint' : undefined}
             onChange={(event) => setFormat(event.target.value as BookBuildFormat)}
           >
             {FORMATS.map((value) => (
@@ -154,6 +165,7 @@ export function BuildsSection() {
           {busy ? 'Building…' : 'Build'}
         </button>
       </form>
+      {interactive ? INTERACTIVE_HINT : null}
       {error === null ? null : (
         <p className="form-error" role="alert">
           {error}
