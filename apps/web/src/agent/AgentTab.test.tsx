@@ -264,7 +264,8 @@ describe('agent tab', () => {
     expect(await screen.findByRole('button', { name: 'Undo turn' })).toBeDefined();
     expect(screen.queryByText('Agent · working…')).toBeNull();
     expect(screen.getAllByText('Give Mara a scar')).toHaveLength(2);
-    expect(getBookTree.mock.calls.length).toBeGreaterThan(treeLoads);
+    // The tree reloads in an effect after the turn ends; a slow runner can get here first.
+    await waitFor(() => expect(getBookTree.mock.calls.length).toBeGreaterThan(treeLoads));
   });
 
   it('opens a file diff and undoes the turn', async () => {
@@ -1162,6 +1163,62 @@ describe('story commands panel', () => {
     expect(localStorage.getItem('worldbookllm.bibleGuide.the-salt-road.hidden')).toBe('true');
     await user.click(screen.getByRole('button', { name: 'Show the Build the bible guide' }));
     expect(screen.getByRole('region', { name: 'Build the bible' })).toBeTruthy();
+  });
+
+  it('guides an interactive book from branch map to path checks', async () => {
+    const interactive: BookTree = {
+      book: { ...book, interactive: true },
+      files: [
+        file('story.md', 'story', null, 'The Salt Road'),
+        file('characters/mara-quill.md', 'character', 'mara-quill', 'Mara Quill'),
+        file('adaptations/interactive/branch-map.md', 'other', null, 'Branch map'),
+        file('chapters/chapter-01.md', 'chapter', 'chapter-01', 'Arrival'),
+        file('chapters/chapter-02.md', 'chapter', 'chapter-02', 'The Docks'),
+      ],
+    };
+    const chapter = (id: string, title: string, reachable = true) => ({
+      id,
+      title,
+      path: `chapters/${id}.md`,
+      hash: 'a'.repeat(64),
+      choices: [],
+      problems: [],
+      start: id === 'chapter-01',
+      ending: false,
+      reachable,
+    });
+    localStorage.removeItem('worldbookllm.interactiveGuide.the-salt-road.hidden');
+    renderAt('/books/the-salt-road/agent', {
+      getBookTree: () => Promise.resolve(interactive),
+      getBranches: () =>
+        Promise.resolve({
+          branching: false,
+          ifid: null,
+          invalidIfid: null,
+          flags: [],
+          chapters: [chapter('chapter-01', 'Arrival'), chapter('chapter-02', 'The Docks', false)],
+        }),
+    });
+    const user = userEvent.setup();
+
+    const guide = await screen.findByRole('region', { name: 'Interactive story' });
+    expect(guide.textContent).toContain('adaptations/interactive/branch-map.md holds the plan.');
+    expect(
+      await within(guide).findByText(/1 unreachable chapter, 0 with broken choices/u),
+    ).toBeTruthy();
+    // The plan exists, so adding the choices is the next step.
+    expect(within(guide).getByRole('button', { name: 'Add the choices' }).className).toBe(
+      'button-primary',
+    );
+    const composer = screen.getByLabelText<HTMLTextAreaElement>('New chat');
+    await user.click(within(guide).getByRole('button', { name: 'Add state' }));
+    expect(composer.value).toContain('`sets: [found_coat, not lamp_lit]`');
+    expect(composer.value).toContain('cannot be a chapter knot name');
+
+    await user.click(within(guide).getByRole('button', { name: 'Hide this guide' }));
+    expect(screen.queryByRole('region', { name: 'Interactive story' })).toBeNull();
+    expect(localStorage.getItem('worldbookllm.interactiveGuide.the-salt-road.hidden')).toBe('true');
+    localStorage.removeItem('worldbookllm.interactiveGuide.the-salt-road.hidden');
   });
 
   it('leaves books that already have a bible alone', async () => {

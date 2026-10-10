@@ -56,6 +56,7 @@ import {
   type BookBranches,
   type BookBuildFile,
   type BookPlay,
+  type CreateInteractiveEditionInput,
   type PinnedIfid,
   type SetChapterChoicesInput,
   type BookBuildResult,
@@ -215,6 +216,12 @@ export interface ApiClient {
   /** The book as a playable story, assembled by the Twee build. */
   getPlay(slug: string, signal?: AbortSignal): Promise<BookPlay>;
   pinIfid(slug: string, signal?: AbortSignal): Promise<PinnedIfid>;
+  /** Copies a book as a separate interactive edition and returns the new book. */
+  createInteractiveEdition(
+    slug: string,
+    input: CreateInteractiveEditionInput,
+    signal?: AbortSignal,
+  ): Promise<BookSummary>;
   listBuilds(slug: string, signal?: AbortSignal): Promise<BookBuildFile[]>;
   createBuild(
     slug: string,
@@ -530,6 +537,13 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
     getPlay: (slug, signal) => request(`${book(slug)}/play`, { schema: bookPlaySchema, signal }),
     pinIfid: (slug, signal) =>
       request(`${book(slug)}/ifid`, { method: 'POST', schema: pinnedIfidSchema, signal }),
+    createInteractiveEdition: (slug, input, signal) =>
+      request(`${book(slug)}/interactive-edition`, {
+        method: 'POST',
+        body: input,
+        schema: bookSummarySchema,
+        signal,
+      }),
     listBuilds: (slug, signal) =>
       request(`${book(slug)}/builds`, { schema: z.array(bookBuildFileSchema), signal }),
     createBuild: (slug, input, signal) =>

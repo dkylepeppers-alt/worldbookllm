@@ -18,9 +18,11 @@ export function WritePage() {
       <h2 id="write-heading">Chapters</h2>
       {chapters.length === 0 ? null : (
         <p className="write-links">
-          <Link to="branches">Branches and choices</Link>
+          <Link to={`/books/${encodeURIComponent(slug)}/branches`}>
+            {tree.book.interactive === true ? 'Branches and choices' : 'Make it interactive'}
+          </Link>
           <span aria-hidden="true"> · </span>
-          <Link to="play">Play through</Link>
+          <Link to={`/books/${encodeURIComponent(slug)}/branches/play`}>Play through</Link>
         </p>
       )}
       {chapters.length === 0 ? (

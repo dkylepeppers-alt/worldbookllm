@@ -34,7 +34,7 @@ function InteractiveHint({ slug }: { slug: string }) {
       Each chapter becomes a passage, starting with the first. Until any chapter has choices, the
       chapters run in order; once one does, a chapter without choices is an ending. Set them up and
       pin the story&apos;s IFID on the{' '}
-      <Link to={`/books/${encodeURIComponent(slug)}/write/branches`}>Branches</Link> screen.
+      <Link to={`/books/${encodeURIComponent(slug)}/branches/edit`}>Branches</Link> screen.
     </p>
   );
 }

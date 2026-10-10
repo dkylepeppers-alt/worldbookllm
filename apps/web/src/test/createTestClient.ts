@@ -38,6 +38,7 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     setChapterChoices: unused,
     getPlay: unused,
     pinIfid: unused,
+    createInteractiveEdition: unused,
     listBuilds: () => Promise.resolve([]),
     createBuild: unused,
     removeBuild: unused,

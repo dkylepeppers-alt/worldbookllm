@@ -860,6 +860,56 @@ describe('interactive books', () => {
     expect(result.file.size).toBe(Buffer.byteLength(after.source));
   }, 30_000);
 
+  it('marks a book interactive once a chapter has choices or story.md has an IFID', async () => {
+    const slug = await threeChapters();
+    const summary = async () =>
+      (await app.inject({ method: 'GET', url: `/api/books/${slug}` })).json<BookSummary>();
+    expect((await summary()).interactive).toBe(false);
+    const first = (await branches(slug)).chapters[0]!;
+    await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: { expectedHash: first.hash, choices: [{ text: 'Go', to: 'chapter-02' }] },
+    });
+    expect((await summary()).interactive).toBe(true);
+
+    const other = await threeChapters();
+    await app.inject({ method: 'POST', url: `/api/books/${other}/ifid` });
+    expect(
+      (await app.inject({ method: 'GET', url: `/api/books/${other}` })).json<BookSummary>()
+        .interactive,
+    ).toBe(true);
+  }, 30_000);
+
+  it('copies a book as a separate interactive edition, leaving the original as it was', async () => {
+    const slug = await threeChapters();
+    const before = readFileSync(join(dataDir, 'projects', slug, 'story.md'), 'utf8');
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/interactive-edition`,
+      payload: { title: 'The Salt Road: Choices' },
+    });
+    expect(created.statusCode).toBe(201);
+    const edition = created.json<BookSummary>();
+    expect(edition).toMatchObject({ title: 'The Salt Road: Choices', interactive: true });
+    expect(edition.slug).not.toBe(slug);
+    expect(edition.counts.chapter).toBe(3);
+    const story = readFileSync(join(dataDir, 'projects', edition.slug, 'story.md'), 'utf8');
+    expect(story).toMatch(
+      /^ifid: [0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/mu,
+    );
+    expect(
+      readFileSync(join(dataDir, 'projects', edition.slug, 'chapters/chapter-02.md'), 'utf8'),
+    ).toContain('The steps are slick.');
+    expect(readFileSync(join(dataDir, 'projects', slug, 'story.md'), 'utf8')).toBe(before);
+
+    const named = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/interactive-edition`,
+    });
+    expect(named.json<BookSummary>().title).toBe('The Salt Road (interactive edition)');
+  }, 30_000);
+
   it('refuses to play a choice that leads nowhere', async () => {
     const slug = await threeChapters();
     const first = (await branches(slug)).chapters[0]!;

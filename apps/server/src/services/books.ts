@@ -24,6 +24,7 @@ import {
   type BookBuildResult,
   type BookManuscript,
   type CreateBookBuildInput,
+  type CreateInteractiveEditionInput,
   type CreateBookInput,
   type CreateSeriesInput,
   type CreateBookImportInput,
@@ -1091,6 +1092,56 @@ export class BookService {
     return { book: this.summary(slug), output: lines.join('\n') };
   }
 
+  /**
+   * Copies a book as a new, separate interactive edition, as story-skills'
+   * adaptation skill advises, so the novel's builds and continuity stay
+   * linear. Every Markdown file is copied as it is now; the copy gets its
+   * own title and a fresh IFID (which makes it interactive), and leaves any
+   * series. It is reindexed and validated like an imported project.
+   */
+  async createInteractiveEdition(
+    slug: string,
+    input: CreateInteractiveEditionInput,
+  ): Promise<BookSummary> {
+    const source = this.summary(slug);
+    if (source.kind !== 'book') {
+      throw new ConflictError('not_a_book', 'Only a book can have an interactive edition.');
+    }
+    const files = await this.locks.run(slug, () =>
+      [...this.files.snapshot(slug)].map(([path, data]) => ({ path, data })),
+    );
+    const title = input.title ?? `${source.title} (interactive edition)`;
+    const story = files.find((file) => file.path === 'story.md');
+    if (story === undefined) throw new NotFoundError(`${slug} has no story.md`);
+    let storyText = removeSeriesLinks(story.data.toString('utf8'));
+    // JSON strings are valid YAML double-quoted scalars, whatever the title holds.
+    storyText = setFrontmatterField(storyText, 'title', JSON.stringify(title));
+    storyText = setFrontmatterField(storyText, 'ifid', randomUUID().toUpperCase());
+    story.data = Buffer.from(storyText, 'utf8');
+
+    const edition = await this.locks.run(CREATE_LOCK, async () => {
+      const staging = stageProjectFiles(this.files.projectsDir, files);
+      try {
+        await this.cli.run({ command: 'reindex', root: staging });
+        const result = await this.cli.run({ command: 'validate', root: staging, json: true });
+        if (result.exitCode !== 0 && result.exitCode !== 1) {
+          const message =
+            result.envelope?.diagnostics.find((entry) => entry.severity === 'error')?.message ??
+            (result.stderr.trim() || result.stdout.trim() || 'story validate failed');
+          throw new ConflictError('edition_invalid', `The copy is not a usable book: ${message}`);
+        }
+        const free = this.freeSlug(title);
+        promoteStagedProject(staging, this.files.projectsDir, free);
+        return free;
+      } catch (error) {
+        discardStagedProject(staging);
+        throw error;
+      }
+    });
+    this.files.rescan();
+    return this.summary(edition);
+  }
+
   /** The manuscript for reading, under the book lock so it never catches a write halfway. */
   manuscript(slug: string): Promise<BookManuscript> {
     return this.locks.run(slug, () => exportManuscript(this.cli, this.files.root(slug)));
@@ -1531,6 +1582,9 @@ export class BookService {
       precedes: linkField(story, 'precedes'),
       counts: this.index.counts(slug),
       updatedAt: new Date(latest ?? Date.now()).toISOString(),
+      interactive:
+        location.kind === 'book' &&
+        (stringField(story, 'ifid') !== null || this.index.hasChapterChoices(slug)),
     };
   }
 

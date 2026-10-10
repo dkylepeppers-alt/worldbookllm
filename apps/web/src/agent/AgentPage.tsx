@@ -9,6 +9,7 @@ import { AgentComposer } from './AgentComposer.js';
 import { useAgentRunner } from './agent-runner-context.js';
 import { useDraftAppend } from './use-draft-append.js';
 import { BuildBibleGuide } from './BuildBibleGuide.js';
+import { InteractiveGuide } from './InteractiveGuide.js';
 import { StoryCommandsPanel } from './StoryCommandsPanel.js';
 import { StorySkillsInstall } from './StorySkillsInstall.js';
 
@@ -135,6 +136,7 @@ export function AgentPage() {
         </p>
       )}
       <BuildBibleGuide onAsk={draft.ask} />
+      <InteractiveGuide onAsk={draft.ask} />
       <StoryCommandsPanel onAsk={draft.ask} />
       <AgentComposer
         id="agent-new-chat-input"
