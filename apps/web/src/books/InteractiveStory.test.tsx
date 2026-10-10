@@ -363,6 +363,49 @@ describe('Branches tab', () => {
     expect(screen.queryByRole('heading', { name: 'Make it interactive' })).toBeNull();
   });
 
+  it('sizes the map to fit a long back-link', async () => {
+    const chapters = Array.from({ length: 8 }, (_, index) => {
+      const id = `chapter-${String(index + 1).padStart(2, '0')}`;
+      const to = index === 7 ? 'chapter-01' : `chapter-${String(index + 2).padStart(2, '0')}`;
+      return {
+        ...chapter('chapter-01'),
+        id,
+        title: id,
+        path: `chapters/${id}.md`,
+        start: index === 0,
+        choices: [{ text: index === 7 ? 'Return' : 'Continue', to, sets: [], requires: [] }],
+      };
+    });
+    renderAt('/books/gull-rock/branches', {
+      getBranches: () =>
+        Promise.resolve({
+          branching: true,
+          ifid: null,
+          invalidIfid: null,
+          flags: [],
+          chapters,
+        }),
+    });
+    const map = await screen.findByRole('img', { name: /Map of 8 chapters/u });
+    expect(Number(map.getAttribute('width'))).toBeGreaterThan(310);
+  });
+
+  it('warns about invalid IFIDs and withholds Play', async () => {
+    renderAt('/books/gull-rock/branches', {
+      getBookTree: () => Promise.resolve({ ...tree, book: { ...book, interactive: true } }),
+      getBranches: () =>
+        Promise.resolve({
+          branching: true,
+          ifid: null,
+          invalidIfid: 'not-valid',
+          flags: [],
+          chapters: [chapter('chapter-01')],
+        }),
+    });
+    expect(await screen.findByText(/builds refuse the invalid IFID/u)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Play from the start' })).toBeNull();
+  });
+
   it('copies a linear book as an interactive edition and opens it', async () => {
     const createInteractiveEdition = vi.fn(() =>
       Promise.resolve({
@@ -416,6 +459,12 @@ describe('Health', () => {
                   message:
                     'chapters/chapter-01.md choices[0] references missing chapter chapter-09',
                 },
+                {
+                  severity: 'error',
+                  code: 'missing-reference',
+                  file: 'chapters/unknown.md',
+                  message: 'chapters/unknown.md choices[0] references missing chapter chapter-10',
+                },
                 { severity: 'warning', code: 'missing-field', message: 'missing status' },
               ]
             : [],
@@ -435,6 +484,7 @@ describe('Health', () => {
           flags: [],
           chapters: [
             chapter('chapter-01', { problems: ['Choice 2 sets: and is a word ink reserves'] }),
+            chapter('chapter-03'),
           ],
         }),
     });
@@ -443,6 +493,12 @@ describe('Health', () => {
     expect(paths.textContent).toContain('references missing chapter chapter-09');
     expect(paths.textContent).toContain('Harbor Wall: Choice 2 sets: and is a word ink reserves');
     expect(paths.textContent).not.toContain('missing status');
+    expect(within(paths).getByRole('link', { name: 'The Lamp' }).getAttribute('href')).toBe(
+      '/books/gull-rock/branches/edit#branch-chapter-03',
+    );
+    expect(
+      within(paths).getByRole('link', { name: 'chapters/unknown.md' }).getAttribute('href'),
+    ).toBe('/books/gull-rock/files/chapters/unknown.md');
     expect(within(paths).getByRole('link', { name: 'Edit the choices' }).getAttribute('href')).toBe(
       '/books/gull-rock/branches/edit#branch-chapter-01',
     );
@@ -461,7 +517,7 @@ describe('Health', () => {
 });
 
 describe('moved addresses', () => {
-  it('send the old Write addresses to the Branches tab, keeping the query', async () => {
+  it('sends the old Write addresses to the Branches tab, keeping the query', async () => {
     renderAt('/books/gull-rock/write/play?from=chapter-03', {
       getPlay: () => Promise.reject(new ApiClientError(409, 'x', 'not now')),
     });

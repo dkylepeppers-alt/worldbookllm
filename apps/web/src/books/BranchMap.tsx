@@ -14,6 +14,11 @@ function fit(text: string, length: number): string {
   return text.length <= length ? text : `${text.slice(0, length - 1).trimEnd()}…`;
 }
 
+function backEdgeReach(from: MapNode, to: MapNode): number {
+  const right = (node: MapNode) => node.x + NODE_WIDTH;
+  return Math.max(right(from), right(to)) + 28 + Math.abs(from.y - to.y) / 8;
+}
+
 function edgePath(edge: MapEdge, from: MapNode, to: MapNode): string {
   const right = (node: MapNode) => node.x + NODE_WIDTH;
   const middle = (node: MapNode) => node.y + NODE_HEIGHT / 2;
@@ -24,7 +29,7 @@ function edgePath(edge: MapEdge, from: MapNode, to: MapNode): string {
   }
   if (edge.back) {
     // Up or across: around the right-hand side, so it never crosses the rows.
-    const reach = Math.max(right(from), right(to)) + 28 + Math.abs(from.y - to.y) / 8;
+    const reach = backEdgeReach(from, to);
     return `M ${right(from)} ${middle(from)} C ${reach} ${middle(from)}, ${reach} ${middle(to)}, ${right(to) + 4} ${middle(to)}`;
   }
   const startX = from.x + NODE_WIDTH / 2;
@@ -51,8 +56,16 @@ export function BranchMap({ slug, branches }: { slug: string; branches: BookBran
   const layout = layoutBranchMap(branches);
   const nodes = new Map(layout.nodes.map((node) => [node.chapter.id, node]));
   const editHref = (id: string) => `/books/${encodeURIComponent(slug)}/branches/edit#branch-${id}`;
-  // Room for loops drawn to the right of the widest row.
-  const width = layout.width + (layout.edges.some((edge) => edge.back) ? 72 : 0);
+  const width = Math.max(
+    layout.width,
+    ...layout.edges
+      .filter((edge) => edge.back)
+      .map((edge) => {
+        const from = nodes.get(edge.from)!;
+        const to = nodes.get(edge.to)!;
+        return (edge.from === edge.to ? from.x + NODE_WIDTH + 34 : backEdgeReach(from, to)) + 8;
+      }),
+  );
 
   return (
     <div className="branch-map">

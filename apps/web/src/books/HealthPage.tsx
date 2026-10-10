@@ -109,15 +109,27 @@ export function HealthPage() {
             <p className="coordinate-label">No path problems.</p>
           ) : (
             <ul className="entry-list" aria-label="Path findings">
-              {pathFindings.map((finding, index) => (
-                <li key={`${index}:${finding.message}`}>
-                  <span className="coordinate-label">{finding.severity}</span>
-                  <span>{finding.message}</span>
-                  {typeof finding.file === 'string' ? (
-                    <Link to={fileHref(slug, finding.file)}>{finding.file}</Link>
-                  ) : null}
-                </li>
-              ))}
+              {pathFindings.map((finding, index) => {
+                const chapter =
+                  typeof finding.file === 'string'
+                    ? branches.chapters.find((entry) => entry.path === finding.file)
+                    : undefined;
+                return (
+                  <li key={`${index}:${finding.message}`}>
+                    <span className="coordinate-label">{finding.severity}</span>
+                    <span>{finding.message}</span>
+                    {typeof finding.file !== 'string' ? null : chapter === undefined ? (
+                      <Link to={fileHref(slug, finding.file)}>{finding.file}</Link>
+                    ) : (
+                      <Link
+                        to={`/books/${encodeURIComponent(slug)}/branches/edit#branch-${chapter.id}`}
+                      >
+                        {chapter.title}
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
               {stateProblems.map(({ chapter, problem }) => (
                 <li key={`${chapter.id}:${problem}`}>
                   <span className="coordinate-label">choices</span>

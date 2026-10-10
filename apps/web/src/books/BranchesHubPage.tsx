@@ -51,6 +51,7 @@ function Hub({ slug, branches }: { slug: string; branches: BookBranches }) {
     (chapter) =>
       chapter.problems.length > 0 || chapter.choices.some((choice) => !ids.has(choice.to)),
   ).length;
+  const invalidIfid = branches.invalidIfid !== null;
   const choices = chapters.reduce((sum, chapter) => sum + chapter.choices.length, 0);
 
   return (
@@ -68,11 +69,12 @@ function Hub({ slug, branches }: { slug: string; branches: BookBranches }) {
         ) : (
           <p>No chapter has choices yet, so this book reads straight through.</p>
         )}
-        {broken > 0 || unreachable > 0 ? (
+        {broken > 0 || invalidIfid || unreachable > 0 ? (
           <p className="branch-warning">
             {broken > 0
               ? `${broken} ${broken === 1 ? 'chapter has' : 'chapters have'} choices the builds refuse. `
               : ''}
+            {invalidIfid ? 'The builds refuse the invalid IFID. ' : ''}
             {unreachable > 0
               ? `${unreachable} ${unreachable === 1 ? 'chapter is' : 'chapters are'} not reachable.`
               : ''}{' '}
@@ -83,7 +85,7 @@ function Hub({ slug, branches }: { slug: string; branches: BookBranches }) {
           <Link className="button-primary" to={`${base}/edit`}>
             Edit choices
           </Link>
-          {broken === 0 ? (
+          {broken === 0 && !invalidIfid ? (
             <Link className="button-secondary" to={`${base}/play`}>
               Play from the start
             </Link>
