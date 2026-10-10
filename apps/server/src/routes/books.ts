@@ -13,6 +13,7 @@ import {
   createBookImportSchema,
   createBookSchema,
   createImportedBookSchema,
+  createInteractiveEditionSchema,
   importPreviewQuerySchema,
   createSeriesSchema,
   entityParamsSchema,
@@ -193,6 +194,12 @@ export function registerBookRoutes(app: FastifyInstance): void {
   app.put('/api/books/:book/chapters/:id/choices', (request) => {
     const { book, id } = chapterParamsSchema.parse(request.params);
     return books().setChapterChoices(book, id, setChapterChoicesSchema.parse(request.body));
+  });
+
+  app.post('/api/books/:book/interactive-edition', async (request, reply) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    const input = createInteractiveEditionSchema.parse(request.body ?? {});
+    return reply.status(201).send(await books().createInteractiveEdition(book, input));
   });
 
   app.get('/api/books/:book/play', (request) => {

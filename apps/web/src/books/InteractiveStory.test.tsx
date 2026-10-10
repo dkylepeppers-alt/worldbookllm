@@ -99,13 +99,16 @@ describe('Branches', () => {
       chapters: [chapter('chapter-01'), chapter('chapter-02'), chapter('chapter-03')],
     };
     renderAt('/books/gull-rock/write', { getBranches: () => Promise.resolve(linear) });
-    await userEvent
-      .setup()
-      .click(await screen.findByRole('link', { name: 'Branches and choices' }));
-    expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock/write/branches');
+    const user = userEvent.setup();
+    // Not an interactive book yet: no Branches tab, and Write offers to make it one.
+    expect(screen.queryByRole('link', { name: 'Branches', current: false })).toBeNull();
+    await user.click(await screen.findByRole('link', { name: 'Make it interactive' }));
+    expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock/branches');
     expect((await screen.findByRole('status', { name: 'Story map' })).textContent).toContain(
       'reads straight through',
     );
+    await user.click(screen.getByRole('link', { name: 'Edit choices' }));
+    expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock/branches/edit');
     const first = screen.getByRole('form', { name: 'Harbor Wall' });
     expect(within(first).getByText('No choices: the reader goes on to The Ledge.')).toBeTruthy();
     expect(within(first).getByText('Start')).toBeTruthy();
@@ -121,7 +124,7 @@ describe('Branches', () => {
       chapters: [chapter('chapter-01'), chapter('chapter-02'), chapter('chapter-03')],
     };
     const setChapterChoices = vi.fn(() => Promise.resolve(linear));
-    renderAt('/books/gull-rock/write/branches', {
+    renderAt('/books/gull-rock/branches/edit', {
       getBranches: () => Promise.resolve(linear),
       setChapterChoices,
     });
@@ -164,7 +167,7 @@ describe('Branches', () => {
         chapter('chapter-03', { ending: true, reachable: false }),
       ],
     };
-    renderAt('/books/gull-rock/write/branches', { getBranches: () => Promise.resolve(branching) });
+    renderAt('/books/gull-rock/branches/edit', { getBranches: () => Promise.resolve(branching) });
     const summary = await screen.findByRole('status', { name: 'Story map' });
     expect(summary.textContent).toContain('1 ending the reader can reach');
     expect(summary.textContent).toContain('No path of choices reaches The Lamp');
@@ -193,7 +196,7 @@ describe('Branches', () => {
       ifid = '649C4AC9-78FE-4B32-B821-24D0802D1DD9';
       return Promise.resolve({ ifid });
     });
-    renderAt('/books/gull-rock/write/branches', {
+    renderAt('/books/gull-rock/branches/edit', {
       getBranches: () =>
         Promise.resolve({
           branching: false,
@@ -222,7 +225,7 @@ describe('Branches edge cases', () => {
     const setChapterChoices = vi.fn(() =>
       Promise.resolve({ branching: true, ifid: null, invalidIfid: null, flags: [], chapters: [] }),
     );
-    renderAt('/books/gull-rock/write/branches', {
+    renderAt('/books/gull-rock/branches/edit', {
       getBranches: () =>
         Promise.resolve({
           branching: false,
@@ -248,7 +251,7 @@ describe('Branches edge cases', () => {
     const setChapterChoices = vi.fn(() =>
       Promise.resolve({ branching: true, ifid: null, invalidIfid: null, flags: [], chapters: [] }),
     );
-    renderAt('/books/gull-rock/write/branches', {
+    renderAt('/books/gull-rock/branches/edit', {
       getBranches: () =>
         Promise.resolve({
           branching: false,
@@ -287,7 +290,7 @@ describe('Branches edge cases', () => {
   });
 
   it('links each chapter to a play-through that starts there', async () => {
-    renderAt('/books/gull-rock/write/branches', {
+    renderAt('/books/gull-rock/branches/edit', {
       getBranches: () =>
         Promise.resolve({
           branching: false,
@@ -299,12 +302,12 @@ describe('Branches edge cases', () => {
     });
     const lamp = await screen.findByRole('form', { name: 'The Lamp' });
     expect(within(lamp).getByRole('link', { name: 'Play from here' }).getAttribute('href')).toBe(
-      '/books/gull-rock/write/play?from=chapter-03',
+      '/books/gull-rock/branches/play?from=chapter-03',
     );
   });
 
   it('offers to replace an IFID the builds would refuse', async () => {
-    renderAt('/books/gull-rock/write/branches', {
+    renderAt('/books/gull-rock/branches/edit', {
       getBranches: () =>
         Promise.resolve({
           branching: false,
@@ -316,6 +319,156 @@ describe('Branches edge cases', () => {
     });
     expect(await screen.findByText(/which is not a valid IFID/u)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Replace the IFID' })).toBeTruthy();
+  });
+});
+
+describe('Branches tab', () => {
+  const branching: BookBranches = {
+    branching: true,
+    ifid: null,
+    invalidIfid: null,
+    flags: ['found_coat'],
+    chapters: [
+      chapter('chapter-01', {
+        choices: [
+          { text: 'Search the rocks', to: 'chapter-02', sets: ['found_coat'], requires: [] },
+          { text: 'Wait', to: 'chapter-01', sets: [], requires: [] },
+        ],
+      }),
+      chapter('chapter-02', { ending: true }),
+      chapter('chapter-03', { ending: true, reachable: false }),
+    ],
+  };
+
+  it('appears for an interactive book and maps its chapters and choices', async () => {
+    renderAt('/books/gull-rock/write', {
+      getBookTree: () => Promise.resolve({ ...tree, book: { ...book, interactive: true } }),
+      getBranches: () => Promise.resolve(branching),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('link', { name: 'Branches' }));
+    expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock/branches');
+    expect((await screen.findByRole('status', { name: 'Story map' })).textContent).toContain(
+      '3 chapters · 2 choices · 1 ending · 1 flag',
+    );
+    expect(screen.getByText(/1 chapter is not reachable/u)).toBeTruthy();
+    expect(screen.getByRole('img', { name: /Map of 3 chapters and 2 links/u })).toBeTruthy();
+    expect(
+      document.querySelector('a[href="/books/gull-rock/branches/edit#branch-chapter-03"]'),
+    ).not.toBeNull();
+    const list = screen.getByText('The map as a list').closest('details')!;
+    expect(list.textContent).toContain('“Search the rocks” → The Ledge (uses flags)');
+    expect(list.textContent).toContain('The Lamp · not reachable');
+    // A branching book has no edition offer.
+    expect(screen.queryByRole('heading', { name: 'Make it interactive' })).toBeNull();
+  });
+
+  it('copies a linear book as an interactive edition and opens it', async () => {
+    const createInteractiveEdition = vi.fn(() =>
+      Promise.resolve({
+        ...book,
+        slug: 'gull-rock-ie',
+        title: 'Gull Rock: Choices',
+        interactive: true,
+      }),
+    );
+    renderAt('/books/gull-rock/branches', {
+      getBranches: () =>
+        Promise.resolve({ ...branching, branching: false, chapters: [chapter('chapter-01')] }),
+      createInteractiveEdition,
+    });
+    const user = userEvent.setup();
+    const title = await screen.findByLabelText('Edition title');
+    expect((title as HTMLInputElement).value).toBe('The Gull Rock Light (interactive edition)');
+    await user.clear(title);
+    await user.type(title, 'Gull Rock: Choices');
+    await user.click(screen.getByRole('button', { name: 'Make an interactive edition' }));
+    expect(createInteractiveEdition).toHaveBeenCalledWith('gull-rock', {
+      title: 'Gull Rock: Choices',
+    });
+    expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock-ie/branches');
+  });
+});
+
+describe('Health', () => {
+  function report(command: 'report' | 'next') {
+    return Promise.resolve({
+      command,
+      exitCode: 0,
+      envelope: {
+        apiVersion: 'story/v2',
+        command,
+        ok: true,
+        data: command === 'report' ? { checks: {} } : { actions: [] },
+        diagnostics:
+          command === 'report'
+            ? [
+                {
+                  severity: 'warning',
+                  code: 'unreachable-chapter',
+                  file: 'chapters/chapter-03.md',
+                  message: 'chapters/chapter-03.md cannot be reached',
+                },
+                {
+                  severity: 'error',
+                  code: 'missing-reference',
+                  file: 'chapters/chapter-01.md',
+                  message:
+                    'chapters/chapter-01.md choices[0] references missing chapter chapter-09',
+                },
+                { severity: 'warning', code: 'missing-field', message: 'missing status' },
+              ]
+            : [],
+      },
+    });
+  }
+
+  it('lists path findings and choice state problems for an interactive book', async () => {
+    renderAt('/books/gull-rock/health', {
+      getBookTree: () => Promise.resolve({ ...tree, book: { ...book, interactive: true } }),
+      runBookCheck: (_slug, command) => report(command as 'report' | 'next'),
+      getBranches: () =>
+        Promise.resolve({
+          branching: true,
+          ifid: null,
+          invalidIfid: null,
+          flags: [],
+          chapters: [
+            chapter('chapter-01', { problems: ['Choice 2 sets: and is a word ink reserves'] }),
+          ],
+        }),
+    });
+    const paths = await screen.findByRole('list', { name: 'Path findings' });
+    expect(paths.textContent).toContain('chapters/chapter-03.md cannot be reached');
+    expect(paths.textContent).toContain('references missing chapter chapter-09');
+    expect(paths.textContent).toContain('Harbor Wall: Choice 2 sets: and is a word ink reserves');
+    expect(paths.textContent).not.toContain('missing status');
+    expect(within(paths).getByRole('link', { name: 'Edit the choices' }).getAttribute('href')).toBe(
+      '/books/gull-rock/branches/edit#branch-chapter-01',
+    );
+  });
+
+  it('has no Paths section for a book that is not interactive', async () => {
+    const getBranches = vi.fn();
+    renderAt('/books/gull-rock/health', {
+      runBookCheck: (_slug, command) => report(command as 'report' | 'next'),
+      getBranches,
+    });
+    await screen.findByRole('list', { name: 'Checks' });
+    expect(screen.queryByRole('heading', { name: 'Paths' })).toBeNull();
+    expect(getBranches).not.toHaveBeenCalled();
+  });
+});
+
+describe('moved addresses', () => {
+  it('send the old Write addresses to the Branches tab, keeping the query', async () => {
+    renderAt('/books/gull-rock/write/play?from=chapter-03', {
+      getPlay: () => Promise.reject(new ApiClientError(409, 'x', 'not now')),
+    });
+    await screen.findByText('not now');
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/books/gull-rock/branches/play?from=chapter-03',
+    );
   });
 });
 
@@ -367,14 +520,16 @@ describe('Play', () => {
   }
 
   it('runs the ink build through a choice to an ending, and starts over', async () => {
-    renderAt('/books/gull-rock/write/play', { getPlay: () => Promise.resolve(play()) });
+    renderAt('/books/gull-rock/branches/play', { getPlay: () => Promise.resolve(play()) });
     const user = userEvent.setup();
     expect(await screen.findByRole('heading', { name: 'Harbor Wall' })).toBeTruthy();
     expect(screen.getByText('open').tagName).toBe('EM');
     expect(screen.getByText('ink source')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Climb the tower' }));
-    expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock/write/play?path=1');
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/books/gull-rock/branches/play?path=1',
+    );
     const heading = screen.getByRole('heading', { name: 'The Lamp' });
     expect(document.activeElement).toBe(heading);
     expect(screen.getByText('You chose: Climb the tower')).toBeTruthy();
@@ -385,7 +540,7 @@ describe('Play', () => {
   });
 
   it('shows the story state as choices change it', async () => {
-    renderAt('/books/gull-rock/write/play', { getPlay: () => Promise.resolve(play()) });
+    renderAt('/books/gull-rock/branches/play', { getPlay: () => Promise.resolve(play()) });
     const user = userEvent.setup();
     const state = await screen.findByRole('region', { name: 'Story state' });
     expect(state.textContent).toContain('found_coat false');
@@ -396,7 +551,7 @@ describe('Play', () => {
   });
 
   it('plays from a chapter, and back from the start', async () => {
-    renderAt('/books/gull-rock/write/play?from=chapter-03', {
+    renderAt('/books/gull-rock/branches/play?from=chapter-03', {
       getPlay: () => Promise.resolve(play()),
     });
     const user = userEvent.setup();
@@ -404,23 +559,23 @@ describe('Play', () => {
     expect(screen.getByText(/Playing from The Lamp, with every flag false/u)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Play again' }));
     expect(screen.getByTestId('location').textContent).toBe(
-      '/books/gull-rock/write/play?from=chapter-03',
+      '/books/gull-rock/branches/play?from=chapter-03',
     );
     await user.click(screen.getByRole('button', { name: 'Play from the start' }));
     expect(screen.getByRole('heading', { name: 'Harbor Wall' })).toBeTruthy();
   });
 
   it('reopens the moment a link names, and stops where stale choices no longer fit', async () => {
-    renderAt('/books/gull-rock/write/play?path=0', { getPlay: () => Promise.resolve(play()) });
+    renderAt('/books/gull-rock/branches/play?path=0', { getPlay: () => Promise.resolve(play()) });
     expect(await screen.findByRole('heading', { name: 'The Ledge' })).toBeTruthy();
     cleanup();
-    renderAt('/books/gull-rock/write/play?path=0.3', { getPlay: () => Promise.resolve(play()) });
+    renderAt('/books/gull-rock/branches/play?path=0.3', { getPlay: () => Promise.resolve(play()) });
     expect(await screen.findByText(/The story has changed since these choices/u)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Start over' })).toBeTruthy();
   });
 
   it('sends a story the build refuses back to the Branches screen', async () => {
-    renderAt('/books/gull-rock/write/play', {
+    renderAt('/books/gull-rock/branches/play', {
       getPlay: () =>
         Promise.reject(
           new ApiClientError(
@@ -435,7 +590,7 @@ describe('Play', () => {
       screen
         .getByRole('link', { name: 'Fix the choices on the Branches screen' })
         .getAttribute('href'),
-    ).toBe('/books/gull-rock/write/branches');
+    ).toBe('/books/gull-rock/branches/edit');
   });
 });
 

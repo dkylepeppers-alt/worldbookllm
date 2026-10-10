@@ -1,5 +1,5 @@
 import '@fontsource-variable/source-serif-4/opsz.css';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 
 import './styles.css';
 
@@ -12,6 +12,7 @@ import { BiblePage } from './books/BiblePage.js';
 import { BookFilePage } from './books/BookFilePage.js';
 import { BookLayout } from './books/BookLayout.js';
 import { BookLibraryPage } from './books/BookLibraryPage.js';
+import { BranchesHubPage } from './books/BranchesHubPage.js';
 import { BranchesPage } from './books/BranchesPage.js';
 import { HealthPage } from './books/HealthPage.js';
 import { PlayPage } from './books/PlayPage.js';
@@ -25,6 +26,13 @@ import { PwaStatusBanner } from './pwa/PwaStatusBanner.js';
 import { SettingsPage } from './settings/SettingsPage.js';
 import { SkillsPage } from './skills/SkillsPage.js';
 
+/** An address that moved within a book, keeping its query and hash. */
+function MovedTo({ path }: { path: string }) {
+  const { slug = '' } = useParams();
+  const { search, hash } = useLocation();
+  return <Navigate to={`/books/${encodeURIComponent(slug)}/${path}${search}${hash}`} replace />;
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -35,8 +43,11 @@ export function AppRoutes() {
         <Route path="books/:slug" element={<BookLayout />}>
           <Route index element={<Navigate to="write" replace />} />
           <Route path="write" element={<WritePage />} />
-          <Route path="write/branches" element={<BranchesPage />} />
-          <Route path="write/play" element={<PlayPage />} />
+          <Route path="branches" element={<BranchesHubPage />} />
+          <Route path="branches/edit" element={<BranchesPage />} />
+          <Route path="branches/play" element={<PlayPage />} />
+          <Route path="write/branches" element={<MovedTo path="branches/edit" />} />
+          <Route path="write/play" element={<MovedTo path="branches/play" />} />
           <Route path="bible" element={<BiblePage />} />
           <Route path="agent" element={<AgentPage />} />
           <Route path="agent/:chatId" element={<AgentChatRoute />} />

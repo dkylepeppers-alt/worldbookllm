@@ -123,7 +123,7 @@ Surface background with a bottom hairline. The wordmark is a small accent dot pl
 
 ### Book tabs
 
-Write / Reader / Bible / Agent / Health / Project (a series bible has no Reader). On phones: a fixed bottom bar of equal columns on `--surface`, the current tab in accent with a 2px top indicator. From 800px: a side rail card (12px radius, 0.35rem inset) where each tab is an 8px-rounded row and the current one gets an `--accent-soft` fill. While an agent turn runs, the Agent tab shows a small pulsing accent dot.
+Write / Branches / Reader / Bible / Agent / Health / Project (a series bible has no Reader; only an interactive book, one with an IFID or chapter choices, has Branches). On phones: a fixed bottom bar of equal columns on `--surface`, the current tab in accent with a 2px top indicator. From 800px: a side rail card (12px radius, 0.35rem inset) where each tab is an 8px-rounded row and the current one gets an `--accent-soft` fill. While an agent turn runs, the Agent tab shows a small pulsing accent dot.
 
 ### Segmented controls
 
@@ -150,6 +150,8 @@ Book cards, settings cards, check cards, notices, the change summary, the agent'
 One centered 68ch column: a collapsible contents card, optional export notes, then the manuscript in Source Serif 4 at 1.8 line height. Chapter headings use the UI sans; a scene break is a short centered rule.
 
 ### Branches and Play
+
+The Branches tab opens on a summary card and the branch map: one rounded box per chapter (start in `--accent-soft` with an accent border, endings with a 2px border, unreachable ones dashed in `--danger`), rows top to bottom by choices from the start, `--border-strong` arrows (dashed when a choice uses flags; loops and links back up curve around the right side), and an accent border on hover and keyboard focus. The map sits in a scrolling card and is repeated as a list under "The map as a list". A linear book also gets a "Make it interactive" card offering an interactive edition.
 
 Write → Branches lists each chapter as a card: title, id, a "Play from here" link, and small status tags (Start, Ending, and Not reachable in danger), then one row per choice (text field, "Leads to" select, Remove, and mono "Sets flags" / "Only if" fields) that stacks on phones. A "Game state" card explains flags and lists the book's. A summary card above names endings, unreachable chapters, and broken choices with links to their cards. Write → Play runs worldbookllm's ink for the book (ADR 0028) with the inkjs runtime: each passage in the Reader's serif column under its chapter heading, "You chose: …" above it, the choices as full-width secondary buttons, and "The end." with Play again at an ending. The choices made are in the address, so Back steps back. A "Story state" card lists each flag's value, and a collapsed "ink source" panel shows the ink.
 

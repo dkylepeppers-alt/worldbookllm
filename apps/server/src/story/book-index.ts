@@ -183,6 +183,20 @@ export class BookIndex {
     return value ? (JSON.parse(value) as Record<string, unknown>) : null;
   }
 
+  /** Whether any chapter's frontmatter holds a non-empty `choices` list. */
+  hasChapterChoices(book: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 FROM book_files
+         WHERE book = ? AND kind = 'chapter' AND frontmatter_json IS NOT NULL
+           AND json_type(frontmatter_json, '$.choices') = 'array'
+           AND json_array_length(frontmatter_json, '$.choices') > 0
+         LIMIT 1`,
+      )
+      .get(book);
+    return row !== undefined;
+  }
+
   counts(book: string): Record<string, number> {
     const rows = this.db
       .prepare(

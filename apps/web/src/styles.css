@@ -2618,3 +2618,84 @@ ol.inspector-sections {
   padding: 0;
   list-style: none;
 }
+
+/* Branches tab: the chapters as a map of choices. */
+.branch-map {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.branch-map-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.branch-map svg {
+  display: block;
+  margin-inline: auto;
+}
+
+.branch-map-node rect {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.branch-map-node-start rect {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+}
+
+.branch-map-node-ending rect {
+  stroke-width: 2;
+}
+
+.branch-map-node-not-reachable rect {
+  stroke: var(--danger);
+  stroke-dasharray: 5 4;
+}
+
+.branch-map-title {
+  fill: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.branch-map-meta {
+  fill: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.branch-map-node-link:hover rect,
+.branch-map-node-link:focus-visible rect {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.branch-map-node-link:focus-visible {
+  outline: none;
+}
+
+.branch-map-edge {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+
+.branch-map-edge-state {
+  stroke-dasharray: 6 4;
+}
+
+.branch-map-arrowhead {
+  fill: var(--border-strong);
+}
+
+.branch-map-list ol,
+.branch-map-list ul {
+  margin: 0.35rem 0;
+}

@@ -7,8 +7,8 @@ import {
   type BranchChapter,
   type ChapterChoice,
 } from '@worldbookllm/shared';
-import { type FormEvent, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { type FormEvent, useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 
 import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
@@ -73,13 +73,23 @@ export function BranchesPage() {
     (signal) => api.getBranches(slug, signal),
     `${slug}:${tree.files.map((file) => file.hash).join()}`,
   );
+  const { hash } = useLocation();
+  const ready = branches.status === 'ready';
+  // A link from the map names a chapter's card; bring it into view once it is there.
+  useEffect(() => {
+    if (!ready || !hash.startsWith('#branch-')) return;
+    const card = document.getElementById(decodeURIComponent(hash.slice(1)));
+    // jsdom has no scrollIntoView.
+    if (card !== null && 'scrollIntoView' in card) card.scrollIntoView({ block: 'start' });
+    card?.querySelector<HTMLElement>('h3 a')?.focus({ preventScroll: true });
+  }, [ready, hash]);
 
   return (
     <section className="book-panel branches-page" aria-labelledby="branches-heading">
       <p className="coordinate-label">
-        <Link to={`/books/${encodeURIComponent(slug)}/write`}>Chapters</Link>
+        <Link to={`/books/${encodeURIComponent(slug)}/branches`}>Branches</Link>
       </p>
-      <h2 id="branches-heading">Branches</h2>
+      <h2 id="branches-heading">Choices</h2>
       <p>
         Choices turn the book into an interactive story for the Twine and ink builds. The reader
         starts at the first chapter and picks a choice at the end of each one. Until any chapter has
@@ -121,7 +131,7 @@ function BranchesView({
     (chapter) =>
       chapter.problems.length > 0 || chapter.choices.some((choice) => !ids.has(choice.to)),
   );
-  const playHref = `/books/${encodeURIComponent(slug)}/write/play`;
+  const playHref = `/books/${encodeURIComponent(slug)}/branches/play`;
 
   return (
     <>
@@ -347,7 +357,7 @@ function ChapterChoices({
           <span className="coordinate-label">{chapter.id}</span>
           <Link
             className="coordinate-label"
-            to={`/books/${encodeURIComponent(slug)}/write/play?from=${encodeURIComponent(chapter.id)}`}
+            to={`/books/${encodeURIComponent(slug)}/branches/play?from=${encodeURIComponent(chapter.id)}`}
           >
             Play from here
           </Link>

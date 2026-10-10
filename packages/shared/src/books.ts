@@ -99,6 +99,16 @@ export const bookSummarySchema = z.strictObject({
   precedes: z.array(bookSlugSchema),
   counts: z.record(z.string(), z.number().int().nonnegative()),
   updatedAt: z.iso.datetime(),
+  /**
+   * An interactive book (ADR 0027, 0028): one whose story.md has an `ifid`
+   * or whose chapters have `choices`. The server always sets it.
+   */
+  interactive: z.boolean().optional(),
+});
+
+/** Copies a book as a separate interactive edition, as story-skills' adaptation skill advises. */
+export const createInteractiveEditionSchema = z.strictObject({
+  title: z.string().trim().min(1).max(200).optional(),
 });
 
 export const bookTreeSchema = z.strictObject({
@@ -322,6 +332,7 @@ export type BookFileKind = z.infer<typeof bookFileKindSchema>;
 export type BookFile = z.infer<typeof bookFileSchema>;
 export type BookFileDetail = z.infer<typeof bookFileDetailSchema>;
 export type BookSummary = z.infer<typeof bookSummarySchema>;
+export type CreateInteractiveEditionInput = z.infer<typeof createInteractiveEditionSchema>;
 export type BookTree = z.infer<typeof bookTreeSchema>;
 export type CreateBookInput = z.infer<typeof createBookSchema>;
 export type WriteBookFileInput = z.infer<typeof writeBookFileSchema>;

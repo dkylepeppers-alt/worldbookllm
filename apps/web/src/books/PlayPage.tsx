@@ -121,12 +121,12 @@ export function PlayPage() {
     (signal) => api.getPlay(slug, signal),
     `${slug}:${tree.files.map((file) => file.hash).join()}`,
   );
-  const branchesHref = `/books/${encodeURIComponent(slug)}/write/branches`;
+  const branchesHref = `/books/${encodeURIComponent(slug)}/branches/edit`;
 
   return (
     <section className="book-panel play-page" aria-labelledby="play-heading">
       <p className="coordinate-label">
-        <Link to={branchesHref}>Branches</Link>
+        <Link to={`/books/${encodeURIComponent(slug)}/branches`}>Branches</Link>
       </p>
       <h2 id="play-heading">Play</h2>
       {story.status === 'loading' ? <LoadingState>Building the ink story…</LoadingState> : null}

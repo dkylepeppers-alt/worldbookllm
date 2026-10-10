@@ -10,6 +10,7 @@ import { useLoad } from './useLoad.js';
 
 const TABS = [
   { to: 'write', label: 'Write' },
+  { to: 'branches', label: 'Branches', interactiveOnly: true },
   { to: 'read', label: 'Reader', booksOnly: true },
   { to: 'bible', label: 'Bible' },
   { to: 'agent', label: 'Agent' },
@@ -90,7 +91,12 @@ function BookTabs() {
   const { run } = useAgentRunner();
   const { tree } = useBook();
   // A series bible has no chapters, so nothing to read.
-  const tabs = TABS.filter((tab) => !('booksOnly' in tab) || tree.book.kind === 'book');
+  // An interactive book (an IFID, or chapters with choices) gets a Branches tab.
+  const tabs = TABS.filter(
+    (tab) =>
+      (!('booksOnly' in tab) || tree.book.kind === 'book') &&
+      (!('interactiveOnly' in tab) || tree.book.interactive === true),
+  );
   return (
     <nav className="book-tabs" aria-label="Book">
       {tabs.map((tab) => (
