@@ -1159,12 +1159,14 @@ export class BookService {
       .filter((file) => file.kind === 'chapter' && file.entityId !== null)
       .map((file) => {
         const bytes = this.files.readBytes(slug, file.path);
+        const parsed = bytes === null ? null : parseFrontmatter(bytes.toString('utf8'));
         return {
           id: file.entityId!,
           title: file.title,
           path: file.path,
           hash: file.hash,
-          frontmatter: bytes === null ? null : parseFrontmatter(bytes.toString('utf8')).frontmatter,
+          frontmatter: parsed?.frontmatter ?? null,
+          ...(parsed?.error === undefined ? {} : { unreadable: parsed.error }),
         };
       });
     const story = this.files.readBytes(slug, 'story.md')?.toString('utf8') ?? '';

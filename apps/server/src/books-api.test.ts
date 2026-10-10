@@ -669,8 +669,8 @@ describe('builds', () => {
 });
 
 describe('interactive books', () => {
-  async function threeChapters(): Promise<string> {
-    const book = await createBook();
+  async function threeChapters(title?: string): Promise<string> {
+    const book = await createBook(title);
     for (const [name, prose] of [
       ['Harbor Wall', 'Mara climbs the wall.'],
       ['Down to the Water', 'The steps are slick.'],
@@ -908,6 +908,108 @@ describe('interactive books', () => {
       url: `/api/books/${slug}/interactive-edition`,
     });
     expect(named.json<BookSummary>().title).toBe('The Salt Road (interactive edition)');
+  }, 30_000);
+
+  it('copies a book with a long title into an edition that builds and plays', async () => {
+    const title =
+      'The Extraordinarily Long and Winding Chronicle of the Salt Road Across the Sea and the Ships That Sailed It';
+    const slug = await threeChapters(title);
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/interactive-edition`,
+    });
+    expect(created.statusCode).toBe(201);
+    const edition = created.json<BookSummary>();
+    expect(edition.title).toBe(`${title} (interactive edition)`);
+    const story = readFileSync(join(dataDir, 'projects', edition.slug, 'story.md'), 'utf8');
+    const ifid = /^ifid: (\S+)$/mu.exec(story)?.[1];
+    expect((await branches(edition.slug)).ifid).toBe(ifid);
+    const play = await app.inject({ method: 'GET', url: `/api/books/${edition.slug}/play` });
+    expect(play.statusCode).toBe(200);
+    expect(play.json<BookPlay>()).toMatchObject({ title: edition.title, ifid });
+  }, 30_000);
+
+  it('refuses a flag named after an ink function', async () => {
+    const slug = await threeChapters();
+    const first = (await branches(slug)).chapters[0]!;
+    const bad = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: {
+        expectedHash: first.hash,
+        choices: [{ text: 'Go', to: 'chapter-02', sets: ['RANDOM'] }],
+      },
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json<{ message: string }>().message).toContain('RANDOM is a word ink reserves');
+  }, 30_000);
+
+  it('keeps prose shaped like a link as prose', async () => {
+    const slug = await threeChapters();
+    const last = join(dataDir, 'projects', slug, 'chapters/chapter-03.md');
+    writeFileSync(last, `${readFileSync(last, 'utf8')}\n[[Back->chapter-01]]\n`);
+    const linear = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
+    ).json<BookPlay>();
+    expect(linear.source).toContain('\\[\\[Back\\->chapter-01\\]\\]');
+
+    const first = (await branches(slug)).chapters[0]!;
+    await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: { expectedHash: first.hash, choices: [{ text: 'Go', to: 'chapter-03' }] },
+    });
+    const branching = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
+    ).json<BookPlay>();
+    const ending = branching.source.slice(branching.source.indexOf('=== chapter_03 ==='));
+    expect(ending).toContain('\\[\\[Back\\->chapter-01\\]\\]');
+    expect(ending).not.toContain('+ [Back]');
+    expect(ending).toContain('-> END');
+  }, 30_000);
+
+  it('saves choice state in a chapter that starts with a byte order mark', async () => {
+    const slug = await threeChapters();
+    const path = join(dataDir, 'projects', slug, 'chapters/chapter-01.md');
+    writeFileSync(path, `\uFEFF${readFileSync(path, 'utf8')}`);
+    const first = (await branches(slug)).chapters[0]!;
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: {
+        expectedHash: first.hash,
+        choices: [{ text: 'Go', to: 'chapter-02', sets: ['lamp'] }],
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json<BookBranches>().flags).toEqual(['lamp']);
+    expect(readFileSync(path, 'utf8').startsWith('\uFEFF---\n')).toBe(true);
+  }, 30_000);
+
+  it('reports chapter frontmatter that is not YAML and will not play it', async () => {
+    const slug = await threeChapters();
+    const path = join(dataDir, 'projects', slug, 'chapters/chapter-01.md');
+    writeFileSync(
+      path,
+      readFileSync(path, 'utf8').replace(
+        /^---\n/u,
+        '---\nchoices:\n  - text: Go: down\n    to: chapter-02\n',
+      ),
+    );
+    const chapter = (await branches(slug)).chapters.find((entry) => entry.id === 'chapter-01')!;
+    expect(chapter.problems.join('\n')).toContain('The frontmatter is not valid YAML');
+    const play = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
+    expect(play.statusCode).toBe(409);
+    expect(play.json<{ message: string }>().message).toContain('not valid YAML');
+
+    const before = readFileSync(path, 'utf8');
+    const save = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/chapters/chapter-01/choices`,
+      payload: { expectedHash: chapter.hash, choices: [] },
+    });
+    expect(save.statusCode).toBe(409);
+    expect(readFileSync(path, 'utf8')).toBe(before);
   }, 30_000);
 
   it('refuses to play a choice that leads nowhere', async () => {

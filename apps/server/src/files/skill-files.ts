@@ -139,7 +139,7 @@ export class SkillFileStore {
   read(dirPath: string): ReadSkillFile {
     const absolutePath = this.resolveRelative(join(dirPath, 'SKILL.md'));
     try {
-      const parsed = matter(readFileSync(absolutePath, 'utf8'));
+      const parsed = matter(readFileSync(absolutePath, 'utf8'), {});
       const frontmatter = frontmatterSchema.parse(parsed.data);
       return {
         id: frontmatter.id,

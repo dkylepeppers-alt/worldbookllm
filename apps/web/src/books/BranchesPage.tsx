@@ -131,6 +131,8 @@ function BranchesView({
     (chapter) =>
       chapter.problems.length > 0 || chapter.choices.some((choice) => !ids.has(choice.to)),
   );
+  // The builds refuse broken choices and an invalid IFID, so Play would only show that error.
+  const playable = broken.length === 0 && branches.invalidIfid === null;
   const playHref = `/books/${encodeURIComponent(slug)}/branches/play`;
 
   return (
@@ -168,7 +170,7 @@ function BranchesView({
             . Add a choice that leads there, or remove the chapter.
           </p>
         ) : null}
-        {broken.length === 0 ? (
+        {playable ? (
           <Link className="button-primary" to={playHref}>
             Play from the start
           </Link>
@@ -214,6 +216,7 @@ function BranchesView({
             chapters={chapters}
             next={chapters[position + 1]}
             branching={branches.branching}
+            playable={playable}
             onSaved={onChanged}
           />
         ))}
@@ -296,6 +299,7 @@ function ChapterChoices({
   chapters,
   next,
   branching,
+  playable,
   onSaved,
 }: {
   slug: string;
@@ -303,6 +307,8 @@ function ChapterChoices({
   chapters: readonly BranchChapter[];
   next: BranchChapter | undefined;
   branching: boolean;
+  /** Whether the builds take the book as it is, so Play can run it. */
+  playable: boolean;
   onSaved: () => void;
 }) {
   const api = useApi();
@@ -355,12 +361,14 @@ function ChapterChoices({
             <Link to={fileHref(slug, chapter.path)}>{chapter.title}</Link>
           </h3>
           <span className="coordinate-label">{chapter.id}</span>
-          <Link
-            className="coordinate-label"
-            to={`/books/${encodeURIComponent(slug)}/branches/play?from=${encodeURIComponent(chapter.id)}`}
-          >
-            Play from here
-          </Link>
+          {playable ? (
+            <Link
+              className="coordinate-label"
+              to={`/books/${encodeURIComponent(slug)}/branches/play?from=${encodeURIComponent(chapter.id)}`}
+            >
+              Play from here
+            </Link>
+          ) : null}
           <ul className="branch-tags" aria-label="Status">
             {chapter.start ? <li className="branch-tag">Start</li> : null}
             {chapter.ending && chapter.reachable ? <li className="branch-tag">Ending</li> : null}

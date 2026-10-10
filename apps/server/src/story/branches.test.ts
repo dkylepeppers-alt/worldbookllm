@@ -227,6 +227,27 @@ describe('setFrontmatterChoices', () => {
     );
   });
 
+  it('keeps a byte order mark and edits the frontmatter after it', () => {
+    const result = setFrontmatterChoices('\uFEFF---\nnumber: 1\n---\nProse.\n', [
+      { text: 'Go', to: 'chapter-02', sets: ['lamp'] },
+    ]);
+    expect(result).toBe(
+      '\uFEFF---\nnumber: 1\nchoices:\n  - text: "Go"\n    to: chapter-02\n    sets: ["lamp"]\n---\nProse.\n',
+    );
+  });
+
+  it('writes choices as story-skills reads them when it rewrites the frontmatter whole', () => {
+    // A quoted key the line edit cannot find, so it falls back to a rewrite.
+    const quoted = '---\n"choices": [{text: A, to: chapter-02}]\nnumber: 1\n---\nBody\n';
+    const result = setFrontmatterChoices(quoted, [
+      { text: 'B', to: 'chapter-03', sets: ['lamp'], requires: ['not lamp'] },
+    ]);
+    expect(result).toBe(
+      '---\nnumber: 1\nchoices:\n  - text: "B"\n    to: chapter-03\n    sets: ["lamp"]\n    requires: ["not lamp"]\n---\nBody\n',
+    );
+    expect(setFrontmatterChoices('---\n"choices": []\n---\nBody\n', [])).toBe('Body\n');
+  });
+
   it('refuses frontmatter it cannot read rather than rewrite it', () => {
     expect(() => setFrontmatterChoices('---\ntitle: [unclosed\n---\nProse\n', [])).toThrow(
       /could not be read/u,

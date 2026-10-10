@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { setFrontmatterField } from './frontmatter-edit.js';
+import { removeSeriesLinks, setFrontmatterField } from './frontmatter-edit.js';
 
 describe('setFrontmatterField', () => {
   it('replaces an existing field and keeps every other line', () => {
@@ -26,5 +26,35 @@ describe('setFrontmatterField', () => {
     expect(setFrontmatterField('---\nseries-title: X\n---\n', 'series', 'tides')).toBe(
       '---\nseries-title: X\nseries: tides\n---\n',
     );
+  });
+
+  it('replaces a value wrapped onto indented lines, and adds after one', () => {
+    const before = '---\ntitle: A long title\n  that wraps\nthemes:\n  - tide\n---\nBody';
+    expect(setFrontmatterField(before, 'title', '"Short"')).toBe(
+      '---\ntitle: "Short"\nthemes:\n  - tide\n---\nBody',
+    );
+    expect(setFrontmatterField(before, 'ifid', 'X')).toBe(
+      '---\ntitle: A long title\n  that wraps\nifid: X\nthemes:\n  - tide\n---\nBody',
+    );
+    expect(setFrontmatterField('---\nthemes:\n- tide\ngenre: x\n---\n', 'themes', 'none')).toBe(
+      '---\nthemes: none\ngenre: x\n---\n',
+    );
+  });
+});
+
+describe('removeSeriesLinks', () => {
+  it('leaves a file with no series metadata exactly as written', () => {
+    const story =
+      '---\ntitle: Harbor # the working title\nstarted: 2026-01-05\nnote: "yes"\n---\nBody\n';
+    expect(removeSeriesLinks(story)).toBe(story);
+    expect(removeSeriesLinks(story, 'other')).toBe(story);
+  });
+
+  it('does not wrap long values when it rewrites', () => {
+    const title =
+      'A title long enough that a YAML dump would wrap it onto a second line if allowed to';
+    const out = removeSeriesLinks(`---\ntitle: ${title}\nseries: tides\n---\nBody\n`);
+    expect(out).toContain(`title: ${title}\n`);
+    expect(out).not.toContain('series');
   });
 });

@@ -31,11 +31,6 @@ interface Turn {
   state: { flag: string; value: boolean }[];
 }
 
-/**
- * Runs ink until the next choice, grouping its lines by the chapter knot they
- * come from. The story is compiled with every visit counted, so the knots a
- * line entered are the ones whose visit count went up.
- */
 function visitCounts(story: InkStory, knots: readonly PlayKnot[]): number[] {
   return knots.map((entry) => {
     try {
@@ -46,9 +41,18 @@ function visitCounts(story: InkStory, knots: readonly PlayKnot[]): number[] {
   });
 }
 
+/**
+ * Runs ink until the next choice, grouping its lines by the chapter knot they
+ * come from. The story is compiled with every visit counted, so the knots a
+ * line entered are the ones whose visit count went up. ink does not count a
+ * knot diverting to itself, so a line carrying a knot's opening `chapter`
+ * tag with no count risen starts the current knot again.
+ */
 function runToChoice(
   story: InkStory,
   knots: readonly PlayKnot[],
+  // The knot the story was in before, which a knot diverting to itself re-enters.
+  current: PlayKnot | null,
   // Counts from before a jump, which counts its knot's visit at once.
   from: number[] = visitCounts(story, knots),
 ): Segment[] {
@@ -58,10 +62,19 @@ function runToChoice(
   while (story.canContinue) {
     const line = story.Continue()?.trim() ?? '';
     const after = counts();
+    let entered = false;
     knots.forEach((entry, index) => {
-      if (after[index]! > before[index]!) segments.push({ knot: entry, lines: [] });
+      if (after[index]! > before[index]!) {
+        segments.push({ knot: entry, lines: [] });
+        entered = true;
+      }
     });
     before = after;
+    if (!entered && story.currentTags?.some((tag) => /^chapter\s*:/u.test(tag)) === true) {
+      const knot =
+        [...segments].reverse().find((segment) => segment.knot !== null)?.knot ?? current;
+      if (knot !== null) segments.push({ knot, lines: [] });
+    }
     if (segments.length === 0) segments.push({ knot: null, lines: [] });
     if (line !== '') segments.at(-1)!.lines.push(line);
   }
@@ -83,7 +96,9 @@ function replay(
   const knot = play.knots.find((entry) => entry.chapterId === from)?.knot;
   const initial = visitCounts(story, play.knots);
   if (knot !== undefined) story.ChoosePathString(knot);
-  let segments = runToChoice(story, play.knots, initial);
+  let segments = runToChoice(story, play.knots, null, initial);
+  // The chapter the reader is in, kept across turns whose lines enter none.
+  let current: PlayKnot | null = null;
   let chosen: string | null = null;
   const turn = (stale: boolean): Turn => ({
     segments,
@@ -97,15 +112,16 @@ function replay(
     if (choice === undefined) return turn(true);
     chosen = choice.text;
     story.ChooseChoiceIndex(index);
-    segments = runToChoice(story, play.knots);
+    current = [...segments].reverse().find((segment) => segment.knot !== null)?.knot ?? current;
+    segments = runToChoice(story, play.knots, current);
   }
   return turn(false);
 }
 
 function parsePath(value: string | null): number[] {
   if (value === null || value === '') return [];
-  const steps = value.split('.').map(Number);
-  return steps.every((step) => Number.isInteger(step) && step >= 0) ? steps : [];
+  const steps = value.split('.');
+  return steps.every((step) => /^\d+$/u.test(step)) ? steps.map(Number) : [];
 }
 
 /**
