@@ -197,7 +197,7 @@ export class StorySkillsInstaller {
   }
 
   private upstream(name: string): UpstreamSkill {
-    const parsed = matter(readFileSync(join(this.sourceDir, name, 'SKILL.md'), 'utf8'));
+    const parsed = matter(readFileSync(join(this.sourceDir, name, 'SKILL.md'), 'utf8'), {});
     const data = parsed.data as { description?: unknown };
     const description =
       typeof data.description === 'string' ? data.description.trim().slice(0, 1024) : name;

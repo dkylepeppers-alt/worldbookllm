@@ -7,6 +7,7 @@ import { Compiler, CompilerOptions, Story } from 'inkjs/full';
 
 import { ConflictError, StoryCommandError } from '../errors.js';
 import { inkKnotName, inkSource, storyFlags, type InkPassage } from './ink/ink-writer.js';
+import { UNREADABLE_FRONTMATTER } from './branches.js';
 import type { StoryCli } from './story-cli.js';
 
 /** Same allowance as `story build` and `story export`. */
@@ -25,9 +26,14 @@ interface TweePassage {
  * Reads the Twee 3 that `story build --format twee` writes (story-skills
  * 0.23.0 tweeSource): StoryTitle, StoryData, then one passage per chapter
  * named by its id, holding the chapter prose exactly as every build
- * assembles it, and a link line per choice.
+ * assembles it, and a link line per link. `linkCount` says how many links
+ * the branch graph gives a passage; only that many last lines are links, so
+ * prose shaped like a link stays prose.
  */
-function parseTwee(source: string): { passages: TweePassage[] } {
+function parseTwee(
+  source: string,
+  linkCount: (id: string, last: boolean) => number,
+): { passages: TweePassage[] } {
   const sections: { name: string; lines: string[] }[] = [];
   for (const line of source.replace(/\r\n?/gu, '\n').split('\n')) {
     if (line.startsWith(':: ')) sections.push({ name: line.slice(3).trim(), lines: [] });
@@ -36,14 +42,20 @@ function parseTwee(source: string): { passages: TweePassage[] } {
   }
   const passages = sections
     .filter((section) => section.name !== 'StoryTitle' && section.name !== 'StoryData')
-    .map((section) => {
+    .map((section, index, all) => {
       const lines = [...section.lines];
       while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop();
       const links: TweePassage['links'] = [];
-      for (let match = LINK_LINE.exec(lines.at(-1) ?? ''); match;) {
+      for (let count = linkCount(section.name, index === all.length - 1); count > 0; count -= 1) {
+        const match = LINK_LINE.exec(lines.at(-1) ?? '');
+        if (match === null) {
+          throw new ConflictError(
+            'play_build_mismatch',
+            `The Twine build of ${section.name} does not have the choices the chapter file lists.`,
+          );
+        }
         links.unshift({ text: match[1]!, to: match[2]! });
         lines.pop();
-        match = LINK_LINE.exec(lines.at(-1) ?? '');
       }
       while (lines.length > 0 && lines.at(-1)!.trim() === '') lines.pop();
       while (lines.length > 0 && lines[0]!.trim() === '') lines.shift();
@@ -125,6 +137,14 @@ export async function buildPlay(
   root: string,
   branches: BookBranches,
 ): Promise<BookPlay> {
+  for (const chapter of branches.chapters) {
+    const unreadable = chapter.problems.find((problem) =>
+      problem.startsWith(UNREADABLE_FRONTMATTER),
+    );
+    if (unreadable !== undefined) {
+      throw new ConflictError('frontmatter_unreadable', `${chapter.title}: ${unreadable}`);
+    }
+  }
   const workDir = mkdtempSync(join(tmpdir(), 'worldbookllm-play-'));
   try {
     const tweeOut = join(workDir, 'story.twee');
@@ -134,8 +154,16 @@ export async function buildPlay(
       build(cli, root, 'ink', inkOut),
     ]);
     const header = readFileSync(inkOut, 'utf8');
-    const { passages } = parseTwee(readFileSync(tweeOut, 'utf8'));
     const chapters = new Map(branches.chapters.map((chapter) => [chapter.id, chapter]));
+    // As story-skills' branchGraph links them: a branching chapter by its
+    // choices to chapters that exist, a linear one to the next chapter.
+    const { passages } = parseTwee(readFileSync(tweeOut, 'utf8'), (id, last) =>
+      branches.branching
+        ? (chapters.get(id)?.choices.filter((choice) => chapters.has(choice.to)).length ?? 0)
+        : last
+          ? 0
+          : 1,
+    );
 
     const inkPassages: InkPassage[] = passages.map((passage) => {
       const chapter = chapters.get(passage.id);

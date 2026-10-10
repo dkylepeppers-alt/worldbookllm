@@ -406,6 +406,22 @@ describe('Branches tab', () => {
     expect(screen.queryByRole('link', { name: 'Play from the start' })).toBeNull();
   });
 
+  it('withholds Play on the choices screen while the IFID is invalid', async () => {
+    renderAt('/books/gull-rock/branches/edit', {
+      getBranches: () =>
+        Promise.resolve({
+          branching: true,
+          ifid: null,
+          invalidIfid: 'not-valid',
+          flags: [],
+          chapters: [chapter('chapter-01')],
+        }),
+    });
+    expect(await screen.findByText(/which is not a valid IFID/u)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Play from the start' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Play from here' })).toBeNull();
+  });
+
   it('copies a linear book as an interactive edition and opens it', async () => {
     const createInteractiveEdition = vi.fn(() =>
       Promise.resolve({
@@ -630,6 +646,50 @@ describe('Play', () => {
     renderAt('/books/gull-rock/branches/play?path=0.3', { getPlay: () => Promise.resolve(play()) });
     expect(await screen.findByText(/The story has changed since these choices/u)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Start over' })).toBeTruthy();
+  });
+
+  it('heads the chapter again when a choice leads back to it', async () => {
+    // As worldbookllm's ink writer writes it: each knot opens with a chapter tag.
+    const looping = [
+      '-> chapter_01',
+      '',
+      '=== chapter_01 ===',
+      '# chapter: Harbor Wall',
+      'Waves break on the wall.',
+      '',
+      '+ [Wait] -> chapter_01',
+      '+ [Leave] -> chapter_02',
+      '',
+      '=== chapter_02 ===',
+      '# chapter: Down to the Water',
+      'The steps are slick.',
+      '',
+      '-> END',
+      '',
+    ].join('\n');
+    const story = new Compiler(looping, new CompilerOptions(null, [], true)).Compile().ToJson()!;
+    renderAt('/books/gull-rock/branches/play?path=0.0', {
+      getPlay: () =>
+        Promise.resolve({
+          ...play(),
+          source: looping,
+          story,
+          knots: play().knots.slice(0, 2),
+          flags: [],
+        }),
+    });
+    const heading = await screen.findByRole('heading', { name: 'Harbor Wall' });
+    expect(heading.closest('section')!.textContent).toContain('Waves break on the wall.');
+    expect(screen.getByText('You chose: Wait')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Edit Harbor Wall' })).toBeTruthy();
+  });
+
+  it('starts over on a path with an empty step', async () => {
+    renderAt('/books/gull-rock/branches/play?path=0..0', {
+      getPlay: () => Promise.resolve(play()),
+    });
+    expect(await screen.findByRole('heading', { name: 'Harbor Wall' })).toBeTruthy();
+    expect(screen.queryByText(/You chose/u)).toBeNull();
   });
 
   it('sends a story the build refuses back to the Branches screen', async () => {

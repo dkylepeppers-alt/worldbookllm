@@ -74,10 +74,32 @@ const FLAG_RESERVED = new Set([
   'INCLUDE',
   'EXTERNAL',
   'TODO',
+  // ink's built-in functions, which a variable cannot be named either.
+  'RANDOM',
+  'SEED_RANDOM',
+  'TURNS',
+  'TURNS_SINCE',
+  'CHOICE_COUNT',
+  'READ_COUNT',
+  'INT',
+  'FLOAT',
+  'FLOOR',
+  'CEILING',
+  'POW',
+  'MIN',
+  'MAX',
+  'LIST_COUNT',
+  'LIST_VALUE',
+  'LIST_ALL',
+  'LIST_MIN',
+  'LIST_MAX',
+  'LIST_RANDOM',
+  'LIST_INVERT',
+  'LIST_RANGE',
 ]);
 
 /** ASCII ink identifiers; ink accepts some other scripts, but flags stay portable. */
-const FLAG_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+const FLAG_NAME = /^(?:[A-Za-z]|_+[A-Za-z0-9])[A-Za-z0-9_]*$/u;
 
 /**
  * A chapter id's knot name, as story-skills names it: `-` becomes `_`, and

@@ -8,6 +8,7 @@ import { CHOICE_TEXT_UNSAFE } from '@worldbookllm/shared';
 import matter from 'gray-matter';
 
 import { ConflictError } from '../errors.js';
+import { frontmatterYaml } from './frontmatter-edit.js';
 import { flagProblem, inkKnotName, parseFlag } from './ink/ink-writer.js';
 
 /** A chapter file as the branch graph reads it. */
@@ -17,7 +18,16 @@ export interface ChapterSource {
   path: string;
   hash: string;
   frontmatter: Record<string, unknown> | null;
+  /** Why the frontmatter YAML does not parse, when it does not. */
+  unreadable?: string;
 }
+
+/**
+ * Starts the problem for a chapter whose frontmatter YAML does not parse.
+ * story-skills reads YAML its own way and may still build its choices, so
+ * Play refuses such a book rather than guess at them.
+ */
+export const UNREADABLE_FRONTMATTER = 'The frontmatter is not valid YAML';
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
@@ -144,6 +154,11 @@ export function branchGraph(sources: readonly ChapterSource[], ifid: unknown): B
   const ids = new Set(ordered.map((source) => source.id));
   const parsed = ordered.map((source) => {
     const read = readChoices(source.frontmatter);
+    if (source.unreadable !== undefined) {
+      read.problems.push(
+        `${UNREADABLE_FRONTMATTER}, so its choices cannot be read (${source.unreadable}). Put quotes around a value that holds a colon.`,
+      );
+    }
     read.choices.forEach((choice) => {
       for (const key of ['sets', 'requires'] as const) {
         const valid = choice[key].filter((entry) => {
@@ -252,9 +267,11 @@ export function setFrontmatterChoices(
       'The chapter frontmatter could not be read; fix its YAML before editing choices.',
     );
   }
-  const match = /^---\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/u.exec(markdown);
+  // A byte order mark from a Windows editor stays where it was, as story-skills reads it.
+  const bom = markdown.startsWith('\uFEFF') ? '\uFEFF' : '';
+  const match = /^\uFEFF?---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/u.exec(markdown);
   if (match === null && choices.length === 0) return markdown;
-  const body = match === null ? markdown : markdown.slice(match[0].length);
+  const body = match === null ? markdown.slice(bom.length) : markdown.slice(match[0].length);
   const lines = match?.[1] === undefined ? [] : match[1].split(/\r?\n/u);
 
   const at = lines.findIndex((line) => /^choices[ \t]*:/u.test(line));
@@ -267,7 +284,7 @@ export function setFrontmatterChoices(
   const block = choices.length === 0 ? [] : choicesYaml(choices);
   const edited =
     at === -1 ? [...lines, ...block] : [...lines.slice(0, at), ...block, ...lines.slice(end)];
-  const result = `---\n${edited.join('\n')}\n---\n${body}`;
+  const result = `${bom}---\n${edited.join('\n')}\n---\n${body}`;
 
   const intended = { ...original };
   delete intended.choices;
@@ -281,14 +298,19 @@ export function setFrontmatterChoices(
   }
   const reparsed = parsedData(result);
   if (reparsed !== null && sameData(reparsed, intended)) return result;
-  return matter.stringify(body, intended);
+  // Rewrite the rest of the frontmatter whole, but keep choices in the shape
+  // story-skills reads: its parser refuses a block list inside a list item.
+  const rest = { ...intended };
+  delete rest.choices;
+  const yaml = [frontmatterYaml(rest), ...block].filter((part) => part !== '');
+  return yaml.length === 0 ? `${bom}${body}` : `${bom}---\n${yaml.join('\n')}\n---\n${body}`;
 }
 
 /** The frontmatter as data ({} without any), or null when its YAML does not parse. */
 function parsedData(markdown: string): Record<string, unknown> | null {
   try {
-    // A copy, so gray-matter's cache never shares objects with the caller.
-    return structuredClone(matter(markdown).data as Record<string, unknown>);
+    // Options skip gray-matter's cache, so a broken file fails every time.
+    return matter(markdown, {}).data as Record<string, unknown>;
   } catch {
     return null;
   }

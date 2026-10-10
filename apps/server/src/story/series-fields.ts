@@ -181,8 +181,8 @@ function mergeBody(kind: SeriesEntityKind, source: string, target: string): stri
 
 export function mergeIdentity(kind: SeriesEntityKind, source: string, target: string): string {
   // Unlike read-only drift, writes must refuse malformed YAML rather than replace it.
-  const canon = matter(source);
-  const local = matter(target);
+  const canon = matter(source, {});
+  const local = matter(target, {});
   const data: Record<string, unknown> = { ...local.data };
   for (const field of SERIES_FIELDS[kind].identity) {
     if (Object.hasOwn(canon.data, field)) data[field] = canon.data[field];
@@ -193,7 +193,7 @@ export function mergeIdentity(kind: SeriesEntityKind, source: string, target: st
 
 /** New copies have fresh safe local defaults, never source-book references or state. */
 export function carryIdentity(kind: SeriesEntityKind, source: string, id: string): string {
-  const canon = matter(source);
+  const canon = matter(source, {});
   // Entity ids are filenames in story-skills; frontmatter never carries one.
   const defaults: Record<string, unknown> = {};
   if (kind === 'character') Object.assign(defaults, { role: 'supporting', status: 'alive' });

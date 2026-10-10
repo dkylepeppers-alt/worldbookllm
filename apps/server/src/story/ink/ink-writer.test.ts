@@ -321,6 +321,12 @@ describe('ink writer', () => {
     expect(flagProblem('not', knots)).toMatch(/reserves/u);
     expect(flagProblem('1st', knots)).toMatch(/not a flag name/u);
     expect(flagProblem('has space', knots)).toMatch(/not a flag name/u);
+    expect(flagProblem('_', knots)).toMatch(/not a flag name/u);
+    expect(flagProblem('_seen', knots)).toBeNull();
+    // ink's built-in functions cannot name a variable.
+    for (const name of ['RANDOM', 'TURNS', 'READ_COUNT', 'MIN', 'LIST_COUNT']) {
+      expect(flagProblem(name, knots), name).toMatch(/reserves/u);
+    }
   });
 
   it('prints any prose and choice text as written', () => {

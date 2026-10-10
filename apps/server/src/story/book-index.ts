@@ -26,16 +26,21 @@ const EXCERPT_MAX = 1000;
 export function parseFrontmatter(content: string): {
   frontmatter: Record<string, unknown> | null;
   body: string;
+  /** The YAML error's first line, when the frontmatter does not parse. */
+  error?: string;
 } {
   try {
-    const parsed = matter(content);
+    // Options skip gray-matter's cache, which keeps a file before parsing it, so
+    // a second read of the same broken YAML would return {} instead of failing.
+    const parsed = matter(content, {});
     const data = parsed.data as Record<string, unknown>;
     return {
       frontmatter: Object.keys(data).length === 0 ? null : data,
       body: parsed.content,
     };
-  } catch {
-    return { frontmatter: null, body: content };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { frontmatter: null, body: content, error: message.split('\n')[0]!.trim() };
   }
 }
 

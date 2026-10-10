@@ -256,7 +256,7 @@ export class NotebookMigrationService {
     if (fromRoot.startsWith(`..${sep}`) || fromRoot === '..') {
       throw new UnsafePathError(row.file_path);
     }
-    const parsed = matter(readFileSync(absolute, 'utf8'));
+    const parsed = matter(readFileSync(absolute, 'utf8'), {});
     const data = parsed.data as Record<string, unknown>;
     const extra = Object.fromEntries(
       Object.entries(data).filter(([key]) => !MANAGED_KEYS.has(key)),
