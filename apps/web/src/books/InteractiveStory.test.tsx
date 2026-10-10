@@ -6,7 +6,7 @@ import type {
   BookTree,
   BranchChapter,
 } from '@worldbookllm/shared';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { Compiler, CompilerOptions } from 'inkjs/full';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -429,7 +429,9 @@ describe('Branches tab', () => {
     expect(createInteractiveEdition).toHaveBeenCalledWith('gull-rock', {
       title: 'Gull Rock: Choices',
     });
-    expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock-ie/branches');
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock-ie/branches'),
+    );
   });
 });
 
