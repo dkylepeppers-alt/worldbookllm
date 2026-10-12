@@ -115,6 +115,7 @@ describe('agent turns', () => {
           }),
         ),
       () => sse(toolCall('play', 'ink_play', { choices: [0], set: { trust: 2 } })),
+      () => sse(toolCall('look', 'ink_play', {})),
       () => sse(toolCall('paths', 'ink_paths', {})),
       () => sse(text('Checked.')),
     ]);
@@ -163,6 +164,10 @@ describe('agent turns', () => {
       '## Harbor Wall\nMara climbs.\n> Wait\nGulls wheel. Venn waves.\n## The Ledge',
     );
     expect(calls.get('play')?.result).toContain('Variables: trust = 2');
+    expect(calls.get('play')?.result).toContain('The story ends here, in chapter_02.');
+    expect(calls.get('look')?.result).toContain(
+      'Stopped at chapter_01. Choices now: 0: Wait; 1: Go',
+    );
     expect(calls.get('paths')?.result).toMatch(
       /^Played every path: \d+ distinct states\.\n2 paths reach an ending, in 1 to 1 choices\.$/u,
     );

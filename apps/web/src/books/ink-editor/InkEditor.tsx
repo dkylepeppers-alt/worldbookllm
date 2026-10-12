@@ -72,6 +72,36 @@ const theme = EditorView.theme({
     backgroundColor: 'var(--accent-soft)',
     color: 'var(--text)',
   },
+  // CodeMirror's lint theme hard-codes its colours; these follow the tokens.
+  '.cm-lintRange-error': {
+    backgroundImage: 'none',
+    textDecoration: 'underline wavy var(--danger)',
+    textUnderlineOffset: '3px',
+  },
+  '.cm-lintRange-warning, .cm-lintRange-info, .cm-lintRange-hint': {
+    backgroundImage: 'none',
+    textDecoration: 'underline wavy var(--border-strong)',
+    textUnderlineOffset: '3px',
+  },
+  '.cm-lintRange-active': { backgroundColor: 'var(--accent-soft)' },
+  '.cm-lintPoint:after': { borderBottomColor: 'var(--danger)' },
+  '.cm-lintPoint-warning:after, .cm-lintPoint-info:after, .cm-lintPoint-hint:after': {
+    borderBottomColor: 'var(--border-strong)',
+  },
+  '.cm-lint-marker-error, .cm-lint-marker-warning, .cm-lint-marker-info': {
+    content: 'none',
+    width: '0.6rem',
+    height: '0.6rem',
+    margin: '0.2rem',
+    borderRadius: '50%',
+  },
+  '.cm-lint-marker-error': { backgroundColor: 'var(--danger)' },
+  '.cm-lint-marker-warning, .cm-lint-marker-info': { backgroundColor: 'var(--border-strong)' },
+  '.cm-diagnostic': { padding: '0.25rem 0.6rem', color: 'var(--text)' },
+  '.cm-diagnostic-error': { borderLeft: '3px solid var(--danger)' },
+  '.cm-diagnostic-warning, .cm-diagnostic-info, .cm-diagnostic-hint': {
+    borderLeft: '3px solid var(--border-strong)',
+  },
 });
 
 /** Problems as CodeMirror diagnostics on their lines. */

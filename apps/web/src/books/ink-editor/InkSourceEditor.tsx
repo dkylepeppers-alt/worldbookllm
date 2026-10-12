@@ -1,6 +1,5 @@
 import type { InteractiveStory } from '@worldbookllm/shared';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 
 import { useApi } from '../../api/useApi.js';
 import { LoadingState } from '../../components/RequestState.js';
@@ -133,16 +132,6 @@ export function InkSourceEditor({ slug, path, kind, knot, value, onChange }: Ink
             ))}
           </ul>
         )}
-        {knot !== null && story?.compiled === true ? (
-          <p>
-            <Link
-              to={`/books/${encodeURIComponent(slug)}/branches/play?from=${encodeURIComponent(knot)}`}
-            >
-              Play from this chapter
-            </Link>{' '}
-            <span className="coordinate-label">(as last saved)</span>
-          </p>
-        ) : null}
       </section>
     </div>
   );

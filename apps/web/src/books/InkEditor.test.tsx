@@ -127,13 +127,13 @@ describe('the ink editor', () => {
     expect(editor.textContent).toContain('The lamp is *dark*.');
   });
 
-  it('offers Play from this chapter once the story compiles', async () => {
+  it('offers Play from this chapter when reading it, as saved, not while editing', async () => {
     renderFile({ checkInk: () => Promise.resolve(checked({ compiled: true, diagnostics: [] })) });
+    const link = await screen.findByRole('link', { name: 'Play from this chapter' });
+    expect(link.getAttribute('href')).toBe('/books/gull-rock/branches/play?from=chapter_01');
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     expect(await screen.findByText('This file compiles, and nothing stands out.')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Play from this chapter' }).getAttribute('href')).toBe(
-      '/books/gull-rock/branches/play?from=chapter_01',
-    );
+    expect(screen.queryByRole('link', { name: 'Play from this chapter' })).toBeNull();
   });
 });

@@ -34,7 +34,18 @@ function bodyOf(content: string): string {
  * source, since ink markup read as Markdown would mislead. Play shows it as
  * a reader sees it.
  */
-function InkFileView({ content, kind }: { content: string; kind: 'chapter' | 'ink' }) {
+function InkFileView({
+  slug,
+  content,
+  kind,
+  knot,
+}: {
+  slug: string;
+  content: string;
+  kind: 'chapter' | 'ink';
+  /** The chapter's knot, to play from it; null for an `ink/` file. */
+  knot: string | null;
+}) {
   const lines = content.split('\n');
   const start = inkStartLine(content, kind) - 1;
   const planning = bodyOf(lines.slice(0, start).join('\n')).trim();
@@ -48,6 +59,15 @@ function InkFileView({ content, kind }: { content: string; kind: 'chapter' | 'in
       <pre className="build-output ink-read" aria-label="Ink">
         {lines.slice(start).join('\n').trim()}
       </pre>
+      {knot === null ? null : (
+        <p>
+          <Link
+            to={`/books/${encodeURIComponent(slug)}/branches/play?from=${encodeURIComponent(knot)}`}
+          >
+            Play from this chapter
+          </Link>
+        </p>
+      )}
     </>
   );
 }
@@ -233,7 +253,14 @@ function FileView({ file, onChanged }: FileViewProps) {
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{bodyOf(file.content)}</ReactMarkdown>
             </div>
           ) : (
-            <InkFileView content={file.content} kind={inkKind} />
+            <InkFileView
+              slug={slug}
+              content={file.content}
+              kind={inkKind}
+              knot={
+                inkKind === 'chapter' && file.entityId !== null ? inkKnotName(file.entityId) : null
+              }
+            />
           )}
         </>
       ) : null}
