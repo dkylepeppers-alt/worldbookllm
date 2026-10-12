@@ -277,6 +277,18 @@ export interface PreparedAgentTurn {
  * always be undone. In review mode (ADR 0016) the turn works on a staged
  * copy instead, and its changes become a changeset the writer reviews.
  */
+/** What the agent needs to write an interactive book's ink (ADR 0030). */
+const INK_BOOK_RULES = [
+  '## Interactive book: written in ink',
+  'This book is interactive fiction in inkle\'s ink language ("Writing with ink" applies as written). Chapters do not use frontmatter choices.',
+  '- Each chapter file is one knot. Its planning (outline, notes) is Markdown above `## Chapter Text`; everything under that heading is ink. Do not add a `=== knot ===` line: worldbookllm adds it, with the chapter title as a `# chapter:` tag.',
+  "- A chapter's knot name is its id with `-` as `_` (chapter-03 is chapter_03; an id starting with a digit gets a leading `_`). Divert with `-> chapter_03`, or `-> chapter_03.stitch` for a stitch (`= stitch` inside the chapter).",
+  '- Global VAR, CONST, and LIST declarations, functions, and shared knots go in Markdown files under ink/ (ink/variables.md); their bodies are ink.',
+  '- Every path must end: a chapter needs choices, a divert, or `-> END`.',
+  '- Each ink line is a paragraph. Inline *emphasis* works. Write a scene break as a line `# break`. Escape a Markdown heading or list marker with a backslash (`\\# Title`), and `//` in prose (a web address), which ink reads as a comment.',
+  '- Do not run story build: the Builds screen exports the ink, compiled JSON, and a web player.',
+];
+
 export class AgentService {
   private readonly active = new Set<string>();
   /** Stops the running turn per chat, for a writer watching from another tab or device. */
@@ -913,6 +925,7 @@ export class AgentService {
       `Title: ${summary.title}`,
       `Genre: ${summary.genre ?? 'unset'} · Status: ${summary.status ?? 'unset'}`,
       `Contents: ${counts || 'no entities yet'}`,
+      ...(summary.interactive === true ? ['', ...INK_BOOK_RULES] : []),
       ...(summary.seriesId === null
         ? []
         : [

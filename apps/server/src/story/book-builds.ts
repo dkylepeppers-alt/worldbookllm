@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { BookBuildFile } from '@worldbookllm/shared';
@@ -14,6 +14,7 @@ const CONTENT_TYPES: ReadonlyArray<readonly [RegExp, string]> = [
   [/\.docx$/u, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   [/\.html?$/u, 'text/html; charset=utf-8'],
   [/\.md$/u, 'text/markdown; charset=utf-8'],
+  [/\.json$/u, 'application/json'],
   [/\.(fountain|twee|ink|txt)$/u, 'text/plain; charset=utf-8'],
 ];
 
@@ -40,9 +41,19 @@ export function readBuildFile(root: string, name: string): Buffer {
   return readFileSync(buildFilePath(root, name));
 }
 
-/** Replaces an existing build file's content, as a build that rewrites its output would. */
+/**
+ * Writes a build file, creating `dist/` on a book's first build. A file
+ * already there is replaced only when it is a plain file, never a symlink.
+ */
 export function writeBuildFile(root: string, name: string, content: string): void {
-  writeFileSync(buildFilePath(root, name), content);
+  mkdirSync(confine(root, DIST), { recursive: true });
+  const path = confine(root, `${DIST}/${name}`);
+  try {
+    if (!lstatSync(path).isFile()) throw new NotFoundError(`Build file ${name} was not found`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  writeFileSync(path, content);
 }
 
 export function removeBuildFile(root: string, name: string): void {

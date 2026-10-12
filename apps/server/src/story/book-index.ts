@@ -5,6 +5,8 @@ import type { BookFile, BookFileKind, BookSearchResult } from '@worldbookllm/sha
 
 import type { BookFileStore } from './book-files.js';
 import { sha256 } from './book-files.js';
+import { inkSection, isInkFile, withoutFrontmatter } from './interactive/format.js';
+import { projectInk } from './interactive/projection.js';
 import { classifyBookPath } from './book-paths.js';
 import { toFtsMatchQuery } from './fts-query.js';
 
@@ -109,6 +111,10 @@ export class BookIndex {
       'INSERT INTO book_search (title, content, book, path) VALUES (?, ?, ?, ?)',
     );
 
+    // An interactive book's chapters and `ink/` files are searched as prose (ADR 0030).
+    const story = this.files.readBytes(book, 'story.md');
+    const interactive =
+      story !== null && parseFrontmatter(story.toString('utf8')).frontmatter?.interactive === true;
     let changed = false;
     const seen = new Set<string>();
     const pending: Array<() => void> = [];
@@ -145,7 +151,16 @@ export class BookIndex {
         } satisfies BookFileRow);
         deleteSearch.run(book, stat.path);
         // Registries are generated tables of other files; searching them only duplicates hits.
-        if (kind !== 'registry') insertSearch.run(title, body, book, stat.path);
+        if (kind !== 'registry') {
+          const ink = interactive && (kind === 'chapter' || isInkFile(stat.path));
+          let text = body;
+          if (ink) {
+            // A chapter's planning is Markdown, searched as written; its ink, as prose.
+            const section = inkSection(content, kind === 'chapter' ? 'chapter' : 'ink');
+            text = `${withoutFrontmatter(section.head)}\n\n${projectInk(section.ink)}`;
+          }
+          insertSearch.run(title, text, book, stat.path);
+        }
       });
     }
     for (const path of rows.keys()) {

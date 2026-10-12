@@ -11,7 +11,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type {
-  BookBranches,
   BookBuildFile,
   BookBuildResult,
   BookCheckResult,
@@ -20,8 +19,11 @@ import type {
   BookSearchResult,
   BookSummary,
   BookTree,
+  ChapterEndingDetail,
   Checkpoint,
   CheckpointDetail,
+  InkConversionPreview,
+  InteractiveStory,
   StoryCommandOutcome,
 } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
@@ -596,66 +598,6 @@ describe('builds', () => {
     expect(result.output).toContain('empty-chapter');
   });
 
-  it('builds a branching book as ink from chapter choices, and refuses a choice to nowhere', async () => {
-    const book = await createBook();
-    for (const name of ['Harbor Wall', 'Down to the Water', 'The Archive']) {
-      expect((await addEntity(book.slug, 'chapter', name)).statusCode).toBe(201);
-    }
-    const chapters = join(dataDir, 'projects', book.slug, 'chapters');
-    const write = (file: string, frontmatter: string, prose: string) => {
-      const path = join(chapters, file);
-      writeFileSync(
-        path,
-        `${readFileSync(path, 'utf8').replace(/^---\n/u, `---\n${frontmatter}`)}\n${prose}\n`,
-      );
-    };
-    write(
-      'chapter-01.md',
-      'choices:\n  - text: Follow the light\n    to: chapter-02\n  - text: Fetch Venn\n    to: chapter-99\n',
-      'Mara climbs the wall. {A second light} burns on the water.',
-    );
-    write('chapter-02.md', '', 'The steps are slick.');
-    write('chapter-03.md', '', 'Venn is still awake.');
-
-    const refused = await app.inject({
-      method: 'POST',
-      url: `/api/books/${book.slug}/builds`,
-      payload: { format: 'ink' },
-    });
-    expect(refused.statusCode).toBe(409);
-    expect(refused.json()).toMatchObject({ error: 'story_unusable_project' });
-    expect(refused.json<{ message: string }>().message).toContain(
-      'choices[1] references missing chapter chapter-99',
-    );
-
-    const first = join(chapters, 'chapter-01.md');
-    writeFileSync(first, readFileSync(first, 'utf8').replace('chapter-99', 'chapter-03'));
-    const built = await app.inject({
-      method: 'POST',
-      url: `/api/books/${book.slug}/builds`,
-      payload: { format: 'ink' },
-    });
-    expect(built.statusCode).toBe(201);
-    const result = built.json<BookBuildResult>();
-    expect(result.file.name).toBe('the-salt-road.ink');
-    // No ifid in story.md yet: the build derives one and says how to pin it.
-    expect(result.output).toContain('derived-ifid');
-
-    const download = await app.inject({
-      method: 'GET',
-      url: `/api/books/${book.slug}/builds/the-salt-road.ink`,
-    });
-    expect(download.headers['content-type']).toBe('text/plain; charset=utf-8');
-    expect(download.body).toContain('# title: The Salt Road');
-    expect(download.body).toContain('-> chapter_01');
-    expect(download.body).toContain('=== chapter_01 ===');
-    expect(download.body).toContain('+ [Follow the light] -> chapter_02');
-    expect(download.body).toContain('+ [Fetch Venn] -> chapter_03');
-    // Prose is escaped so ink prints it rather than reading it as logic.
-    expect(download.body).toContain('\\{A second light\\}');
-    expect(download.body).toMatch(/=== chapter_03 ===\n[\s\S]*?-> END/u);
-  }, 30_000);
-
   it('reports a book with nothing to build as an unusable project', async () => {
     const book = await createBook('Empty');
     const response = await app.inject({
@@ -686,202 +628,289 @@ describe('interactive books', () => {
     return book.slug;
   }
 
-  async function branches(slug: string): Promise<BookBranches> {
-    const response = await app.inject({ method: 'GET', url: `/api/books/${slug}/branches` });
-    expect(response.statusCode).toBe(200);
-    return response.json<BookBranches>();
+  const chapterPath = (slug: string, number: number) =>
+    join(dataDir, 'projects', slug, `chapters/chapter-0${number}.md`);
+
+  /** Replaces a chapter's ink: everything under its `## Chapter Text`. */
+  function writeInk(slug: string, number: number, ink: string): void {
+    const path = chapterPath(slug, number);
+    const text = readFileSync(path, 'utf8');
+    const at = text.indexOf('## Chapter Text');
+    writeFileSync(path, `${text.slice(0, at)}## Chapter Text\n\n${ink}\n`);
   }
 
-  it('edits choices as checkpointed frontmatter, then plays the story they make', async () => {
+  async function convert(slug: string): Promise<BookSummary> {
+    const response = await app.inject({ method: 'POST', url: `/api/books/${slug}/ink-conversion` });
+    expect(response.statusCode).toBe(200);
+    return response.json<BookSummary>();
+  }
+
+  async function story(slug: string): Promise<InteractiveStory> {
+    const response = await app.inject({ method: 'GET', url: `/api/books/${slug}/story` });
+    expect(response.statusCode).toBe(200);
+    return response.json<InteractiveStory>();
+  }
+
+  async function play(slug: string): Promise<BookPlay> {
+    const response = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
+    expect(response.statusCode).toBe(200);
+    return response.json<BookPlay>();
+  }
+
+  const summary = async (slug: string) =>
+    (await app.inject({ method: 'GET', url: `/api/books/${slug}` })).json<BookSummary>();
+
+  it('converts a book to ink chapters after a preview, plays it, and can undo it', async () => {
     const slug = await threeChapters();
-    const linear = await branches(slug);
-    expect(linear).toMatchObject({ branching: false, ifid: null });
-    expect(linear.chapters.map((chapter) => chapter.id)).toEqual([
-      'chapter-01',
-      'chapter-02',
-      'chapter-03',
+    expect(await summary(slug)).toMatchObject({ interactive: false, needsInkConversion: false });
+    const refused = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
+    expect(refused.json()).toMatchObject({ error: 'not_interactive' });
+
+    const preview = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/ink-conversion` })
+    ).json<InkConversionPreview>();
+    expect(preview.files.map((file) => file.path)).toEqual([
+      'chapters/chapter-01.md',
+      'chapters/chapter-02.md',
+      'chapters/chapter-03.md',
+      'ink/variables.md',
+      'story.md',
     ]);
-    expect(linear.chapters.every((chapter) => chapter.reachable && !chapter.ending)).toBe(true);
+    // Nothing is written until the conversion is applied.
+    expect(readFileSync(chapterPath(slug, 1), 'utf8')).not.toContain('-> chapter_02');
 
-    const first = linear.chapters[0]!;
-    const saved = await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: {
-        expectedHash: first.hash,
-        choices: [{ text: 'Follow the light', to: 'chapter-02' }],
-      },
-    });
-    expect(saved.statusCode).toBe(200);
-    const branching = saved.json<BookBranches>();
-    expect(branching.branching).toBe(true);
-    expect(
-      branching.chapters.map((chapter) => [chapter.id, chapter.ending, chapter.reachable]),
-    ).toEqual([
-      ['chapter-01', false, true],
-      ['chapter-02', true, true],
-      ['chapter-03', true, false],
+    expect(await convert(slug)).toMatchObject({ interactive: true, needsInkConversion: false });
+    const first = readFileSync(chapterPath(slug, 1), 'utf8');
+    // The outline stays Markdown; the ink is the chapter text.
+    expect(first).toContain('## Outline\n');
+    expect(first).toMatch(/## Chapter Text\n\nMara climbs the wall\.\n\n-> chapter_02\n$/u);
+
+    const read = await story(slug);
+    expect(read).toMatchObject({ compiled: true, start: 'chapter_01' });
+    expect(read.chapters.map((chapter) => chapter.knot)).toEqual([
+      'chapter_01',
+      'chapter_02',
+      'chapter_03',
     ]);
-    const file = readFileSync(join(dataDir, 'projects', slug, first.path), 'utf8');
-    expect(file).toContain('choices:\n  - text: "Follow the light"\n    to: chapter-02\n');
-    expect(file).toContain('Mara climbs the wall.');
-    const checkpoints = await app.inject({ method: 'GET', url: `/api/books/${slug}/checkpoints` });
-    expect(checkpoints.json<Checkpoint[]>()[0]?.label).toBe(`Edit ${first.path}`);
-
-    // The hash the choices were read with is stale now.
-    const stale = await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: { expectedHash: first.hash, choices: [] },
-    });
-    expect(stale.statusCode).toBe(409);
-    expect(stale.json()).toMatchObject({ error: 'file_changed' });
-
-    const unsafe = await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: { expectedHash: first.hash, choices: [{ text: 'a -> b', to: 'chapter-02' }] },
-    });
-    expect(unsafe.statusCode).toBe(400);
-
-    const play = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
-    expect(play.statusCode).toBe(200);
-    const story = play.json<BookPlay>();
-    expect(story).toMatchObject({ title: 'The Salt Road' });
-    expect(story.source).toContain('+ [Follow the light] -> chapter_02');
-    expect(story.knots).toEqual([
-      { knot: 'chapter_01', chapterId: 'chapter-01', title: 'Harbor Wall' },
-      { knot: 'chapter_02', chapterId: 'chapter-02', title: 'Down to the Water' },
-      { knot: 'chapter_03', chapterId: 'chapter-03', title: 'The Archive' },
-    ]);
-    // The compiled story runs in inkle's runtime: the first chapter, then its choice.
-    const ink = new Story(story.story);
-    expect(ink.ContinueMaximally()).toContain('Mara climbs the wall.');
-    expect(ink.currentChoices.map((choice: { text: string }) => choice.text)).toEqual([
-      'Follow the light',
-    ]);
-    ink.ChooseChoiceIndex(0);
-    expect(ink.ContinueMaximally()).toContain('The steps are slick.');
-    expect(ink.currentChoices).toEqual([]);
-    expect(story.warnings.some((line) => line.includes('chapter-03'))).toBe(true);
-    expect(story.warnings.some((line) => line.includes('derived-ifid'))).toBe(false);
-    // A play-through leaves nothing behind in the book.
-    expect(existsSync(join(dataDir, 'projects', slug, 'dist'))).toBe(false);
-  }, 30_000);
-
-  it('saves choice state, plays it as ink flags, and refuses state ink cannot use', async () => {
-    const slug = await threeChapters();
-    const first = (await branches(slug)).chapters[0]!;
-    const bad = await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: {
-        expectedHash: first.hash,
-        choices: [{ text: 'Go', to: 'chapter-02', sets: ['chapter_02'] }],
-      },
-    });
-    expect(bad.statusCode).toBe(400);
-    expect(bad.json<{ message: string }>().message).toContain(
-      "chapter_02 is a chapter's knot name",
+    expect(read.diagnostics.filter((entry) => entry.severity === 'error')).toEqual([]);
+    const ink = new Story((await play(slug)).story);
+    expect(ink.ContinueMaximally().trim()).toBe(
+      'Mara climbs the wall.\nThe steps are slick.\nVenn is still awake.',
     );
 
-    const saved = await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: {
-        expectedHash: first.hash,
-        choices: [
-          {
-            text: 'Light the lamp',
-            to: 'chapter-01',
-            sets: ['lamp_lit'],
-            requires: ['not lamp_lit'],
-          },
-          { text: 'Go down', to: 'chapter-02', requires: ['lamp_lit'] },
-          { text: 'Read the archive', to: 'chapter-03', requires: ['not chapter-03'] },
-        ],
-      },
+    const checkpoints = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/checkpoints` })
+    ).json<Checkpoint[]>();
+    const conversion = checkpoints.find((entry) => entry.label === 'Convert to ink chapters')!;
+    const undone = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/checkpoints/${conversion.id}/undo`,
     });
-    expect(saved.statusCode).toBe(200);
-    expect(saved.json<BookBranches>().flags).toEqual(['lamp_lit']);
+    expect(undone.statusCode).toBe(200);
+    expect(await summary(slug)).toMatchObject({ interactive: false });
+    expect(readFileSync(chapterPath(slug, 1), 'utf8')).not.toContain('-> chapter_02');
+  }, 30_000);
 
-    const story = (
-      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
-    ).json<BookPlay>();
-    expect(story.flags).toEqual(['lamp_lit']);
-    expect(story.source).toContain('VAR lamp_lit = false');
-    expect(story.source).toContain('# chapter: Harbor Wall');
-    const ink = new Story(story.story);
-    ink.ContinueMaximally();
+  it('converts frontmatter choices from the earlier format into ink choices', async () => {
+    const slug = await threeChapters();
+    const path = chapterPath(slug, 1);
+    writeFileSync(
+      path,
+      readFileSync(path, 'utf8').replace(
+        /^---\n/u,
+        '---\nchoices:\n  - text: Light the lamp\n    to: chapter-02\n    sets: ["lamp_lit"]\n  - text: Read the archive\n    to: chapter-03\n',
+      ),
+    );
+    expect(await summary(slug)).toMatchObject({ interactive: false, needsInkConversion: true });
+    await convert(slug);
+    const ink = new Story((await play(slug)).story);
+    expect(ink.ContinueMaximally().trim()).toBe('Mara climbs the wall.');
     expect(ink.currentChoices.map((choice: { text: string }) => choice.text)).toEqual([
       'Light the lamp',
       'Read the archive',
     ]);
     ink.ChooseChoiceIndex(0);
-    ink.ContinueMaximally();
-    expect(ink.currentChoices.map((choice: { text: string }) => choice.text)).toEqual([
-      'Go down',
-      'Read the archive',
-    ]);
+    expect(ink.ContinueMaximally().trim()).toBe('The steps are slick.');
+    expect(ink.variablesState.$('lamp_lit')).toBe(true);
   }, 30_000);
 
-  it('plays the book as it is now, and builds the same ink for download', async () => {
+  it('reports compile errors at the chapter line, and will not play until they are fixed', async () => {
     const slug = await threeChapters();
-    const before = (
-      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
-    ).json<BookPlay>();
-    expect(before.source).not.toContain('The tide turns.');
-
-    const chapter = join(dataDir, 'projects', slug, 'chapters/chapter-02.md');
-    writeFileSync(
-      chapter,
-      `${readFileSync(chapter, 'utf8')}\n## Later\nThe tide turns.\n- one\n- two\n`,
+    await convert(slug);
+    writeInk(slug, 2, 'The steps are {slick.\n-> END');
+    const read = await story(slug);
+    expect(read.compiled).toBe(false);
+    const error = read.diagnostics.find((entry) => entry.severity === 'error')!;
+    expect(error.path).toBe('chapters/chapter-02.md');
+    expect(readFileSync(chapterPath(slug, 2), 'utf8').split('\n')[error.line! - 1]).toBe(
+      'The steps are {slick.',
     );
-    const after = (
-      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
-    ).json<BookPlay>();
-    // Headings and list items keep their own lines, unlike story-skills' ink build.
-    expect(after.source).toContain('\\#\\# Later\nThe tide turns.\n\\- one\n\\- two');
+    const refused = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: 'ink_compile_failed' });
+    expect(refused.json<{ message: string }>().message).toContain('chapters/chapter-02.md:');
+  }, 30_000);
 
-    const built = await app.inject({
+  it('reads the story structure: choices, conditions, stitches, variables, and what nothing reaches', async () => {
+    const slug = await threeChapters();
+    await convert(slug);
+    writeInk(
+      slug,
+      1,
+      [
+        'Mara climbs the wall.',
+        '* {trust > 0} [Wave] She waves.',
+        '    ~ trust += 1',
+        '    -> chapter_02',
+        '+ [Wait] -> cellar',
+        '= cellar',
+        'Dark. -> chapter_02',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(dataDir, 'projects', slug, 'ink/variables.md'),
+      '---\ntitle: Story variables\n---\nVAR trust = 1\n',
+    );
+    writeInk(slug, 2, 'The steps are slick.\n-> END');
+    const read = await story(slug);
+    expect(read.compiled).toBe(true);
+    const first = read.nodes.find((node) => node.name === 'chapter_01')!;
+    expect(first.choices).toMatchObject([
+      { text: 'Wave', once: true, condition: 'trust > 0', target: 'chapter_02', writes: ['trust'] },
+      { text: 'Wait', once: false, condition: null, target: 'chapter_01.cellar' },
+    ]);
+    expect(read.nodes.find((node) => node.name === 'chapter_01.cellar')).toMatchObject({
+      kind: 'stitch',
+      reachable: true,
+    });
+    expect(read.variables).toEqual([
+      { name: 'trust', kind: 'var', initial: '1', path: 'ink/variables.md', line: 4 },
+    ]);
+    expect(read.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: 'warning',
+        message: 'Nothing leads to The Archive (chapter_03)',
+      }),
+    );
+  }, 30_000);
+
+  it('edits a chapter ending, declaring what it sets, and refuses one that does not compile', async () => {
+    const slug = await threeChapters();
+    await convert(slug);
+    const url = `/api/books/${slug}/chapters/chapter-01/ending`;
+    const detail = (await app.inject({ method: 'GET', url })).json<ChapterEndingDetail>();
+    expect(detail).toMatchObject({ editable: true, ending: { choices: [], then: 'chapter_02' } });
+
+    const ending = {
+      then: 'END',
+      choices: [
+        {
+          text: 'Light the lamp',
+          once: true,
+          condition: '',
+          effects: ['lamp_lit = true'],
+          to: 'chapter_02',
+        },
+        { text: 'Read', once: false, condition: 'lamp_lit', effects: [], to: 'chapter_03' },
+      ],
+    };
+    const saved = await app.inject({
+      method: 'PUT',
+      url,
+      payload: { expectedHash: detail.hash, ending },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json<ChapterEndingDetail>().ending).toEqual(ending);
+    expect(readFileSync(join(dataDir, 'projects', slug, 'ink/variables.md'), 'utf8')).toContain(
+      'VAR lamp_lit = false',
+    );
+    const ink = new Story((await play(slug)).story);
+    ink.ContinueMaximally();
+    expect(ink.currentChoices.map((choice: { text: string }) => choice.text)).toEqual([
+      'Light the lamp',
+    ]);
+
+    const stale = await app.inject({
+      method: 'PUT',
+      url,
+      payload: { expectedHash: detail.hash, ending },
+    });
+    expect(stale.json()).toMatchObject({ error: 'file_changed' });
+    const broken = await app.inject({
+      method: 'PUT',
+      url,
+      payload: {
+        expectedHash: saved.json<ChapterEndingDetail>().hash,
+        ending: { then: 'END', choices: [{ ...ending.choices[0], to: 'nowhere' }] },
+      },
+    });
+    expect(broken.statusCode).toBe(400);
+    expect(broken.json<{ message: string }>().message).toContain('nowhere');
+  }, 30_000);
+
+  it('exports ink, compiled JSON, and a web page that plays the story', async () => {
+    const slug = await threeChapters();
+    const linear = await app.inject({
       method: 'POST',
       url: `/api/books/${slug}/builds`,
       payload: { format: 'ink' },
     });
-    expect(built.statusCode).toBe(201);
-    const result = built.json<BookBuildResult>();
-    expect(result.file.name).toBe('the-salt-road.ink');
-    expect(result.output).toContain("worldbookllm's ink writer");
-    const download = await app.inject({
-      method: 'GET',
-      url: `/api/books/${slug}/builds/the-salt-road.ink`,
+    expect(linear.json()).toMatchObject({ error: 'build_format' });
+    await convert(slug);
+    const epub = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/builds`,
+      payload: { format: 'epub' },
     });
-    expect(download.body).toBe(after.source);
-    expect(result.file.size).toBe(Buffer.byteLength(after.source));
+    expect(epub.json()).toMatchObject({ error: 'build_format' });
+
+    const built: Record<string, string> = {};
+    for (const format of ['ink', 'ink-json', 'web'] as const) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/books/${slug}/builds`,
+        payload: { format },
+      });
+      expect(response.statusCode).toBe(201);
+      const name = response.json<BookBuildResult>().file.name;
+      built[format] = (
+        await app.inject({ method: 'GET', url: `/api/books/${slug}/builds/${name}` })
+      ).body;
+    }
+    expect(built.ink).toContain('=== chapter_01 ===\n# chapter: Harbor Wall\n');
+    expect(JSON.parse(built['ink-json']!)).toMatchObject({ inkVersion: expect.any(Number) });
+    expect(built.web).toContain('<title>The Salt Road</title>');
+    expect(built.web).toContain('inkjs');
+    expect(built.web).not.toMatch(
+      /<\/script>[\s\S]*<\/script>[\s\S]*<\/script>[\s\S]*<\/script>[\s\S]*<\/script>/u,
+    );
   }, 30_000);
 
-  it('marks a book interactive once a chapter has choices or story.md has an IFID', async () => {
+  it('searches, checks, and reads an interactive book as prose', async () => {
     const slug = await threeChapters();
-    const summary = async () =>
-      (await app.inject({ method: 'GET', url: `/api/books/${slug}` })).json<BookSummary>();
-    expect((await summary()).interactive).toBe(false);
-    const first = (await branches(slug)).chapters[0]!;
-    await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: { expectedHash: first.hash, choices: [{ text: 'Go', to: 'chapter-02' }] },
-    });
-    expect((await summary()).interactive).toBe(true);
+    await convert(slug);
+    writeInk(slug, 1, 'Waves {trust > 0: greet a friend|ignore a stranger}.\n-> chapter_02');
+    const hits = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/search?q=stranger` })
+    ).json<BookSearchResult[]>();
+    expect(hits.map((hit) => hit.path)).toContain('chapters/chapter-01.md');
+    const logic = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/search?q=chapter_02` })
+    ).json<BookSearchResult[]>();
+    expect(logic).toEqual([]);
 
-    const other = await threeChapters();
-    await app.inject({ method: 'POST', url: `/api/books/${other}/ifid` });
-    expect(
-      (await app.inject({ method: 'GET', url: `/api/books/${other}` })).json<BookSummary>()
-        .interactive,
-    ).toBe(true);
+    const report = await app.inject({ method: 'GET', url: `/api/books/${slug}/checks/report` });
+    expect(report.statusCode).toBe(200);
+    const manuscript = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/manuscript` })
+    ).json<{ markdown: string }>();
+    expect(manuscript.markdown).toContain(
+      '## Harbor Wall\n\nWaves greet a friend ignore a stranger.',
+    );
+    expect(manuscript.markdown).not.toContain('->');
   }, 30_000);
 
-  it('copies a book as a separate interactive edition, leaving the original as it was', async () => {
+  it('copies a book as a separate interactive edition in ink, leaving the original as it was', async () => {
     const slug = await threeChapters();
     const before = readFileSync(join(dataDir, 'projects', slug, 'story.md'), 'utf8');
     const created = await app.inject({
@@ -893,24 +922,19 @@ describe('interactive books', () => {
     const edition = created.json<BookSummary>();
     expect(edition).toMatchObject({ title: 'The Salt Road: Choices', interactive: true });
     expect(edition.slug).not.toBe(slug);
-    expect(edition.counts.chapter).toBe(3);
+    expect(existsSync(join(dataDir, 'projects', edition.slug, '.gitignore'))).toBe(true);
     const story = readFileSync(join(dataDir, 'projects', edition.slug, 'story.md'), 'utf8');
     expect(story).toMatch(
       /^ifid: [0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/mu,
     );
-    expect(
-      readFileSync(join(dataDir, 'projects', edition.slug, 'chapters/chapter-02.md'), 'utf8'),
-    ).toContain('The steps are slick.');
+    expect(story).toMatch(/^interactive: true$/mu);
     expect(readFileSync(join(dataDir, 'projects', slug, 'story.md'), 'utf8')).toBe(before);
-
-    const named = await app.inject({
-      method: 'POST',
-      url: `/api/books/${slug}/interactive-edition`,
-    });
-    expect(named.json<BookSummary>().title).toBe('The Salt Road (interactive edition)');
+    expect(new Story((await play(edition.slug)).story).ContinueMaximally()).toContain(
+      'Venn is still awake.',
+    );
   }, 30_000);
 
-  it('copies a book with a long title into an edition that builds and plays', async () => {
+  it('copies a book with a long title into an edition that plays', async () => {
     const title =
       'The Extraordinarily Long and Winding Chronicle of the Salt Road Across the Sea and the Ships That Sailed It';
     const slug = await threeChapters(title);
@@ -921,136 +945,20 @@ describe('interactive books', () => {
     expect(created.statusCode).toBe(201);
     const edition = created.json<BookSummary>();
     expect(edition.title).toBe(`${title} (interactive edition)`);
-    const story = readFileSync(join(dataDir, 'projects', edition.slug, 'story.md'), 'utf8');
-    const ifid = /^ifid: (\S+)$/mu.exec(story)?.[1];
-    expect((await branches(edition.slug)).ifid).toBe(ifid);
-    const play = await app.inject({ method: 'GET', url: `/api/books/${edition.slug}/play` });
-    expect(play.statusCode).toBe(200);
-    expect(play.json<BookPlay>()).toMatchObject({ title: edition.title, ifid });
+    const played = await play(edition.slug);
+    expect(played.title).toBe(edition.title);
+    expect(played.ifid).toMatch(/^[0-9A-F-]{36}$/u);
   }, 30_000);
 
-  it('refuses a flag named after an ink function', async () => {
+  it('gives a story an IFID once', async () => {
     const slug = await threeChapters();
-    const first = (await branches(slug)).chapters[0]!;
-    const bad = await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: {
-        expectedHash: first.hash,
-        choices: [{ text: 'Go', to: 'chapter-02', sets: ['RANDOM'] }],
-      },
-    });
-    expect(bad.statusCode).toBe(400);
-    expect(bad.json<{ message: string }>().message).toContain('RANDOM is a word ink reserves');
-  }, 30_000);
-
-  it('keeps prose shaped like a link as prose', async () => {
-    const slug = await threeChapters();
-    const last = join(dataDir, 'projects', slug, 'chapters/chapter-03.md');
-    writeFileSync(last, `${readFileSync(last, 'utf8')}\n[[Back->chapter-01]]\n`);
-    const linear = (
-      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
-    ).json<BookPlay>();
-    expect(linear.source).toContain('\\[\\[Back\\->chapter-01\\]\\]');
-
-    const first = (await branches(slug)).chapters[0]!;
-    await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: { expectedHash: first.hash, choices: [{ text: 'Go', to: 'chapter-03' }] },
-    });
-    const branching = (
-      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
-    ).json<BookPlay>();
-    const ending = branching.source.slice(branching.source.indexOf('=== chapter_03 ==='));
-    expect(ending).toContain('\\[\\[Back\\->chapter-01\\]\\]');
-    expect(ending).not.toContain('+ [Back]');
-    expect(ending).toContain('-> END');
-  }, 30_000);
-
-  it('saves choice state in a chapter that starts with a byte order mark', async () => {
-    const slug = await threeChapters();
-    const path = join(dataDir, 'projects', slug, 'chapters/chapter-01.md');
-    writeFileSync(path, `\uFEFF${readFileSync(path, 'utf8')}`);
-    const first = (await branches(slug)).chapters[0]!;
-    const saved = await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: {
-        expectedHash: first.hash,
-        choices: [{ text: 'Go', to: 'chapter-02', sets: ['lamp'] }],
-      },
-    });
-    expect(saved.statusCode).toBe(200);
-    expect(saved.json<BookBranches>().flags).toEqual(['lamp']);
-    expect(readFileSync(path, 'utf8').startsWith('\uFEFF---\n')).toBe(true);
-  }, 30_000);
-
-  it('reports chapter frontmatter that is not YAML and will not play it', async () => {
-    const slug = await threeChapters();
-    const path = join(dataDir, 'projects', slug, 'chapters/chapter-01.md');
-    writeFileSync(
-      path,
-      readFileSync(path, 'utf8').replace(
-        /^---\n/u,
-        '---\nchoices:\n  - text: Go: down\n    to: chapter-02\n',
-      ),
-    );
-    const chapter = (await branches(slug)).chapters.find((entry) => entry.id === 'chapter-01')!;
-    expect(chapter.problems.join('\n')).toContain('The frontmatter is not valid YAML');
-    const play = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
-    expect(play.statusCode).toBe(409);
-    expect(play.json<{ message: string }>().message).toContain('not valid YAML');
-
-    const before = readFileSync(path, 'utf8');
-    const save = await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: { expectedHash: chapter.hash, choices: [] },
-    });
-    expect(save.statusCode).toBe(409);
-    expect(readFileSync(path, 'utf8')).toBe(before);
-  }, 30_000);
-
-  it('refuses to play a choice that leads nowhere', async () => {
-    const slug = await threeChapters();
-    const first = (await branches(slug)).chapters[0]!;
-    await app.inject({
-      method: 'PUT',
-      url: `/api/books/${slug}/chapters/chapter-01/choices`,
-      payload: { expectedHash: first.hash, choices: [{ text: 'Go', to: 'chapter-09' }] },
-    });
-    const play = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
-    expect(play.statusCode).toBe(409);
-    expect(play.json<{ message: string }>().message).toContain('missing chapter chapter-09');
-  }, 30_000);
-
-  it('pins the IFID earlier builds derived, once', async () => {
-    const slug = await threeChapters();
-    const derived = (
-      await app.inject({ method: 'GET', url: `/api/books/${slug}/play` })
-    ).json<BookPlay>().ifid;
     const pinned = await app.inject({ method: 'POST', url: `/api/books/${slug}/ifid` });
-    expect(pinned.statusCode).toBe(200);
-    expect(pinned.json()).toEqual({ ifid: derived });
-    expect(readFileSync(join(dataDir, 'projects', slug, 'story.md'), 'utf8')).toContain(
-      `ifid: ${derived}`,
-    );
-    expect((await branches(slug)).ifid).toBe(derived);
+    const ifid = pinned.json<{ ifid: string }>().ifid;
+    expect(ifid).toMatch(/^[0-9A-F-]{36}$/u);
     const again = await app.inject({ method: 'POST', url: `/api/books/${slug}/ifid` });
-    expect(again.json()).toEqual({ ifid: derived });
-  }, 30_000);
-
-  it('replaces an IFID the builds would refuse', async () => {
-    const slug = await threeChapters();
-    const story = join(dataDir, 'projects', slug, 'story.md');
-    writeFileSync(story, readFileSync(story, 'utf8').replace(/^---\n/u, '---\nifid: foo\n'));
-    expect(await branches(slug)).toMatchObject({ ifid: null, invalidIfid: 'foo' });
-    const pinned = await app.inject({ method: 'POST', url: `/api/books/${slug}/ifid` });
-    const { ifid } = pinned.json<{ ifid: string }>();
-    expect(ifid).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/u);
-    expect(await branches(slug)).toMatchObject({ ifid, invalidIfid: null });
-    expect(readFileSync(story, 'utf8')).not.toContain('ifid: foo');
+    expect(again.json<{ ifid: string }>().ifid).toBe(ifid);
+    // An IFID alone marks a book made interactive the earlier way.
+    expect(await summary(slug)).toMatchObject({ interactive: false, needsInkConversion: true });
   }, 30_000);
 });
 

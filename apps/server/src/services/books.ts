@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import {
   bookSlugSchema,
@@ -38,10 +41,13 @@ import {
   type StoryEnvelope,
   type StoryOptions,
   type WriteBookFileInput,
-  type BookBranches,
   type BookPlay,
+  type ChapterEndingDetail,
+  type InkConversionPreview,
+  type InteractiveStory,
   type PinnedIfid,
-  type SetChapterChoices,
+  type SetChapterEndingInput,
+  INTERACTIVE_BUILD_FORMATS,
 } from '@worldbookllm/shared';
 
 import {
@@ -76,9 +82,18 @@ import {
   writeBuildFile,
 } from '../story/book-builds.js';
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
+import { classifyBookPath } from '../story/book-paths.js';
 import { exportManuscript } from '../story/book-manuscript.js';
-import { buildPlay } from '../story/book-play.js';
-import { branchGraph, isIfid, setFrontmatterChoices, stateProblem } from '../story/branches.js';
+import { assembleStory, type AssembledStory } from '../story/interactive/assemble.js';
+import { compileStory, type CompiledStory } from '../story/interactive/compile.js';
+import { convertToInk, type ConvertedFile } from '../story/interactive/convert.js';
+import { readEnding, writeEnding } from '../story/interactive/ending.js';
+import { describeDiagnostic, storyFindings } from '../story/interactive/findings.js';
+import { INK_VARIABLES_FILE, inkSection, isIfid, isInkFile } from '../story/interactive/format.js';
+import { projectInk } from '../story/interactive/projection.js';
+import { storyStructure, type StoryStructure } from '../story/interactive/structure.js';
+import { appendDeclarations, undeclaredVariables } from '../story/interactive/variables.js';
+import { webPlayerHtml } from '../story/interactive/web-player.js';
 import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
 import type {
   CheckpointActor,
@@ -107,10 +122,21 @@ import { convertUpload } from './converters/index.js';
 /** Lock key for book creation; the NUL byte keeps it apart from every book slug. */
 const CREATE_LOCK = '\0create';
 
+/** story commands that rewrite or assemble chapter prose, which ink chapters are not. */
+const INK_REFUSED_COMMANDS = new Set<StoryCommandName>(['build', 'export', 'split', 'merge']);
+
 /** `story build` gets longer than other commands: an EPUB or DOCX of a long book takes a while. */
 const BUILD_TIMEOUT_MS = 120_000;
 
 /** Agent chats tied to a book. Attached after both services exist (they refer to each other). */
+/** A book's ink, assembled, compiled, and read (ADR 0030). */
+interface InkReading {
+  assembled: AssembledStory;
+  compiled: CompiledStory;
+  /** The story's structure, or null when it does not compile. */
+  structure: StoryStructure | null;
+}
+
 export interface BookChatLifecycle {
   /** Refuses while one of the book's chats has a turn running; `action` ends the message. */
   assertIdle(book: string, action?: string): void;
@@ -151,7 +177,7 @@ function linkField(frontmatter: Record<string, unknown> | null, key: string): st
 export class BookService {
   private readonly locks = new KeyedMutex();
   private readonly checkCache = new Map<string, { revision: number; result: BookCheckResult }>();
-  private readonly playCache = new Map<string, { key: string; play: BookPlay }>();
+  private readonly inkCache = new Map<string, { key: string; reading: InkReading }>();
   private chatLifecycle: BookChatLifecycle | null = null;
 
   constructor(
@@ -619,7 +645,14 @@ export class BookService {
     const cacheable = args.length === 0;
     const cached = cacheable ? this.checkCache.get(`${slug}:${command}`) : undefined;
     if (!fresh && cached && cached.revision === revision) return cached.result;
-    const result = await this.cli.run({ command, root, args, options, json: true });
+    // An interactive book's checks read its prose, not its ink (ADR 0030).
+    const projected = this.isInteractive(slug) ? this.projectedCopy(slug) : null;
+    let result: StoryRunResult;
+    try {
+      result = await this.cli.run({ command, root: projected ?? root, args, options, json: true });
+    } finally {
+      if (projected !== null) rmSync(projected, { recursive: true, force: true });
+    }
     if (!result.envelope) {
       throw new StoryCommandError(
         result.exitCode,
@@ -633,6 +666,33 @@ export class BookService {
     };
     if (cacheable) this.checkCache.set(`${slug}:${command}`, { revision, result: checked });
     return checked;
+  }
+
+  /**
+   * A temporary copy of the book whose chapters and `ink/` files hold their
+   * prose without ink, for story-skills' checks. The caller removes it.
+   */
+  private projectedCopy(slug: string): string {
+    const copy = mkdtempSync(join(tmpdir(), 'worldbookllm-prose-'));
+    try {
+      for (const [path, bytes] of this.files.snapshot(slug)) {
+        const target = join(copy, ...path.split('/'));
+        mkdirSync(dirname(target), { recursive: true });
+        if (classifyBookPath(path).kind !== 'chapter' && !isInkFile(path)) {
+          writeFileSync(target, bytes);
+          continue;
+        }
+        const { head, ink } = inkSection(
+          bytes.toString('utf8'),
+          isInkFile(path) ? 'ink' : 'chapter',
+        );
+        writeFileSync(target, `${head}${projectInk(ink)}\n`);
+      }
+      return copy;
+    } catch (error) {
+      rmSync(copy, { recursive: true, force: true });
+      throw error;
+    }
   }
 
   listCheckpoints(slug: string): Checkpoint[] {
@@ -1116,11 +1176,44 @@ export class BookService {
     let storyText = removeSeriesLinks(story.data.toString('utf8'));
     // JSON strings are valid YAML double-quoted scalars, whatever the title holds.
     storyText = setFrontmatterField(storyText, 'title', JSON.stringify(title));
+    // The edition is its own story, so it gets its own IFID.
     storyText = setFrontmatterField(storyText, 'ifid', randomUUID().toUpperCase());
     story.data = Buffer.from(storyText, 'utf8');
+    if (parseFrontmatter(storyText).frontmatter?.interactive !== true) {
+      // Written in ink from the start (ADR 0030).
+      const text = (path: string) =>
+        files.find((file) => file.path === path)?.data.toString('utf8');
+      const converted = convertToInk({
+        story: storyText,
+        variables: text(INK_VARIABLES_FILE) ?? null,
+        chapters: files.flatMap((file) => {
+          const { kind, entityId } = classifyBookPath(file.path);
+          if (kind !== 'chapter' || entityId === null) return [];
+          const content = file.data.toString('utf8');
+          return [
+            {
+              id: entityId,
+              path: file.path,
+              number: parseFrontmatter(content).frontmatter?.number,
+              text: content,
+            },
+          ];
+        }),
+      });
+      for (const change of converted) {
+        const data = Buffer.from(change.after, 'utf8');
+        const existing = files.find((file) => file.path === change.path);
+        if (existing) existing.data = data;
+        else files.push({ path: change.path, data });
+      }
+    }
+    // story init's .gitignore keeps dist/ out of git; a dot-file, so the snapshot leaves it out.
+    const gitignore = this.files.readDotFile(slug, '.gitignore');
 
     const edition = await this.locks.run(CREATE_LOCK, async () => {
       const staging = stageProjectFiles(this.files.projectsDir, files);
+      if (gitignore !== null)
+        writeFileSync(join(staging, '.gitignore'), gitignore, { mode: 0o600 });
       try {
         await this.cli.run({ command: 'reindex', root: staging });
         const result = await this.cli.run({ command: 'validate', root: staging, json: true });
@@ -1142,148 +1235,366 @@ export class BookService {
     return this.summary(edition);
   }
 
-  /** The manuscript for reading, under the book lock so it never catches a write halfway. */
+  /**
+   * The manuscript for reading, under the book lock so it never catches a
+   * write halfway. An interactive book's is every chapter's prose on any
+   * path, without its ink (ADR 0030).
+   */
   manuscript(slug: string): Promise<BookManuscript> {
-    return this.locks.run(slug, () => exportManuscript(this.cli, this.files.root(slug)));
-  }
-
-  /** The chapters as a branch graph: their choices, the start, endings, and what is reachable. */
-  branches(slug: string): Promise<BookBranches> {
-    return this.locks.run(slug, () => this.readBranches(slug));
-  }
-
-  private readBranches(slug: string): BookBranches {
-    this.index.reconcile(slug);
-    const chapters = this.index
-      .list(slug)
-      .filter((file) => file.kind === 'chapter' && file.entityId !== null)
-      .map((file) => {
-        const bytes = this.files.readBytes(slug, file.path);
-        const parsed = bytes === null ? null : parseFrontmatter(bytes.toString('utf8'));
-        return {
-          id: file.entityId!,
-          title: file.title,
-          path: file.path,
-          hash: file.hash,
-          frontmatter: parsed?.frontmatter ?? null,
-          ...(parsed?.error === undefined ? {} : { unreadable: parsed.error }),
-        };
-      });
-    const story = this.files.readBytes(slug, 'story.md')?.toString('utf8') ?? '';
-    return branchGraph(chapters, parseFrontmatter(story).frontmatter?.ifid);
-  }
-
-  /** Replaces a chapter's `choices` as one checkpointed edit of its file. */
-  async setChapterChoices(
-    slug: string,
-    chapterId: string,
-    input: SetChapterChoices,
-  ): Promise<BookBranches> {
-    // One lock from reading the graph to the write, so no other chapter can
-    // be added or renamed between checking the flags and saving them.
     return this.locks.run(slug, async () => {
-      const graph = this.readBranches(slug);
-      const chapter = graph.chapters.find((entry) => entry.id === chapterId);
-      if (chapter === undefined) throw new NotFoundError(`Chapter ${chapterId} was not found`);
-      const ids = new Set(graph.chapters.map((entry) => entry.id));
-      const problems = input.choices.flatMap((choice, index) =>
-        (['sets', 'requires'] as const).flatMap((key) =>
-          choice[key].flatMap((entry) => {
-            const problem = stateProblem(entry, key, ids);
-            return problem === null ? [] : [`Choice ${index + 1} ${key}: ${problem}`];
-          }),
-        ),
-      );
-      if (problems.length > 0) throw new ValidationError(problems.join('\n'));
-      const current = this.files.readBytes(slug, chapter.path);
-      if (current === null || sha256(current) !== input.expectedHash) {
-        throw new ConflictError(
-          'file_changed',
-          `${chapter.path} changed since it was loaded. Reload to see the latest choices.`,
-        );
+      if (!this.isInteractive(slug)) return exportManuscript(this.cli, this.files.root(slug));
+      const { assembled } = this.readInk(slug);
+      const parts = [`# ${this.summary(slug).title}`];
+      for (const chapter of assembled.chapters) {
+        const text = this.files.readBytes(slug, chapter.path)?.toString('utf8') ?? '';
+        const prose = projectInk(inkSection(text, 'chapter').ink);
+        parts.push(`## ${chapter.title}`, prose === '' ? '_No prose yet._' : prose);
       }
-      const content = setFrontmatterChoices(current.toString('utf8'), input.choices);
-      await this.writeFileLocked(
-        slug,
-        chapter.path,
-        { content, expectedHash: input.expectedHash },
-        'user',
-      );
-      return this.readBranches(slug);
+      return { markdown: `${parts.join('\n\n')}\n`, warnings: [] };
     });
   }
 
-  /** The book as a playable ink story: the ink build, compiled with inkjs. */
+  /** Whether story.md says the book is interactive (ADR 0030). */
+  private isInteractive(slug: string): boolean {
+    this.index.reconcile(slug);
+    return this.index.frontmatter(slug, 'story.md')?.interactive === true;
+  }
+
+  private assertInteractive(slug: string): void {
+    if (!this.isInteractive(slug)) {
+      throw new ConflictError(
+        'not_interactive',
+        'This book is not interactive yet. Make it interactive on the Branches tab first.',
+      );
+    }
+  }
+
+  /**
+   * The book's ink story, assembled from its files, compiled, and read,
+   * at most once per state of the book: keyed by every file's path and
+   * hash, so any edit rebuilds it. Caller holds the book lock.
+   */
+  private readInk(slug: string): InkReading {
+    this.index.reconcile(slug);
+    const files = this.index.list(slug);
+    const key = createHash('sha256')
+      .update(files.map((file) => `${file.path}\0${file.hash}`).join('\n'))
+      .digest('hex');
+    const cached = this.inkCache.get(slug);
+    if (cached?.key === key) return cached.reading;
+    const reading = this.inkReading(slug, new Map());
+    this.inkCache.set(slug, { key, reading });
+    return reading;
+  }
+
+  /**
+   * Assembles and compiles the book's ink, with `overrides` (path to text)
+   * standing in for files as they would be after an edit.
+   */
+  private inkReading(slug: string, overrides: ReadonlyMap<string, string>): InkReading {
+    const files = this.index.list(slug);
+    const read = (path: string) =>
+      overrides.get(path) ?? this.files.readBytes(slug, path)?.toString('utf8') ?? '';
+    const story = this.index.frontmatter(slug, 'story.md');
+    const extra = [...overrides.keys()].filter(
+      (path) => isInkFile(path) && !files.some((file) => file.path === path),
+    );
+    const assembled = assembleStory({
+      title: stringField(story, 'title') ?? slug,
+      author: stringField(story, 'author') ?? '',
+      ifid: stringField(story, 'ifid'),
+      chapters: files
+        .filter((file) => file.kind === 'chapter' && file.entityId !== null)
+        .map((file) => {
+          const text = read(file.path);
+          return {
+            id: file.entityId!,
+            title: file.title,
+            path: file.path,
+            number: parseFrontmatter(text).frontmatter?.number,
+            text,
+          };
+        }),
+      inkFiles: [...files.map((file) => file.path).filter(isInkFile), ...extra].map((path) => ({
+        path,
+        text: read(path),
+      })),
+    });
+    const compiled = compileStory(assembled);
+    const structure =
+      compiled.parsed === null || compiled.json === null
+        ? null
+        : storyStructure(compiled.parsed, assembled);
+    return { assembled, compiled, structure };
+  }
+
+  /** The book's ink story: its chapters, structure, and what the compiler said. */
+  interactiveStory(slug: string): Promise<InteractiveStory> {
+    return this.locks.run(slug, () => {
+      this.assertInteractive(slug);
+      const { assembled, compiled, structure } = this.readInk(slug);
+      const ifid = stringField(this.index.frontmatter(slug, 'story.md'), 'ifid');
+      return {
+        title: this.summary(slug).title,
+        ifid: isIfid(ifid) ? ifid.toUpperCase() : null,
+        chapters: assembled.chapters.map((chapter) => ({
+          ...chapter,
+          hash: this.index.get(slug, chapter.path)?.hash ?? '',
+        })),
+        compiled: structure !== null,
+        start: structure?.start ?? null,
+        nodes: structure?.nodes ?? [],
+        variables: structure?.variables ?? [],
+        diagnostics: [...compiled.diagnostics, ...storyFindings(structure, ifid)],
+      };
+    });
+  }
+
+  /** The story compiled for Play. */
   play(slug: string): Promise<BookPlay> {
     return this.locks.run(slug, () => this.readPlay(slug));
   }
 
-  /**
-   * The play-through, built at most once per state of the book: keyed by
-   * every file's hash, so any edit (a chapter, a choice, story.md) rebuilds
-   * it. Caller holds the book lock.
-   */
-  private async readPlay(slug: string): Promise<BookPlay> {
-    const branches = this.readBranches(slug);
-    const key = createHash('sha256')
-      .update(
-        this.index
-          .list(slug)
-          .map((file) => `${file.path}\0${file.hash}`)
-          .join('\n'),
-      )
-      .digest('hex');
-    const cached = this.playCache.get(slug);
-    if (cached?.key === key) return cached.play;
-    const play = await buildPlay(this.cli, this.files.root(slug), branches);
-    this.playCache.set(slug, { key, play });
-    return play;
+  /** Caller holds the book lock. */
+  private readPlay(slug: string): BookPlay & { combined: string } {
+    this.assertInteractive(slug);
+    const { assembled, compiled, structure } = this.readInk(slug);
+    if (compiled.json === null || structure === null) {
+      const errors = compiled.diagnostics
+        .filter((entry) => entry.severity === 'error')
+        .slice(0, 5)
+        .map(describeDiagnostic);
+      throw new ConflictError(
+        'ink_compile_failed',
+        `The ink does not compile yet:\n${errors.join('\n') || 'the compiler gave no reason'}`,
+      );
+    }
+    const ifid = stringField(this.index.frontmatter(slug, 'story.md'), 'ifid');
+    return {
+      title: this.summary(slug).title,
+      ifid: isIfid(ifid) ? ifid.toUpperCase() : null,
+      source: assembled.combined,
+      combined: assembled.combined,
+      story: compiled.json,
+      knots: assembled.chapters.map((chapter) => ({
+        knot: chapter.knot,
+        chapterId: chapter.id,
+        title: chapter.title,
+      })),
+      paths: structure.nodes.filter((node) => node.kind !== 'function').map((node) => node.name),
+      variables: structure.variables.map(({ name, kind }) => ({ name, kind })),
+      warnings: compiled.diagnostics
+        .filter((entry) => entry.severity !== 'error')
+        .map(describeDiagnostic),
+    };
+  }
+
+  /** A chapter's ending as the choices screen edits it. */
+  chapterEnding(slug: string, chapterId: string): Promise<ChapterEndingDetail> {
+    return this.locks.run(slug, () => {
+      this.assertInteractive(slug);
+      const chapter = this.chapterFile(slug, chapterId);
+      const text = this.files.readBytes(slug, chapter.path)?.toString('utf8') ?? '';
+      const read = readEnding(inkSection(text, 'chapter').ink);
+      return {
+        hash: chapter.hash,
+        editable: read.editable,
+        reason: read.reason,
+        ending: read.ending,
+      };
+    });
   }
 
   /**
-   * Pins the story's IFID in story.md, so retitling the book keeps the same
-   * identity. It keeps the IFID earlier builds derived; when the book cannot
-   * build yet (a choice leads nowhere), a fresh one.
+   * Replaces a chapter's ending as one checkpointed edit. Variables its
+   * effects set that the story does not declare are declared in
+   * `ink/variables.md`. The story is compiled with the change first, and a
+   * change that adds compile errors is refused with them.
    */
+  async setChapterEnding(
+    slug: string,
+    chapterId: string,
+    input: SetChapterEndingInput,
+  ): Promise<ChapterEndingDetail> {
+    return this.locks.run(slug, async () => {
+      this.assertInteractive(slug);
+      const chapter = this.chapterFile(slug, chapterId);
+      const current = this.files.readBytes(slug, chapter.path);
+      if (current === null || sha256(current) !== input.expectedHash) {
+        throw new ConflictError(
+          'file_changed',
+          `${chapter.path} changed since it was loaded. Reload to see its latest ending.`,
+        );
+      }
+      const text = current.toString('utf8');
+      const { head, ink } = inkSection(text, 'chapter');
+      const read = readEnding(ink);
+      if (!read.editable)
+        throw new ConflictError('ending_not_editable', read.reason ?? 'Edit this ending as ink.');
+      const content = `${head}${writeEnding(read.before, input.ending)}`;
+
+      const before = this.readInk(slug);
+      const declared = new Set(before.structure?.variables.map((variable) => variable.name) ?? []);
+      const declarations = undeclaredVariables(input.ending, declared);
+      const changes = new Map([[chapter.path, content]]);
+      if (declarations.length > 0) {
+        const existing = this.files.readBytes(slug, INK_VARIABLES_FILE)?.toString('utf8') ?? null;
+        changes.set(INK_VARIABLES_FILE, appendDeclarations(existing, declarations));
+      }
+      const after = this.inkReading(slug, changes);
+      const known = new Set(before.compiled.diagnostics.map(describeDiagnostic));
+      const added = after.compiled.diagnostics.filter(
+        (entry) => entry.severity === 'error' && !known.has(describeDiagnostic(entry)),
+      );
+      if (added.length > 0) {
+        throw new ValidationError(
+          `The ending does not compile:\n${added.map(describeDiagnostic).join('\n')}`,
+        );
+      }
+      await this.checkpoints.record(
+        slug,
+        `Edit the ending of ${chapter.path}`,
+        'user',
+        { paths: [...changes.keys()] },
+        async () => {
+          for (const [path, value] of changes) this.files.write(slug, path, value);
+        },
+      );
+      this.index.reconcile(slug);
+      const written = this.index.get(slug, chapter.path)!;
+      return {
+        hash: written.hash,
+        editable: true,
+        reason: null,
+        ending: readEnding(inkSection(content, 'chapter').ink).ending,
+      };
+    });
+  }
+
+  private chapterFile(slug: string, chapterId: string): BookFile {
+    this.index.reconcile(slug);
+    const chapter = this.index
+      .list(slug)
+      .find((file) => file.kind === 'chapter' && file.entityId === chapterId);
+    if (chapter === undefined) throw new NotFoundError(`Chapter ${chapterId} was not found`);
+    return chapter;
+  }
+
+  /** What converting the book to ink chapters would write (ADR 0030). */
+  inkConversion(slug: string): Promise<InkConversionPreview> {
+    return this.locks.run(slug, () => ({ files: this.conversionOf(slug) }));
+  }
+
+  private conversionOf(slug: string): ConvertedFile[] {
+    if (this.files.locate(slug).kind !== 'book') {
+      throw new ConflictError('not_a_book', 'Only a book can be interactive.');
+    }
+    if (this.isInteractive(slug)) {
+      throw new ConflictError('already_interactive', 'This book is already written in ink.');
+    }
+    const story = this.files.readBytes(slug, 'story.md')?.toString('utf8');
+    if (story === undefined) throw new NotFoundError(`${slug} has no story.md`);
+    return convertToInk({
+      story,
+      variables: this.files.readBytes(slug, INK_VARIABLES_FILE)?.toString('utf8') ?? null,
+      chapters: this.index
+        .list(slug)
+        .filter((file) => file.kind === 'chapter' && file.entityId !== null)
+        .map((file) => {
+          const text = this.files.readBytes(slug, file.path)?.toString('utf8') ?? '';
+          return {
+            id: file.entityId!,
+            path: file.path,
+            number: parseFrontmatter(text).frontmatter?.number,
+            text,
+          };
+        }),
+    });
+  }
+
+  /** Converts the book to ink chapters as one checkpointed change, which can be undone. */
+  convertToInk(slug: string): Promise<BookSummary> {
+    return this.locks.run(slug, async () => {
+      const files = this.conversionOf(slug);
+      await this.checkpoints.record(slug, 'Convert to ink chapters', 'user', 'book', async () => {
+        const before = this.files.snapshot(slug);
+        for (const file of files) this.files.write(slug, file.path, file.after);
+        try {
+          await this.cli.runOrThrow({ command: 'reindex', root: this.files.root(slug) });
+        } catch (error) {
+          for (const file of files) {
+            const previous = before.get(file.path);
+            if (previous === undefined) this.files.remove(slug, file.path);
+            else this.files.write(slug, file.path, previous);
+          }
+          throw error;
+        }
+      });
+      this.index.reconcile(slug);
+      return this.summary(slug);
+    });
+  }
+
+  /** Gives story.md an IFID, keeping a valid one it has. */
   pinIfid(slug: string): Promise<PinnedIfid> {
     return this.locks.run(slug, async () => {
       const story = this.files.readBytes(slug, 'story.md')?.toString('utf8');
       if (story === undefined) throw new NotFoundError(`${slug} has no story.md`);
       const pinned = parseFrontmatter(story).frontmatter?.ifid;
-      // An invalid one is replaced: the builds refuse anything but a version 4 UUID.
-      if (isIfid(pinned)) return { ifid: pinned };
-      let ifid: string;
-      try {
-        ifid = (await this.readPlay(slug)).ifid;
-      } catch (error) {
-        if (!(error instanceof StoryCommandError) && !(error instanceof ConflictError)) throw error;
-        ifid = '';
-      }
-      if (!isIfid(ifid)) {
-        ifid = randomUUID();
-      }
-      ifid = ifid.toUpperCase();
-      const content = setFrontmatterField(story, 'ifid', ifid);
-      await this.checkpoints.record(
-        slug,
-        'Pin the story IFID',
-        'user',
-        needsReindex('story.md') ? 'book' : { paths: ['story.md'] },
-        () => this.writeAndReindex(slug, 'story.md', content),
+      if (isIfid(pinned)) return { ifid: pinned.toUpperCase() };
+      const ifid = randomUUID().toUpperCase();
+      await this.checkpoints.record(slug, 'Give the story an IFID', 'user', 'book', () =>
+        this.writeAndReindex(slug, 'story.md', setFrontmatterField(story, 'ifid', ifid)),
       );
       this.index.reconcile(slug);
       return { ifid };
     });
   }
 
-  /** Builds a disposable manuscript file into the book's `dist/` with `story build`. */
+  /**
+   * Builds a disposable file into the book's `dist/`: story-skills' formats
+   * for a book that reads straight through, ink's own for an interactive
+   * one (ADR 0030).
+   */
   async build(slug: string, input: CreateBookBuildInput): Promise<BookBuildResult> {
-    const options: StoryOptions = { format: input.format };
-    if (input.shunn) options.shunn = true;
-    if (input.trim !== undefined) options.trim = input.trim;
-    if (input.stamp !== undefined) options.stamp = input.stamp;
     return this.locks.run(slug, async () => {
+      const interactive = this.isInteractive(slug);
+      const inkFormat = (INTERACTIVE_BUILD_FORMATS as readonly string[]).includes(input.format);
+      if (interactive !== inkFormat) {
+        throw new ConflictError(
+          'build_format',
+          interactive
+            ? 'An interactive book builds as ink, compiled JSON, or a web page.'
+            : 'Only an interactive book builds as ink, compiled JSON, or a web page.',
+        );
+      }
       const root = this.files.root(slug);
+      if (inkFormat) {
+        const play = this.readPlay(slug);
+        const story = this.index.frontmatter(slug, 'story.md');
+        const [name, content] =
+          input.format === 'ink'
+            ? [`${slug}.ink`, play.combined]
+            : input.format === 'ink-json'
+              ? [`${slug}.json`, play.story]
+              : [
+                  `${slug}.html`,
+                  webPlayerHtml({
+                    title: play.title,
+                    author: stringField(story, 'author') ?? '',
+                    ifid: play.ifid,
+                    story: play.story,
+                  }),
+                ];
+        writeBuildFile(root, name, content);
+        const file = listBuildFiles(root).find((entry) => entry.name === name)!;
+        const notes = play.warnings.length === 0 ? '' : `\n${play.warnings.join('\n')}`;
+        return { file, output: `Wrote dist/${name}.${notes}` };
+      }
+      const options: StoryOptions = { format: input.format };
+      if (input.shunn) options.shunn = true;
+      if (input.trim !== undefined) options.trim = input.trim;
+      if (input.stamp !== undefined) options.stamp = input.stamp;
       const result = await this.cli.run({
         command: 'build',
         root,
@@ -1304,20 +1615,7 @@ export class BookService {
           output || 'story build finished but wrote no file to dist/',
         );
       }
-      if (input.format !== 'ink') return { file, output };
-      // The ink a reader gets is worldbookllm's (ADR 0028): the same story
-      // Play runs, written over story-skills' file under its name.
-      try {
-        writeBuildFile(root, file.name, (await this.readPlay(slug)).source);
-      } catch (error) {
-        removeBuildFile(root, file.name);
-        throw error;
-      }
-      const written = listBuildFiles(root).find((entry) => entry.name === file.name) ?? file;
-      return {
-        file: written,
-        output: `${output}\nWritten by worldbookllm's ink writer: headings and lists keep their lines, and choices carry their sets and requires.`,
-      };
+      return { file, output };
     });
   }
 
@@ -1465,6 +1763,13 @@ export class BookService {
   ): Promise<StoryRunResult> {
     const slug = session.book;
     const root = this.files.root(slug);
+    if (INK_REFUSED_COMMANDS.has(command) && this.isInteractive(slug)) {
+      // story-skills reads chapters as Markdown prose; these would mangle ink (ADR 0030).
+      throw new ConflictError(
+        'interactive_book',
+        `story ${command} does not work on an interactive book written in ink.${command === 'build' ? ' The Builds screen exports ink, compiled JSON, and a web player.' : ''}`,
+      );
+    }
     const json = Object.hasOwn(STORY_COMMANDS[command].options, 'json');
     const request = { command, root, args, options, json };
     if (!storyCommandWrites(command, options)) return this.cli.run(request);
@@ -1584,8 +1889,10 @@ export class BookService {
       precedes: linkField(story, 'precedes'),
       counts: this.index.counts(slug),
       updatedAt: new Date(latest ?? Date.now()).toISOString(),
-      interactive:
+      interactive: location.kind === 'book' && story?.interactive === true,
+      needsInkConversion:
         location.kind === 'book' &&
+        story?.interactive !== true &&
         (stringField(story, 'ifid') !== null || this.index.hasChapterChoices(slug)),
     };
   }
