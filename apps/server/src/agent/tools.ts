@@ -18,7 +18,13 @@ import { z } from 'zod';
 import type { SkillService } from '../services/skills.js';
 import { confine } from '../story/book-paths.js';
 import { isStoryCommand, type StoryCommandName } from '../story/story-commands.js';
-import { inkNoteAfterWrite, inkPlay, inkReport, isInteractiveWorkspace } from './ink-tools.js';
+import {
+  inkNoteAfterWrite,
+  inkPaths,
+  inkPlay,
+  inkReport,
+  isInteractiveWorkspace,
+} from './ink-tools.js';
 import type { AgentWorkspace } from './workspace.js';
 import type { BookService } from '../services/books.js';
 
@@ -315,6 +321,16 @@ export class AgentToolRegistry {
         (input, context) => {
           assertInteractive(context);
           return inkPlay(context.workspace, input);
+        },
+      ),
+      tool(
+        'ink_paths',
+        "Play every path of an interactive book's ink and report runtime errors (running out of story, a failing divert) with the choice indexes that reach each one, how many paths end and in how many choices, and the knots and choices no path reaches. Use it after changing choices or conditions. Only for interactive books.",
+        { properties: {} },
+        z.strictObject({}),
+        (_input, context) => {
+          assertInteractive(context);
+          return inkPaths(context.workspace);
         },
       ),
       tool(

@@ -26,6 +26,7 @@ import {
   type BookBuildFile,
   type BookBuildResult,
   type BookManuscript,
+  type PathReport,
   type CreateBookBuildInput,
   type CreateInteractiveEditionInput,
   type CreateBookInput,
@@ -91,6 +92,7 @@ import { readEnding, writeEnding } from '../story/interactive/ending.js';
 import { describeDiagnostic, storyFindings } from '../story/interactive/findings.js';
 import { INK_VARIABLES_FILE, inkSection, isIfid, isInkFile } from '../story/interactive/format.js';
 import { projectInk } from '../story/interactive/projection.js';
+import { explorePaths } from '../story/interactive/explore.js';
 import { feedsInk, readInkStory, type InkReading } from '../story/interactive/read.js';
 import { appendDeclarations, undeclaredVariables } from '../story/interactive/variables.js';
 import { webPlayerHtml } from '../story/interactive/web-player.js';
@@ -178,6 +180,8 @@ export class BookService {
   private readonly locks = new KeyedMutex();
   private readonly checkCache = new Map<string, { revision: number; result: BookCheckResult }>();
   private readonly inkCache = new Map<string, { key: string; reading: InkReading }>();
+  /** Path reports by the reading they explored, so an unchanged book is not replayed. */
+  private readonly pathCache = new WeakMap<InkReading, PathReport>();
   private chatLifecycle: BookChatLifecycle | null = null;
 
   constructor(
@@ -1349,26 +1353,35 @@ export class BookService {
     return this.locks.run(slug, () => this.readPlay(slug));
   }
 
+  /**
+   * What playing every path shows (ADR 0032): runtime errors and the
+   * choices that reach them, endings, and what no path reaches.
+   */
+  pathReport(slug: string): Promise<PathReport> {
+    return this.locks.run(slug, () => {
+      this.assertInteractive(slug);
+      const reading = this.readInk(slug);
+      const cached = this.pathCache.get(reading);
+      if (cached !== undefined) return cached;
+      const { json, structure } = compiledOrThrow(reading);
+      const report = explorePaths(json, structure.nodes);
+      this.pathCache.set(reading, report);
+      return report;
+    });
+  }
+
   /** Caller holds the book lock. */
   private readPlay(slug: string): BookPlay {
     this.assertInteractive(slug);
-    const { assembled, compiled, structure } = this.readInk(slug);
-    if (compiled.json === null || structure === null) {
-      const errors = compiled.diagnostics
-        .filter((entry) => entry.severity === 'error')
-        .slice(0, 5)
-        .map(describeDiagnostic);
-      throw new ConflictError(
-        'ink_compile_failed',
-        `The ink does not compile yet:\n${errors.join('\n') || 'the compiler gave no reason'}`,
-      );
-    }
+    const reading = this.readInk(slug);
+    const { assembled, compiled } = reading;
+    const { json, structure } = compiledOrThrow(reading);
     const ifid = stringField(this.index.frontmatter(slug, 'story.md'), 'ifid');
     return {
       title: this.summary(slug).title,
       ifid: isIfid(ifid) ? ifid.toUpperCase() : null,
       source: assembled.combined,
-      story: compiled.json,
+      story: json,
       knots: assembled.chapters.map((chapter) => ({
         knot: chapter.knot,
         chapterId: chapter.id,
@@ -2158,4 +2171,22 @@ function uniqueId(base: string, directory: string, taken: ReadonlySet<string>): 
     candidate = `${base}-${suffix}`;
   }
   return candidate;
+}
+
+/** The compiled story and its structure, or a conflict naming the first compile errors. */
+function compiledOrThrow({ compiled, structure }: InkReading): {
+  json: string;
+  structure: NonNullable<InkReading['structure']>;
+} {
+  if (compiled.json === null || structure === null) {
+    const errors = compiled.diagnostics
+      .filter((entry) => entry.severity === 'error')
+      .slice(0, 5)
+      .map(describeDiagnostic);
+    throw new ConflictError(
+      'ink_compile_failed',
+      `The ink does not compile yet:\n${errors.join('\n') || 'the compiler gave no reason'}`,
+    );
+  }
+  return { json: compiled.json, structure };
 }

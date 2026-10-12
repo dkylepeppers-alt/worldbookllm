@@ -229,6 +229,11 @@ export function registerBookRoutes(app: FastifyInstance): void {
     return books().play(book);
   });
 
+  app.get('/api/books/:book/paths', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return books().pathReport(book);
+  });
+
   app.post('/api/books/:book/ifid', (request) => {
     const { book } = bookParamsSchema.parse(request.params);
     return books().pinIfid(book);

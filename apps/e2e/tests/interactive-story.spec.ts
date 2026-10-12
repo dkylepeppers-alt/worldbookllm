@@ -6,8 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { expect, test } from '@playwright/test';
 
 // Interactive books written in ink (ADR 0030), on a phone: convert a book,
-// give a chapter choices, see a compile error at its line, play it, and
-// export a web page that plays on its own.
+// give a chapter choices, see a compile error at its line, play it, find a
+// dead end by playing every path, and export a web page that plays on its own.
 test.use({ viewport: { width: 390, height: 844 } });
 
 test('an interactive story in ink on a phone', async ({ page }) => {
@@ -124,6 +124,19 @@ test('an interactive story in ink on a phone', async ({ page }) => {
     await expect(story).toContainText('The light catches it.');
     await expect(page.getByRole('region', { name: 'Story state' })).toContainText('lamp_lit true');
     await expect(story).toContainText('The end.');
+  });
+
+  await test.step('play every path on Health, and reproduce a dead end in Play', async () => {
+    const text = await readFile(chapter(2), 'utf8');
+    expect(text).toContain('-> END');
+    await writeFile(chapter(2), text.replace('-> END', ''));
+    await tabs.getByRole('link', { name: 'Health' }).click();
+    const errors = page.getByRole('list', { name: 'Errors while playing' });
+    await expect(errors).toContainText('ran out of content', { timeout: 30_000 });
+    await expect(page.getByText(/^Played every path: \d+ distinct states\./u)).toBeVisible();
+    await errors.getByRole('link', { name: 'Reproduce in Play (1 choice)' }).click();
+    await expect(page.getByText('The ink story stopped with an error')).toBeVisible();
+    await writeFile(chapter(2), text);
   });
 
   await test.step('export a web page that plays on its own', async () => {

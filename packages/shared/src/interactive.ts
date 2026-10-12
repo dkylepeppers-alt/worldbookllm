@@ -218,6 +218,41 @@ export const inkConversionPreviewSchema = z.strictObject({
 
 export const convertToInkSchema = z.strictObject({ token: sha256Schema });
 
+/** What playing every path of the story shows (ADR 0032). */
+export const pathReportSchema = z.strictObject({
+  /** Whether every distinct state was explored; false when the budget ran out first. */
+  complete: z.boolean(),
+  /** Distinct states explored. */
+  explored: z.number().int().nonnegative(),
+  /** Paths that reached an ending. */
+  endings: z.number().int().nonnegative(),
+  /** Fewest and most choices from the start to an ending. */
+  shortest: z.number().int().nonnegative().nullable(),
+  longest: z.number().int().nonnegative().nullable(),
+  /** Knots and stitches no explored path visits. */
+  unreached: z.array(
+    z.strictObject({
+      node: z.string(),
+      title: z.string(),
+      path: bookFilePathSchema.nullable(),
+      line: z.number().int().positive().nullable(),
+    }),
+  ),
+  /** Choices no explored path offers: their condition never holds, or nothing leads there. */
+  neverOffered: z.array(
+    z.strictObject({
+      node: z.string(),
+      text: z.string(),
+      path: bookFilePathSchema.nullable(),
+      line: z.number().int().positive().nullable(),
+    }),
+  ),
+  /** Runtime errors, each with the choices from the start that reach it. */
+  errors: z.array(
+    z.strictObject({ message: z.string(), path: z.array(z.number().int().nonnegative()) }),
+  ),
+});
+
 /** A file's unsaved text, to check the story as it would be with it. */
 export const inkCheckSchema = z.strictObject({
   path: bookFilePathSchema,
@@ -242,3 +277,4 @@ export type InkConversionPreview = z.infer<typeof inkConversionPreviewSchema>;
 export type ConvertToInkInput = z.infer<typeof convertToInkSchema>;
 export type PinnedIfid = z.infer<typeof pinnedIfidSchema>;
 export type InkCheckInput = z.infer<typeof inkCheckSchema>;
+export type PathReport = z.infer<typeof pathReportSchema>;

@@ -115,6 +115,7 @@ describe('agent turns', () => {
           }),
         ),
       () => sse(toolCall('play', 'ink_play', { choices: [0], set: { trust: 2 } })),
+      () => sse(toolCall('paths', 'ink_paths', {})),
       () => sse(text('Checked.')),
     ]);
     const books = app.services.books;
@@ -162,6 +163,9 @@ describe('agent turns', () => {
       '## Harbor Wall\nMara climbs.\n> Wait\nGulls wheel. Venn waves.\n## The Ledge',
     );
     expect(calls.get('play')?.result).toContain('Variables: trust = 2');
+    expect(calls.get('paths')?.result).toMatch(
+      /^Played every path: \d+ distinct states\.\n2 paths reach an ending, in 1 to 1 choices\.$/u,
+    );
   }, 30_000);
 
   it('pushes a bible alias into another book without changing its local role', async () => {

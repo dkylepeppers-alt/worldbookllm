@@ -8,6 +8,7 @@ import {
   chapterEndingDetailSchema,
   inkConversionPreviewSchema,
   interactiveStorySchema,
+  pathReportSchema,
   bookBuildFileSchema,
   bookPlaySchema,
   pinnedIfidSchema,
@@ -58,6 +59,7 @@ import {
   type ChapterEndingDetail,
   type ConvertToInkInput,
   type InkCheckInput,
+  type PathReport,
   type InkConversionPreview,
   type InteractiveStory,
   type BookBuildFile,
@@ -215,6 +217,8 @@ export interface ApiClient {
   getInteractiveStory(slug: string, signal?: AbortSignal): Promise<InteractiveStory>;
   /** The story as it would be with one file's unsaved text, for the ink editor. */
   checkInk(slug: string, input: InkCheckInput, signal?: AbortSignal): Promise<InteractiveStory>;
+  /** What playing every path of an interactive book shows (ADR 0032). */
+  getPathReport(slug: string, signal?: AbortSignal): Promise<PathReport>;
   getChapterEnding(
     slug: string,
     chapterId: string,
@@ -551,6 +555,8 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         schema: interactiveStorySchema,
         signal,
       }),
+    getPathReport: (slug, signal) =>
+      request(`${book(slug)}/paths`, { schema: pathReportSchema, signal }),
     getChapterEnding: (slug, chapterId, signal) =>
       request(`${book(slug)}/chapters/${encodeURIComponent(chapterId)}/ending`, {
         schema: chapterEndingDetailSchema,

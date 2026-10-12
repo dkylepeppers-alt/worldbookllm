@@ -30,6 +30,7 @@ import {
   chapterEndingDetailSchema,
   inkConversionPreviewSchema,
   interactiveStorySchema,
+  pathReportSchema,
 } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 import { Story } from 'inkjs';
@@ -922,6 +923,49 @@ describe('interactive books', () => {
         message: 'Nothing leads to The Archive (chapter_03)',
       }),
     );
+  }, 30_000);
+
+  it('plays every path: dead ends with their choices, never-offered choices, and unreached chapters', async () => {
+    const slug = await threeChapters();
+    const url = `/api/books/${slug}/paths`;
+    expect((await app.inject({ method: 'GET', url })).statusCode).toBe(409);
+    await convert(slug);
+    writeInk(
+      slug,
+      1,
+      [
+        'Mara climbs the wall.',
+        '* {trust > 5} [Wave] -> chapter_02',
+        '* [Jump] -> chapter_02',
+        '* [Fall] Down she goes.',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(dataDir, 'projects', slug, 'ink/variables.md'),
+      '---\ntitle: Story variables\n---\nVAR trust = 1\n',
+    );
+    writeInk(slug, 2, 'The steps are slick.\n-> END');
+    const response = await app.inject({ method: 'GET', url });
+    expect(response.statusCode).toBe(200);
+    const report = pathReportSchema.parse(response.json());
+    expect(report).toMatchObject({ complete: true, endings: 1, shortest: 1, longest: 1 });
+    expect(report.errors).toEqual([
+      { message: expect.stringMatching(/ran out of content/u), path: [1] },
+    ]);
+    expect(report.neverOffered).toEqual([
+      {
+        node: 'chapter_01',
+        text: 'Wave',
+        path: 'chapters/chapter-01.md',
+        line: expect.any(Number),
+      },
+    ]);
+    expect(report.unreached.map((entry) => entry.node)).toEqual(['chapter_03']);
+
+    writeInk(slug, 2, 'The steps are {slick.');
+    expect((await app.inject({ method: 'GET', url })).json()).toMatchObject({
+      error: 'ink_compile_failed',
+    });
   }, 30_000);
 
   it('edits a chapter ending, declaring what it sets, and refuses one that does not compile', async () => {

@@ -161,6 +161,8 @@ Branches → Choices lists each chapter as a card: title, mono knot name, a "Pla
 
 Branches → Play runs the compiled story with the inkjs runtime: each passage in the Reader's serif column under its chapter heading, `# break` as a scene break, "You chose: …" above it, the choices as full-width secondary buttons, and "The end." with Play again at an ending. Where play started, the variables set first, the random seed, and the choices made are all in the address, so Back steps back and a link reopens the moment. A "Story state" card lists every variable; collapsed cards hold "Playtest from anywhere" (start from any knot or stitch with variables set), named "Saves" kept in the browser, and the whole story's ink source.
 
+Health → Paths (ADR 0032), shown under Ink when the story compiles, plays every path and reports what playing finds. A mono summary line says how many states were played, or that it stopped early and is partial, and how many paths end and in how many choices. Under it are entry lists: "Errors while playing", each with a "Reproduce in Play (N choices)" link that opens Play at those choices with seed 1; "No path reaches", the knots with links to their file and line; and "Choices never offered". While it plays it shows the shared loading state, and a failure shows the shared error state with Retry.
+
 ### Dialogs
 
 Bottom sheet on phones (12px top corners), centered card from 620px. `--backdrop` scrim and `--shadow-dialog`.
