@@ -1,6 +1,6 @@
 # ADR 0029 — Interactive books get a Branches tab, a map, path checks, and editions
 
-**Status:** accepted · 2026-10-10 · builds on ADR 0027 and ADR 0028
+**Status:** accepted · 2026-10-10 · builds on ADR 0027 and ADR 0028 · decisions 1 and 5 superseded by ADR 0030 (interactive is declared; Health reads the ink)
 
 ## Context
 

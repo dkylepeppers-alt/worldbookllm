@@ -99,11 +99,13 @@ export const bookSummarySchema = z.strictObject({
   precedes: z.array(bookSlugSchema),
   counts: z.record(z.string(), z.number().int().nonnegative()),
   updatedAt: z.iso.datetime(),
-  /**
-   * An interactive book (ADR 0027, 0028): one whose story.md has an `ifid`
-   * or whose chapters have `choices`. The server always sets it.
-   */
+  /** An interactive book written in ink: story.md says `interactive: true` (ADR 0030). */
   interactive: z.boolean().optional(),
+  /**
+   * A book made interactive the earlier way (chapter `choices`, or an IFID
+   * without `interactive: true`), which has to be converted to ink chapters.
+   */
+  needsInkConversion: z.boolean().optional(),
 });
 
 /** Copies a book as a separate interactive edition, as story-skills' adaptation skill advises. */
@@ -506,8 +508,12 @@ export const manuscriptImportResultSchema = z.strictObject({
   output: z.string(),
 });
 
-/** `story build --format` values (story-skills 0.23.0). `codex` writes a folder, not a file, so it is left out. */
-export const BOOK_BUILD_FORMATS = [
+/**
+ * `story build --format` values (story-skills 0.23.0) a book that reads
+ * straight through is built in. `codex` writes a folder, not a file, so it
+ * is left out; Twine and story-skills' ink are not offered (ADR 0030).
+ */
+export const LINEAR_BUILD_FORMATS = [
   'markdown',
   'epub',
   'docx',
@@ -517,9 +523,15 @@ export const BOOK_BUILD_FORMATS = [
   'narration',
   'metadata',
   'fountain',
-  'twee',
-  'ink',
 ] as const;
+
+/**
+ * What an interactive book exports (ADR 0030): one `.ink` file for Inky,
+ * the compiled story as JSON for game engines, and a web page that plays it.
+ */
+export const INTERACTIVE_BUILD_FORMATS = ['ink', 'ink-json', 'web'] as const;
+
+export const BOOK_BUILD_FORMATS = [...LINEAR_BUILD_FORMATS, ...INTERACTIVE_BUILD_FORMATS] as const;
 
 export const bookBuildFormatSchema = z.enum(BOOK_BUILD_FORMATS);
 

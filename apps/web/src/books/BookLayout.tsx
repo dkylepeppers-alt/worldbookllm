@@ -91,11 +91,13 @@ function BookTabs() {
   const { run } = useAgentRunner();
   const { tree } = useBook();
   // A series bible has no chapters, so nothing to read.
-  // An interactive book (an IFID, or chapters with choices) gets a Branches tab.
+  // An interactive book, or one made interactive the earlier way, gets a Branches tab.
   const tabs = TABS.filter(
     (tab) =>
       (!('booksOnly' in tab) || tree.book.kind === 'book') &&
-      (!('interactiveOnly' in tab) || tree.book.interactive === true),
+      (!('interactiveOnly' in tab) ||
+        tree.book.interactive === true ||
+        tree.book.needsInkConversion === true),
   );
   return (
     <nav className="book-tabs" aria-label="Book">

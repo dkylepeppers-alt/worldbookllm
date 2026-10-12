@@ -21,11 +21,17 @@ function fieldEnd(lines: readonly string[], at: number): number {
   return end;
 }
 
+// A byte order mark from a Windows editor stays where it is.
+const FRONTMATTER = /^(\uFEFF?)---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/u;
+
 export function setFrontmatterField(markdown: string, key: string, value: string): string {
   const line = `${key}: ${value}`;
-  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(markdown);
-  if (match === null) return `---\n${line}\n---\n\n${markdown}`;
-  const lines = match[1]!.split(/\r?\n/u);
+  const match = FRONTMATTER.exec(markdown);
+  if (match === null) {
+    const bom = markdown.startsWith('\uFEFF') ? '\uFEFF' : '';
+    return `${bom}---\n${line}\n---\n\n${markdown.slice(bom.length)}`;
+  }
+  const lines = match[2]!.split(/\r?\n/u);
   const at = lines.findIndex((existing) => existing.startsWith(`${key}:`));
   if (at !== -1) {
     lines.splice(at, fieldEnd(lines, at) - at, line);
@@ -34,20 +40,22 @@ export function setFrontmatterField(markdown: string, key: string, value: string
     const title = lines.findIndex((existing) => existing.startsWith('title:'));
     lines.splice(title === -1 ? lines.length : fieldEnd(lines, title), 0, line);
   }
-  return `---\n${lines.join('\n')}\n---\n${markdown.slice(match[0].length)}`;
+  return `${match[1]}---\n${lines.join('\n')}\n---\n${markdown.slice(match[0].length)}`;
+}
+
+/** Removes one top-level field, with any lines its value runs onto, leaving the rest as written. */
+export function removeFrontmatterField(markdown: string, key: string): string {
+  const match = FRONTMATTER.exec(markdown);
+  if (match === null) return markdown;
+  const lines = match[2]!.split(/\r?\n/u);
+  const at = lines.findIndex((existing) => new RegExp(`^${key}[ \t]*:`, 'u').test(existing));
+  if (at === -1) return markdown;
+  lines.splice(at, fieldEnd(lines, at) - at);
+  return `${match[1]}---\n${lines.join('\n')}\n---\n${markdown.slice(match[0].length)}`;
 }
 
 // gray-matter hands these options to js-yaml's dump, which its types do not describe.
 const DUMP = { lineWidth: -1 } as unknown as Parameters<typeof matter.stringify>[2];
-
-/** Frontmatter data as YAML lines, without the `---` fences; '' for no data. */
-export function frontmatterYaml(data: Record<string, unknown>): string {
-  if (Object.keys(data).length === 0) return '';
-  return matter
-    .stringify('', data, DUMP)
-    .replace(/^---\n/u, '')
-    .replace(/\n---\n*$/u, '');
-}
 
 /** Removes series metadata or one sibling's links while preserving unrelated YAML values/body. */
 export function removeSeriesLinks(markdown: string, removedBook?: string): string {

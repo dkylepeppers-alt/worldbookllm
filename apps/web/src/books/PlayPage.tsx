@@ -1,5 +1,5 @@
 import type { BookPlay, PlayKnot } from '@worldbookllm/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link, useSearchParams } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
@@ -27,8 +27,18 @@ interface Turn {
   chosen: string | null;
   /** A choice in the address that the story no longer offers. */
   stale: boolean;
-  /** Each flag's value now. */
-  state: { flag: string; value: boolean }[];
+  /** Each global variable's value now. */
+  state: { name: string; value: string }[];
+}
+
+/** Where a play-through starts, all of it in the address so a link reopens it. */
+interface Start {
+  /** A knot or `knot.stitch` to start from, or null for the story's start. */
+  from: string | null;
+  /** Variables set before the story starts, as written in the address. */
+  set: Record<string, string>;
+  /** The seed ink's randomness uses, so `{~…}` and RANDOM replay the same. */
+  seed: number;
 }
 
 function visitCounts(story: InkStory, knots: readonly PlayKnot[]): number[] {
@@ -46,7 +56,8 @@ function visitCounts(story: InkStory, knots: readonly PlayKnot[]): number[] {
  * come from. The story is compiled with every visit counted, so the knots a
  * line entered are the ones whose visit count went up. ink does not count a
  * knot diverting to itself, so a line carrying a knot's opening `chapter`
- * tag with no count risen starts the current knot again.
+ * tag with no count risen starts the current knot again. A `# break` tag is
+ * a scene break.
  */
 function runToChoice(
   story: InkStory,
@@ -61,6 +72,7 @@ function runToChoice(
   let before = from;
   while (story.canContinue) {
     const line = story.Continue()?.trim() ?? '';
+    const tags = story.currentTags ?? [];
     const after = counts();
     let entered = false;
     knots.forEach((entry, index) => {
@@ -70,32 +82,42 @@ function runToChoice(
       }
     });
     before = after;
-    if (!entered && story.currentTags?.some((tag) => /^chapter\s*:/u.test(tag)) === true) {
+    if (!entered && tags.some((tag) => /^chapter\s*:/u.test(tag))) {
       const knot =
         [...segments].reverse().find((segment) => segment.knot !== null)?.knot ?? current;
       if (knot !== null) segments.push({ knot, lines: [] });
     }
     if (segments.length === 0) segments.push({ knot: null, lines: [] });
+    if (tags.some((tag) => /^break\s*$/u.test(tag.trim()))) segments.at(-1)!.lines.push('* * *');
     if (line !== '') segments.at(-1)!.lines.push(line);
   }
   return segments;
 }
 
-/**
- * Plays the story through the choices in `path`, from the start or, with
- * `from`, from that chapter's knot (flags then start false, as on a first
- * reading that jumped there).
- */
-function replay(
-  runtime: InkRuntime,
-  play: BookPlay,
-  from: string | null,
-  path: readonly number[],
-): Turn {
+/** An address value as the ink value it names: true, false, a number, or text. */
+function inkValue(text: string): boolean | number | string {
+  if (text === 'true' || text === 'false') return text === 'true';
+  const number = Number(text);
+  return text.trim() !== '' && Number.isFinite(number) ? number : text;
+}
+
+function describe(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'string') return JSON.stringify(value);
+  return String(value);
+}
+
+/** Plays the story through the choices in `path` from `start`. */
+function replay(runtime: InkRuntime, play: BookPlay, start: Start, path: readonly number[]): Turn {
   const story = new runtime.Story(play.story);
-  const knot = play.knots.find((entry) => entry.chapterId === from)?.knot;
+  story.state.storySeed = start.seed;
+  for (const [name, value] of Object.entries(start.set)) {
+    if (play.variables.some((variable) => variable.name === name && variable.kind === 'var')) {
+      story.variablesState.$(name, inkValue(value));
+    }
+  }
   const initial = visitCounts(story, play.knots);
-  if (knot !== undefined) story.ChoosePathString(knot);
+  if (start.from !== null) story.ChoosePathString(start.from);
   let segments = runToChoice(story, play.knots, null, initial);
   // The chapter the reader is in, kept across turns whose lines enter none.
   let current: PlayKnot | null = null;
@@ -105,7 +127,10 @@ function replay(
     choices: story.currentChoices.map((entry) => entry.text),
     chosen,
     stale,
-    state: play.flags.map((flag) => ({ flag, value: story.variablesState.$(flag) === true })),
+    state: play.variables.map(({ name }) => ({
+      name,
+      value: describe(story.variablesState.$(name)),
+    })),
   });
   for (const index of path) {
     const choice = story.currentChoices[index];
@@ -124,11 +149,36 @@ function parsePath(value: string | null): number[] {
   return steps.every((step) => /^\d+$/u.test(step)) ? steps.map(Number) : [];
 }
 
+/** `trust:3,met:true` as variables; entries that do not parse are left out. */
+function parseSet(value: string | null): Record<string, string> {
+  const set: Record<string, string> = {};
+  for (const entry of (value ?? '').split(',')) {
+    const match = /^([A-Za-z_]\w*):(.*)$/u.exec(entry.trim());
+    if (match === null) continue;
+    try {
+      set[match[1]!] = decodeURIComponent(match[2]!);
+    } catch {
+      // A hand-edited address with a broken escape: leave that variable as declared.
+    }
+  }
+  return set;
+}
+
+function formatSet(set: Record<string, string>): string {
+  return Object.entries(set)
+    .filter(([, value]) => value.trim() !== '')
+    .map(([name, value]) => `${name}:${encodeURIComponent(value.trim())}`)
+    .join(',');
+}
+
+const newSeed = () => Math.floor(Math.random() * 1_000_000) + 1;
+
 /**
- * Write → Play: the book's ink build, run by inkle's own ink runtime one
- * passage at a time with its choices as buttons. The choices made so far are
- * in the address (`?path=1.0`), so the browser's back button steps back and
- * a link reopens the same moment.
+ * Branches → Play: the book's ink, compiled by the server and run here by
+ * inkle's own runtime, one passage at a time with its choices as buttons
+ * (ADR 0030). The choices made so far, where play started, the variables set
+ * before it, and the random seed are all in the address, so the browser's
+ * back button steps back and a link reopens the same moment.
  */
 export function PlayPage() {
   const api = useApi();
@@ -137,15 +187,15 @@ export function PlayPage() {
     (signal) => api.getPlay(slug, signal),
     `${slug}:${tree.files.map((file) => file.hash).join()}`,
   );
-  const branchesHref = `/books/${encodeURIComponent(slug)}/branches/edit`;
+  const branchesHref = `/books/${encodeURIComponent(slug)}/branches`;
 
   return (
     <section className="book-panel play-page" aria-labelledby="play-heading">
       <p className="coordinate-label">
-        <Link to={`/books/${encodeURIComponent(slug)}/branches`}>Branches</Link>
+        <Link to={branchesHref}>Branches</Link>
       </p>
       <h2 id="play-heading">Play</h2>
-      {story.status === 'loading' ? <LoadingState>Building the ink story…</LoadingState> : null}
+      {story.status === 'loading' ? <LoadingState>Compiling the ink…</LoadingState> : null}
       {story.status === 'error' ? (
         <>
           <ErrorState
@@ -154,7 +204,10 @@ export function PlayPage() {
             onRetry={story.reload}
           />
           <p>
-            <Link to={branchesHref}>Fix the choices on the Branches screen</Link>, then come back.
+            <Link to={`/books/${encodeURIComponent(slug)}/health`}>
+              See every problem on Health
+            </Link>
+            , then come back.
           </p>
         </>
       ) : null}
@@ -169,9 +222,29 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
   const [params, setParams] = useSearchParams();
   const pathParam = params.get('path');
   const path = useMemo(() => parsePath(pathParam), [pathParam]);
-  const from = params.get('from');
-  const start: Record<string, string> = from === null ? {} : { from };
-  const fromKnot = play.knots.find((entry) => entry.chapterId === from);
+  const fromParam = params.get('from');
+  const setParam = params.get('set');
+  const seedParam = params.get('seed');
+  const start = useMemo<Start>(() => {
+    // A chapter id (from older links) names its chapter's knot.
+    const from =
+      fromParam === null
+        ? null
+        : play.paths.includes(fromParam)
+          ? fromParam
+          : (play.knots.find((entry) => entry.chapterId === fromParam)?.knot ?? null);
+    const seed = Number(seedParam);
+    return {
+      from,
+      set: parseSet(setParam),
+      seed: Number.isInteger(seed) && seed > 0 ? seed : 1,
+    };
+  }, [fromParam, setParam, seedParam, play]);
+  const startParams = (next: Start): Record<string, string> => ({
+    ...(next.from === null ? {} : { from: next.from }),
+    ...(formatSet(next.set) === '' ? {} : { set: formatSet(next.set) }),
+    seed: String(next.seed),
+  });
 
   // The ink runtime loads with this screen, not with the app.
   useEffect(() => {
@@ -192,25 +265,39 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
   const turn = useMemo(() => {
     if (runtime === null) return null;
     try {
-      return replay(runtime, play, from, path);
+      return replay(runtime, play, start, path);
     } catch (error) {
       return errorMessage(error);
     }
-  }, [runtime, play, from, path]);
+  }, [runtime, play, start, path]);
 
   if (loadError !== null) {
     return <ErrorState title="The ink runtime could not load" message={loadError} />;
   }
   if (turn === null) return <LoadingState>Starting ink…</LoadingState>;
   if (typeof turn === 'string') {
-    return <ErrorState title="The ink story stopped with an error" message={turn} />;
+    return (
+      <>
+        <ErrorState title="The ink story stopped with an error" message={turn} />
+        <button type="button" className="button-secondary" onClick={() => setParams({})}>
+          Play from the start
+        </button>
+      </>
+    );
   }
+
+  const fromKnot = start.from?.split('.')[0];
+  const fromTitle =
+    fromKnot === undefined
+      ? null
+      : (play.knots.find((entry) => entry.knot === fromKnot)?.title ?? start.from);
+  const presets = Object.keys(start.set).length > 0;
 
   return (
     <>
       {play.warnings.length > 0 ? (
         <details className="reader-notes">
-          <summary>Build notes ({play.warnings.length})</summary>
+          <summary>Notes from the compiler ({play.warnings.length})</summary>
           <ul>
             {play.warnings.map((warning) => (
               <li key={warning}>{warning}</li>
@@ -218,9 +305,16 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
           </ul>
         </details>
       ) : null}
-      {fromKnot === undefined ? null : (
+      {start.from === null && !presets ? null : (
         <p className="coordinate-label">
-          Playing from {fromKnot.title}, with every flag false.{' '}
+          {start.from === null ? 'Playing from the start' : `Playing from ${fromTitle}`}
+          {start.from === null ? '' : start.from.includes('.') ? ` (${start.from})` : ''}
+          {presets
+            ? `, with ${Object.entries(start.set)
+                .map(([name, value]) => `${name} = ${value}`)
+                .join(', ')}`
+            : ', with every variable as declared'}
+          .{' '}
           <button type="button" className="text-button" onClick={() => setParams({})}>
             Play from the start
           </button>
@@ -229,32 +323,187 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
       <Passage
         slug={slug}
         turn={turn}
-        step={`${from ?? ''}:${path.join('.')}`}
+        step={`${fromParam ?? ''}:${setParam ?? ''}:${seedParam ?? ''}:${path.join('.')}`}
         atStart={path.length === 0}
-        onChoose={(index) => setParams({ ...start, path: [...path, index].join('.') })}
-        onRestart={() => setParams(start)}
+        onChoose={(index) => setParams({ ...startParams(start), path: [...path, index].join('.') })}
+        onRestart={() => setParams(startParams({ ...start, seed: newSeed() }))}
       />
       {turn.state.length > 0 ? (
         <section className="play-state" aria-labelledby="play-state-heading">
           <h3 id="play-state-heading">Story state</h3>
           <ul>
-            {turn.state.map(({ flag, value }) => (
-              <li key={flag}>
-                <code>{flag}</code> {value ? 'true' : 'false'}
+            {turn.state.map(({ name, value }) => (
+              <li key={name}>
+                <code>{name}</code> {value}
               </li>
             ))}
           </ul>
         </section>
       ) : null}
+      <Playtest
+        key={`${fromParam ?? ''}:${setParam ?? ''}`}
+        play={play}
+        start={start}
+        onStart={(next) => setParams(startParams(next))}
+      />
+      <Saves slug={slug} params={params} onOpen={(saved) => setParams(saved)} />
       <details className="ink-source">
         <summary>ink source</summary>
         <p className="coordinate-label">
-          The ink worldbookllm writes for this book, compiled here with inkjs. Download it from
-          Project → Build to open it in Inky.
+          The whole story as one ink file, as Project → Build exports it to open in Inky.
         </p>
         <pre className="build-output">{play.source}</pre>
       </details>
     </>
+  );
+}
+
+/** Start from any knot or stitch, with variables set first: for testing a branch without replaying to it. */
+function Playtest({
+  play,
+  start,
+  onStart,
+}: {
+  play: BookPlay;
+  start: Start;
+  onStart: (start: Start) => void;
+}) {
+  const [from, setFrom] = useState(start.from ?? '');
+  const [set, setSet] = useState<Record<string, string>>(start.set);
+  const variables = play.variables.filter((variable) => variable.kind === 'var');
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onStart({ from: from === '' ? null : from, set, seed: start.seed });
+  }
+
+  return (
+    <details className="play-tools">
+      <summary>Playtest from anywhere</summary>
+      <form className="play-tools-form" onSubmit={submit}>
+        <label>
+          Start from
+          <select value={from} onChange={(event) => setFrom(event.target.value)}>
+            <option value="">The story&apos;s start</option>
+            {play.paths.map((entry) => (
+              <option key={entry} value={entry}>
+                {entry}
+              </option>
+            ))}
+          </select>
+        </label>
+        {variables.length > 0 ? (
+          <fieldset>
+            <legend>Set variables first (leave blank to keep their declared value)</legend>
+            {variables.map((variable) => (
+              <label key={variable.name}>
+                <code>{variable.name}</code>
+                <input
+                  value={set[variable.name] ?? ''}
+                  spellCheck={false}
+                  placeholder="true, 3, or text"
+                  onChange={(event) => setSet({ ...set, [variable.name]: event.target.value })}
+                />
+              </label>
+            ))}
+          </fieldset>
+        ) : null}
+        <button type="submit" className="button-secondary">
+          Start playing
+        </button>
+      </form>
+    </details>
+  );
+}
+
+interface Save {
+  name: string;
+  params: Record<string, string>;
+  at: string;
+}
+
+function savesKey(slug: string): string {
+  return `worldbookllm.play.${slug}.saves`;
+}
+
+function readSaves(slug: string): Save[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(savesKey(slug)) ?? '[]');
+    return Array.isArray(value) ? (value as Save[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSaves(slug: string, saves: readonly Save[]): void {
+  try {
+    localStorage.setItem(savesKey(slug), JSON.stringify(saves));
+  } catch {
+    // Saves are a convenience; a private window may refuse them. The address still works.
+  }
+}
+
+/** Named moments of a play-through, kept in this browser; each is the address that reopens it. */
+function Saves({
+  slug,
+  params,
+  onOpen,
+}: {
+  slug: string;
+  params: URLSearchParams;
+  onOpen: (params: Record<string, string>) => void;
+}) {
+  const [saves, setSaves] = useState(() => readSaves(slug));
+  const [name, setName] = useState('');
+  const update = (next: Save[]) => {
+    setSaves(next);
+    writeSaves(slug, next);
+  };
+
+  return (
+    <details className="play-tools">
+      <summary>Saves ({saves.length})</summary>
+      <form
+        className="play-tools-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const label = name.trim() === '' ? `Save ${saves.length + 1}` : name.trim();
+          update([
+            ...saves.filter((save) => save.name !== label),
+            { name: label, params: Object.fromEntries(params), at: new Date().toISOString() },
+          ]);
+          setName('');
+        }}
+      >
+        <label>
+          Name this moment
+          <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <button type="submit" className="button-secondary">
+          Save
+        </button>
+      </form>
+      {saves.length === 0 ? null : (
+        <ul className="entry-list" aria-label="Saves">
+          {saves.map((save) => (
+            <li key={save.name}>
+              <button type="button" className="text-button" onClick={() => onOpen(save.params)}>
+                {save.name}
+              </button>
+              <span className="coordinate-label">{new Date(save.at).toLocaleString()}</span>
+              <button
+                type="button"
+                className="text-button"
+                aria-label={`Delete ${save.name}`}
+                onClick={() => update(saves.filter((entry) => entry !== save))}
+              >
+                Delete
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
   );
 }
 

@@ -604,11 +604,8 @@ describe('builds and project import', () => {
     await user.selectOptions(screen.getByLabelText('Format'), 'print');
     screen.getByLabelText('Trim size');
     expect(screen.queryByText(/choices/u)).toBeNull();
-    await user.selectOptions(screen.getByLabelText('Format'), 'ink');
-    expect(screen.getByLabelText('Format').getAttribute('aria-describedby')).toBe(
-      'build-format-hint',
-    );
-    expect(document.getElementById('build-format-hint')?.textContent).toContain('choices');
+    // A book that reads straight through builds as story-skills does; ink is for interactive books.
+    expect(screen.queryByRole('option', { name: /ink/u })).toBeNull();
     await user.selectOptions(screen.getByLabelText('Format'), 'epub');
     expect(screen.getByLabelText('Format').getAttribute('aria-describedby')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Build' }));

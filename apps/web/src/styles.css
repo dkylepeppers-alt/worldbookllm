@@ -2586,8 +2586,33 @@ ol.inspector-sections {
   gap: 0.35rem;
 }
 
-.choice-state input {
+.choice-state input,
+.choice-state textarea {
   font-family: var(--font-mono);
+}
+
+.choice-state .checkbox-label {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.choice-state .checkbox-label input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+}
+
+.choice-then label {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 28rem;
+}
+
+.pre-line {
+  margin: 0;
+  white-space: pre-line;
 }
 
 @media (min-width: 620px) {
@@ -2595,6 +2620,54 @@ ol.inspector-sections {
     grid-column: 1 / -1;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+}
+
+/* Branches → Play: playtest and save panels under the passage. */
+.play-tools {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 0.5rem 1rem;
+}
+
+.play-tools > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 550;
+}
+
+.play-tools-form {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.5rem 0 0.75rem;
+}
+
+.play-tools-form label,
+.play-tools-form fieldset {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.play-tools-form fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.play-tools-form legend {
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.play-tools-form input {
+  font-family: var(--font-mono);
+}
+
+.play-tools-form .button-secondary {
+  justify-self: start;
 }
 
 .play-state {

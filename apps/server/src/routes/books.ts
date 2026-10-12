@@ -8,6 +8,7 @@ import {
   bookParamsSchema,
   bookSearchQuerySchema,
   chapterParamsSchema,
+  convertToInkSchema,
   checkpointParamsSchema,
   createBookBuildSchema,
   createBookImportSchema,
@@ -20,7 +21,7 @@ import {
   moveBookToSeriesSchema,
   moveEntitySchema,
   renameEntitySchema,
-  setChapterChoicesSchema,
+  setChapterEndingSchema,
   writeBookFileSchema,
 } from '@worldbookllm/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -186,14 +187,29 @@ export function registerBookRoutes(app: FastifyInstance): void {
     return books().manuscript(book);
   });
 
-  app.get('/api/books/:book/branches', (request) => {
+  app.get('/api/books/:book/story', (request) => {
     const { book } = bookParamsSchema.parse(request.params);
-    return books().branches(book);
+    return books().interactiveStory(book);
   });
 
-  app.put('/api/books/:book/chapters/:id/choices', (request) => {
+  app.get('/api/books/:book/chapters/:id/ending', (request) => {
     const { book, id } = chapterParamsSchema.parse(request.params);
-    return books().setChapterChoices(book, id, setChapterChoicesSchema.parse(request.body));
+    return books().chapterEnding(book, id);
+  });
+
+  app.put('/api/books/:book/chapters/:id/ending', (request) => {
+    const { book, id } = chapterParamsSchema.parse(request.params);
+    return books().setChapterEnding(book, id, setChapterEndingSchema.parse(request.body));
+  });
+
+  app.get('/api/books/:book/ink-conversion', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return books().inkConversion(book);
+  });
+
+  app.post('/api/books/:book/ink-conversion', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return books().convertToInk(book, convertToInkSchema.parse(request.body));
   });
 
   app.post('/api/books/:book/interactive-edition', async (request, reply) => {

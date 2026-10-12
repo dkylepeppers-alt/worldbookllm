@@ -233,6 +233,21 @@ export class BookFileStore {
     }
   }
 
+  /**
+   * A dot-file at the top of a book, such as the `.gitignore` story init
+   * writes, which `confine` refuses. Only a plain file is read, never a
+   * symlink; null when there is none.
+   */
+  readDotFile(slug: string, name: '.gitignore'): Buffer | null {
+    const absolute = join(this.root(slug), name);
+    try {
+      return lstatSync(absolute).isFile() ? readFileSync(absolute) : null;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+
   stat(slug: string, path: string): BookFileStat | null {
     const absolute = confine(this.root(slug), path);
     try {

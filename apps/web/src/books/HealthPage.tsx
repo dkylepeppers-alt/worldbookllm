@@ -25,15 +25,7 @@ function checksOf(report: BookCheckResult): Array<[string, CheckCounts]> {
   return Object.entries(data?.checks ?? {});
 }
 
-/** story-skills findings about choices and the paths through them. */
-const PATH_CODES = new Set(['invalid-choice', 'unreachable-chapter', 'state-differs-by-path']);
-
-function isPathFinding(finding: { code?: string; message: string }): boolean {
-  return (
-    PATH_CODES.has(finding.code ?? '') ||
-    (finding.code === 'missing-reference' && /choices\[\d+\]/u.test(finding.message))
-  );
-}
+const INK_SEVERITY = { error: 'error', warning: 'warning', todo: 'to do' } as const;
 
 function actionsOf(next: BookCheckResult): Action[] {
   const data = next.envelope.data as { actions?: Action[] } | null;
@@ -46,12 +38,14 @@ export function HealthPage() {
   const { slug, tree } = useBook();
   const health = useLoad(
     async (signal) => {
-      const [report, next, branches] = await Promise.all([
+      const [report, next, story] = await Promise.all([
         api.runBookCheck(slug, 'report', signal),
         api.runBookCheck(slug, 'next', signal),
-        tree.book.interactive === true ? api.getBranches(slug, signal) : Promise.resolve(null),
+        tree.book.interactive === true
+          ? api.getInteractiveStory(slug, signal)
+          : Promise.resolve(null),
       ]);
-      return { report, next, branches };
+      return { report, next, story };
     },
     `${slug}:${tree.files.map((file) => file.hash).join()}`,
   );
@@ -63,13 +57,9 @@ export function HealthPage() {
     );
   }
 
-  const { report, next, branches } = health.data;
+  const { report, next, story } = health.data;
   const findings = report.envelope.diagnostics;
-  const pathFindings = findings.filter(isPathFinding);
-  const stateProblems =
-    branches?.chapters.flatMap((chapter) =>
-      chapter.problems.map((problem) => ({ chapter, problem })),
-    ) ?? [];
+  const ink = story?.diagnostics ?? [];
   return (
     <section className="book-panel" aria-labelledby="health-heading">
       <p className="coordinate-label">story report · story next</p>
@@ -97,57 +87,37 @@ export function HealthPage() {
         ))}
       </ol>
 
-      {branches === null ? null : (
-        <section className="health-paths" aria-labelledby="health-paths-heading">
-          <h3 id="health-paths-heading">Paths</h3>
+      {story === null ? null : (
+        <section className="health-paths" aria-labelledby="health-ink-heading">
+          <h3 id="health-ink-heading">Ink</h3>
           <p>
-            story-skills follows every path of choices: a chapter no path reaches, a choice to a
-            missing chapter, or state that differs by the path that led to a chapter. It does not
-            read the flags choices set or require, so check those by playing the story.
+            What the ink compiler says about the story, and what its structure shows: knots nothing
+            leads to, ones that run out of story, and variables nothing reads. story-skills&apos;
+            checks above read the chapters&apos; prose without their ink.
           </p>
-          {pathFindings.length === 0 && stateProblems.length === 0 ? (
-            <p className="coordinate-label">No path problems.</p>
+          {ink.length === 0 ? (
+            <p className="coordinate-label">The ink compiles, and nothing stands out.</p>
           ) : (
-            <ul className="entry-list" aria-label="Path findings">
-              {pathFindings.map((finding, index) => {
-                const chapter =
-                  typeof finding.file === 'string'
-                    ? branches.chapters.find((entry) => entry.path === finding.file)
-                    : undefined;
-                return (
-                  <li key={`${index}:${finding.message}`}>
-                    <span className="coordinate-label">{finding.severity}</span>
-                    <span>{finding.message}</span>
-                    {typeof finding.file !== 'string' ? null : chapter === undefined ? (
-                      <Link to={fileHref(slug, finding.file)}>{finding.file}</Link>
-                    ) : (
-                      <Link
-                        to={`/books/${encodeURIComponent(slug)}/branches/edit#branch-${chapter.id}`}
-                      >
-                        {chapter.title}
-                      </Link>
-                    )}
-                  </li>
-                );
-              })}
-              {stateProblems.map(({ chapter, problem }) => (
-                <li key={`${chapter.id}:${problem}`}>
-                  <span className="coordinate-label">choices</span>
-                  <span>
-                    {chapter.title}: {problem}
-                  </span>
-                  <Link
-                    to={`/books/${encodeURIComponent(slug)}/branches/edit#branch-${chapter.id}`}
-                  >
-                    Edit the choices
-                  </Link>
+            <ul className="entry-list" aria-label="Ink findings">
+              {ink.map((entry, index) => (
+                <li key={`${index}:${entry.path ?? ''}:${entry.line ?? ''}:${entry.message}`}>
+                  <span className="coordinate-label">{INK_SEVERITY[entry.severity]}</span>
+                  <span>{entry.message}</span>
+                  {entry.path === null ? null : (
+                    <Link to={fileHref(slug, entry.path)}>
+                      {entry.path}
+                      {entry.line === null ? '' : `, line ${entry.line}`}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>
           )}
-          <p>
-            <Link to={`/books/${encodeURIComponent(slug)}/branches/play`}>Play the story</Link>
-          </p>
+          {story.compiled ? (
+            <p>
+              <Link to={`/books/${encodeURIComponent(slug)}/branches/play`}>Play the story</Link>
+            </p>
+          ) : null}
         </section>
       )}
 
