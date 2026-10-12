@@ -169,7 +169,7 @@ describe('agent turns', () => {
       'Stopped at chapter_01. Choices now: 0: Wait; 1: Go',
     );
     expect(calls.get('paths')?.result).toMatch(
-      /^Played every path: \d+ distinct states\.\n2 paths reach an ending, in 1 to 1 choices\.$/u,
+      /^Played every path: \d+ distinct states\.\n2 distinct endings, reached in 1 to 1 choices\.$/u,
     );
   }, 30_000);
 

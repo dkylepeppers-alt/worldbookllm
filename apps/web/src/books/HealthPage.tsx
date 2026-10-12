@@ -153,8 +153,10 @@ function pathSummary(report: PathReport): string {
     : `Played ${plural(report.explored, 'distinct state', 'distinct states')}, then stopped: the story has more, so this is partial.`;
   const endings =
     report.endings === 0 || report.shortest === null || report.longest === null
-      ? 'No path reaches an ending.'
-      : `${plural(report.endings, 'path reaches', 'paths reach')} an ending, in ${
+      ? report.complete
+        ? 'No path reaches an ending.'
+        : 'No ending was reached in the states played.'
+      : `${plural(report.endings, 'distinct ending', 'distinct endings')}, reached in ${
           report.shortest === report.longest
             ? plural(report.shortest, 'choice', 'choices')
             : `${report.shortest} to ${report.longest} choices`
@@ -223,7 +225,14 @@ function PathsSection() {
           ) : null}
           {paths.data.unreached.length > 0 ? (
             <>
-              <h4>No path reaches</h4>
+              <h4>
+                {paths.data.complete ? 'No path reaches' : 'Not reached in the states played'}
+              </h4>
+              {paths.data.complete ? null : (
+                <p className="coordinate-label">
+                  The rest of the story was not played, so these may still be reachable.
+                </p>
+              )}
               <ul className="entry-list" aria-label="Knots no path reaches">
                 {paths.data.unreached.map((node) => (
                   <li key={node.node}>
@@ -237,7 +246,16 @@ function PathsSection() {
           ) : null}
           {paths.data.neverOffered.length > 0 ? (
             <>
-              <h4>Choices never offered</h4>
+              <h4>
+                {paths.data.complete
+                  ? 'Choices never offered'
+                  : 'Choices not offered in the states played'}
+              </h4>
+              {paths.data.complete ? null : (
+                <p className="coordinate-label">
+                  The rest of the story was not played, so these may still be offered.
+                </p>
+              )}
               <ul className="entry-list" aria-label="Choices never offered">
                 {paths.data.neverOffered.map((choice) => (
                   <li key={`${choice.node}:${choice.line ?? ''}:${choice.text}`}>

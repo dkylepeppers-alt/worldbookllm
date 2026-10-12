@@ -129,7 +129,7 @@ export function inkPaths(workspace: AgentWorkspace): string {
   if (reading.compiled.json === null || reading.structure === null) {
     throw new Error('The ink does not compile, so its paths cannot be played. Run ink_check.');
   }
-  const report = explorePaths(reading.compiled.json, reading.structure.nodes);
+  const report = explorePaths(reading.compiled.json, reading.structure);
   const place = (path: string | null, line: number | null) =>
     path === null ? 'no file' : line === null ? path : `${path}:${line}`;
   const lines = [
@@ -137,8 +137,10 @@ export function inkPaths(workspace: AgentWorkspace): string {
       ? `Played every path: ${report.explored} distinct states.`
       : `Played ${report.explored} distinct states and stopped; the story has more, so this is partial.`,
     report.endings === 0
-      ? 'No path reaches an ending.'
-      : `${report.endings} ${report.endings === 1 ? 'path reaches' : 'paths reach'} an ending, in ${report.shortest} to ${report.longest} choices.`,
+      ? report.complete
+        ? 'No path reaches an ending.'
+        : 'No ending was reached in the states played.'
+      : `${report.endings} distinct ${report.endings === 1 ? 'ending' : 'endings'}, reached in ${report.shortest} to ${report.longest} choices.`,
   ];
   if (report.errors.length > 0) {
     lines.push(
@@ -150,13 +152,17 @@ export function inkPaths(workspace: AgentWorkspace): string {
   }
   if (report.unreached.length > 0) {
     lines.push(
-      'No path reaches:',
+      report.complete
+        ? 'No path reaches:'
+        : 'Not reached in the states played (the rest was not played, so these may be reachable):',
       ...limited(report.unreached.map((node) => `- ${node.node} (${place(node.path, node.line)})`)),
     );
   }
   if (report.neverOffered.length > 0) {
     lines.push(
-      'Choices no path offers:',
+      report.complete
+        ? 'Choices no path offers:'
+        : 'Choices not offered in the states played (the rest was not played, so these may be offered):',
       ...limited(
         report.neverOffered.map(
           (choice) => `- [${choice.text}] in ${choice.node} (${place(choice.path, choice.line)})`,

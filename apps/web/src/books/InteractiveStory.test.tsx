@@ -513,7 +513,7 @@ describe('Health', () => {
     });
     expect(
       await screen.findByText(
-        'Played every path: 12 distinct states. 3 paths reach an ending, in 2 to 5 choices.',
+        'Played every path: 12 distinct states. 3 distinct endings, reached in 2 to 5 choices.',
       ),
     ).toBeTruthy();
     const errors = screen.getByRole('list', { name: 'Errors while playing' });
@@ -544,16 +544,26 @@ describe('Health', () => {
           endings: 1,
           shortest: 4,
           longest: 4,
-          unreached: [],
-          neverOffered: [],
+          unreached: [
+            { node: 'chapter_03', title: 'The Lamp', path: 'chapters/chapter-03.md', line: 5 },
+          ],
+          neverOffered: [
+            { node: 'chapter_01', text: 'Fly', path: 'chapters/chapter-01.md', line: 9 },
+          ],
           errors: [],
         }),
     });
     expect(
       await screen.findByText(
-        'Played 3000 distinct states, then stopped: the story has more, so this is partial. 1 path reaches an ending, in 4 choices.',
+        'Played 3000 distinct states, then stopped: the story has more, so this is partial. 1 distinct ending, reached in 4 choices.',
       ),
     ).toBeTruthy();
+    // What it did not see is not called unreachable.
+    expect(screen.getByRole('heading', { name: 'Not reached in the states played' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Choices not offered in the states played' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'No path reaches' })).toBeNull();
   });
 
   it('has no Ink section for a book that is not interactive', async () => {

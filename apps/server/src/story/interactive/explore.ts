@@ -1,5 +1,7 @@
-import type { PathReport, StoryNode } from '@worldbookllm/shared';
+import type { PathReport, StoryChoice } from '@worldbookllm/shared';
 import { Story } from 'inkjs';
+
+import type { StoryStructure } from './structure.js';
 
 /**
  * Plays an interactive book's compiled story down every path it allows
@@ -15,8 +17,10 @@ import { Story } from 'inkjs';
 const STATE_BUDGET = 3_000;
 /** Wall-clock budget, so a vast story never holds the server. */
 const TIME_BUDGET_MS = 2_000;
-/** Visit counts above this read alike, so a loop's states repeat instead of growing. */
-const VISIT_CAP = 3;
+/** Visit counts are kept exactly up to at least this. */
+const MIN_VISIT_CAP = 3;
+/** And at most this, so a loop's states still repeat. */
+const MAX_VISIT_CAP = 100;
 
 interface Stop {
   /** The story's state at this choice point or ending. */
@@ -27,13 +31,42 @@ interface Stop {
 
 type InkStory = InstanceType<typeof Story>;
 
+/** Thrown when the time budget runs out partway through a passage. */
+class OutOfTime extends Error {}
+
 /**
- * A state's identity for exploring: variables, where the story is, the
- * choices it offers, and how often each knot was visited, capped. Turn
- * counters and output are left out, so a loop back to a state seen before
- * is recognised.
+ * The visit count above which counts read alike. The story can only tell
+ * counts apart by comparing them with the numbers it is written with (a
+ * condition such as `{cellar > 4}`, a sequence's length), so counts above
+ * the largest of those, plus one, behave the same; capping there lets a
+ * loop's states repeat without merging states the story treats differently.
  */
-function stateKey(story: InkStory): string {
+function visitCapOf(json: string): number {
+  let largest = 0;
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === 'number' && Number.isInteger(item)) {
+          largest = Math.max(largest, Math.abs(item));
+        } else walk(item);
+      }
+    } else if (value !== null && typeof value === 'object') {
+      // Container flags (`#f`) are numbers too, but not ones the story compares.
+      for (const [key, item] of Object.entries(value)) if (key !== '#f') walk(item);
+    }
+  };
+  walk((JSON.parse(json) as { root?: unknown }).root);
+  return Math.min(Math.max(largest + 1, MIN_VISIT_CAP), MAX_VISIT_CAP);
+}
+
+/**
+ * A state's identity for exploring: variables, the random generator, where
+ * the story is, the choices it offers, and how often each knot was
+ * visited, capped. Turn counters, output, thread indexes and the thread
+ * counter grow every time round a loop and are left out, so a loop back to
+ * a state seen before is recognised.
+ */
+function stateKey(story: InkStory, visitCap: number): string {
   const state = JSON.parse(story.state.toJson()) as {
     variablesState?: unknown;
     visitCounts?: Record<string, number>;
@@ -48,15 +81,13 @@ function stateKey(story: InkStory): string {
   const visits = Object.fromEntries(
     Object.entries(state.visitCounts ?? {}).map(([path, count]) => [
       path,
-      Math.min(count, VISIT_CAP),
+      Math.min(count, visitCap),
     ]),
   );
   const flows = Object.fromEntries(
     Object.entries(state.flows ?? {}).map(([name, flow]) => [
       name,
       {
-        // Thread indexes and the thread counter grow every time round a
-        // loop; only the frames and where each thread was say where it is.
         threads: (flow.callstack?.threads ?? []).map((thread) => [
           thread.callstack,
           thread.previousContentObject,
@@ -68,7 +99,9 @@ function stateKey(story: InkStory): string {
       },
     ]),
   );
-  return JSON.stringify([state.variablesState, visits, flows]);
+  // The same state after a different number of RANDOM() calls plays on differently.
+  const random = [story.state.storySeed, story.state.previousRandom];
+  return JSON.stringify([state.variablesState, visits, flows, random]);
 }
 
 /** Every knot and stitch visited so far: those with a visit count. */
@@ -84,11 +117,19 @@ function visited(story: InkStory, names: readonly string[], into: Set<string>): 
 }
 
 /** Explores the story and reports what playing it shows. */
-export function explorePaths(json: string, nodes: readonly StoryNode[]): PathReport {
-  const started = Date.now();
+export function explorePaths(
+  json: string,
+  structure: Pick<StoryStructure, 'nodes' | 'choiceSources'>,
+): PathReport {
+  const deadline = Date.now() + TIME_BUDGET_MS;
+  const { nodes, choiceSources } = structure;
+  const visitCap = visitCapOf(json);
   const names = nodes.filter((node) => node.kind !== 'function').map((node) => node.name);
   const reached = new Set<string>();
+  // Runtime source paths of the choices offered, and (for choices whose
+  // source is unknown) their knot and text.
   const offered = new Set<string>();
+  const offeredText = new Set<string>();
   const errors = new Map<string, number[]>();
   const endings: number[] = [];
   const seen = new Set<string>();
@@ -105,12 +146,17 @@ export function explorePaths(json: string, nodes: readonly StoryNode[]): PathRep
   };
   const initial = story.state.toJson();
 
-  /** Runs to the next stop; false when it stopped on an error. */
+  /** Runs to the next stop; false when it stopped on an error. Throws OutOfTime. */
   const run = (path: number[]): boolean => {
     failure = null;
     try {
-      while (story.canContinue) story.Continue();
+      while (story.canContinue) {
+        // A passage can loop without ever offering a choice; the budget holds inside it too.
+        if (Date.now() > deadline) throw new OutOfTime();
+        story.Continue();
+      }
     } catch (error) {
+      if (error instanceof OutOfTime) throw error;
       failure ??= error instanceof Error ? error.message : String(error);
     }
     visited(story, names, reached);
@@ -122,49 +168,45 @@ export function explorePaths(json: string, nodes: readonly StoryNode[]): PathRep
   };
 
   const queue: Stop[] = [];
-  story.state.LoadJson(initial);
-  if (run([])) queue.push({ state: story.state.toJson(), path: [] });
+  try {
+    story.state.LoadJson(initial);
+    if (run([])) queue.push({ state: story.state.toJson(), path: [] });
 
-  while (queue.length > 0) {
-    if (explored >= STATE_BUDGET || Date.now() - started > TIME_BUDGET_MS) {
-      complete = false;
-      break;
-    }
-    const stop = queue.shift()!;
-    story.state.LoadJson(stop.state);
-    const key = stateKey(story);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    explored += 1;
-    const choices = story.currentChoices.map((choice: { text: string; sourcePath: string }) => ({
-      text: choice.text,
-      source: choice.sourcePath,
-    }));
-    for (const choice of choices) offered.add(`${choice.source.split('.')[0]}\0${choice.text}`);
-    if (choices.length === 0) {
-      endings.push(stop.path.length);
-      continue;
-    }
-    choices.forEach((_choice: unknown, index: number) => {
+    while (queue.length > 0) {
+      if (explored >= STATE_BUDGET || Date.now() > deadline) throw new OutOfTime();
+      const stop = queue.shift()!;
       story.state.LoadJson(stop.state);
-      story.ChooseChoiceIndex(index);
-      const path = [...stop.path, index];
-      if (run(path)) queue.push({ state: story.state.toJson(), path });
-    });
+      const key = stateKey(story, visitCap);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      explored += 1;
+      const choices = story.currentChoices as Array<{ text: string; sourcePath: string }>;
+      for (const choice of choices) {
+        offered.add(choice.sourcePath);
+        offeredText.add(`${choice.sourcePath.split('.')[0]}\0${choice.text}`);
+      }
+      if (choices.length === 0) {
+        endings.push(stop.path.length);
+        continue;
+      }
+      for (let index = 0; index < choices.length; index += 1) {
+        story.state.LoadJson(stop.state);
+        story.ChooseChoiceIndex(index);
+        const path = [...stop.path, index];
+        if (run(path)) queue.push({ state: story.state.toJson(), path });
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof OutOfTime)) throw error;
+    complete = false;
   }
 
-  const never = nodes.flatMap((node) =>
-    node.kind === 'function'
-      ? []
-      : node.choices
-          .filter((choice) => !offered.has(`${node.name.split('.')[0]}\0${choice.text}`))
-          .map((choice) => ({
-            node: node.name,
-            text: choice.text,
-            line: choice.line,
-            path: node.path,
-          })),
-  );
+  const wasOffered = (node: string, choice: StoryChoice) => {
+    const source = choiceSources.get(choice);
+    return source === undefined
+      ? offeredText.has(`${node.split('.')[0]}\0${choice.text}`)
+      : offered.has(source);
+  };
   return {
     complete,
     explored,
@@ -174,7 +216,18 @@ export function explorePaths(json: string, nodes: readonly StoryNode[]): PathRep
     unreached: nodes
       .filter((node) => node.kind !== 'function' && !reached.has(node.name))
       .map((node) => ({ node: node.name, title: node.title, path: node.path, line: node.line })),
-    neverOffered: never,
+    neverOffered: nodes.flatMap((node) =>
+      node.kind === 'function'
+        ? []
+        : node.choices
+            .filter((choice) => !wasOffered(node.name, choice))
+            .map((choice) => ({
+              node: node.name,
+              text: choice.text,
+              line: choice.line,
+              path: node.path,
+            })),
+    ),
     errors: [...errors].map(([message, path]) => ({ message, path })),
   };
 }

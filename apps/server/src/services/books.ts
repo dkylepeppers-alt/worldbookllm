@@ -1385,7 +1385,7 @@ export class BookService {
       const cached = this.pathCache.get(reading);
       if (cached !== undefined) return cached;
       const { json, structure } = compiledOrThrow(reading);
-      const report = explorePaths(json, structure.nodes);
+      const report = explorePaths(json, structure);
       this.pathCache.set(reading, report);
       return report;
     });

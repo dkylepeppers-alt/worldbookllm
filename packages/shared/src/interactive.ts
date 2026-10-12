@@ -224,12 +224,12 @@ export const pathReportSchema = z.strictObject({
   complete: z.boolean(),
   /** Distinct states explored. */
   explored: z.number().int().nonnegative(),
-  /** Paths that reached an ending. */
+  /** Distinct ending states reached. */
   endings: z.number().int().nonnegative(),
   /** Fewest and most choices from the start to an ending. */
   shortest: z.number().int().nonnegative().nullable(),
   longest: z.number().int().nonnegative().nullable(),
-  /** Knots and stitches no explored path visits. */
+  /** Knots and stitches no explored path visits; when not complete, only unseen so far. */
   unreached: z.array(
     z.strictObject({
       node: z.string(),
@@ -238,7 +238,10 @@ export const pathReportSchema = z.strictObject({
       line: z.number().int().positive().nullable(),
     }),
   ),
-  /** Choices no explored path offers: their condition never holds, or nothing leads there. */
+  /**
+   * Choices no explored path offers: their condition never holds, or nothing
+   * leads there. When not complete, only unseen so far.
+   */
   neverOffered: z.array(
     z.strictObject({
       node: z.string(),

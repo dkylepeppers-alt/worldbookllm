@@ -15,7 +15,7 @@ function story(chapters: Record<string, string>, variables = '') {
   ];
   const reading = readInkStory(files, 'Gull Rock');
   expect(reading.compiled.diagnostics.filter((entry) => entry.severity === 'error')).toEqual([]);
-  return explorePaths(reading.compiled.json!, reading.structure!.nodes);
+  return explorePaths(reading.compiled.json!, reading.structure!);
 }
 
 describe('exploring every path', () => {
@@ -60,6 +60,46 @@ describe('exploring every path', () => {
     expect(report).toMatchObject({ complete: true, errors: [], neverOffered: [], unreached: [] });
     expect(report.shortest).toBe(2);
   });
+
+  it('tells visit counts apart up to the largest number the story compares them with', () => {
+    const report = story({
+      // Each Wait leaves the stitch and comes back, so its visit count rises.
+      'chapter-01': [
+        '-> desk',
+        '= desk',
+        '+ [Wait] -> pause',
+        '* {desk > 4} [Leave] -> chapter_02',
+        '= pause',
+        '-> desk',
+      ].join('\n'),
+      'chapter-02': 'Out.\n-> END',
+    });
+    expect(report).toMatchObject({ complete: true, neverOffered: [], unreached: [] });
+    expect(report.shortest).toBe(5);
+  });
+
+  it('tells apart choices with the same text in different stitches', () => {
+    const report = story({
+      'chapter-01': [
+        '-> left',
+        '= left',
+        '* [Open the door] -> chapter_02',
+        '= right',
+        '* [Open the door] -> chapter_02',
+      ].join('\n'),
+      'chapter-02': 'Out.\n-> END',
+    });
+    expect(report.neverOffered).toEqual([
+      expect.objectContaining({ node: 'chapter_01.right', text: 'Open the door' }),
+    ]);
+  });
+
+  it('stops a passage that loops without offering a choice, and says it is partial', () => {
+    const started = Date.now();
+    const report = story({ 'chapter-01': '-> spin\n= spin\nRound.\n-> spin' });
+    expect(report.complete).toBe(false);
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 20_000);
 
   it('stops at its budget on a story too large to explore, and says so', () => {
     const report = story(
