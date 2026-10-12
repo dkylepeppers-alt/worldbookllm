@@ -118,6 +118,13 @@ export function inkNoteAfterWrite(workspace: AgentWorkspace, path: string): stri
   return `\nThe ink in ${path} does not compile:\n${limited(mine.map((entry) => `- ${describeDiagnostic(entry)}`)).join('\n')}`;
 }
 
+/** A runtime path's knot or stitch: `chapter_01.cellar.0.c-1` is `chapter_01.cellar`. */
+function placeOf(path: string): string {
+  const parts = path.split('.');
+  const index = parts.findIndex((part) => /^(?:\d+|c-\d+|g-\d+)$/u.test(part));
+  return (index === -1 ? parts : parts.slice(0, index)).join('.');
+}
+
 export interface InkPlayInput {
   /** A knot or `knot.stitch` to start from; the story's start when left out. */
   from?: string | undefined;
@@ -148,7 +155,14 @@ export function inkPlay(workspace: AgentWorkspace, input: InkPlayInput): string 
   for (const [name, value] of Object.entries(input.set)) story.variablesState.$(name, value);
   if (input.from !== undefined) story.ChoosePathString(input.from);
   const lines: string[] = [];
+  const names = (reading.structure?.nodes ?? [])
+    .filter((node) => node.kind !== 'function')
+    .map((node) => node.name);
+  const visits = () => names.map((name) => story.state.VisitCountAtPathString(name) ?? 0);
+  // The knots and stitches entered since the last choice, for where an ending is.
+  let entered: string[] = [];
   const run = () => {
+    const before = visits();
     while (story.canContinue) {
       const text = story.Continue()?.trim() ?? '';
       const tags: string[] = story.currentTags ?? [];
@@ -158,6 +172,10 @@ export function inkPlay(workspace: AgentWorkspace, input: InkPlayInput): string 
       if (chapter) lines.push(`## ${chapter}`);
       if (text !== '') lines.push(text);
     }
+    const after = visits();
+    const rose = names.filter((_name, at) => after[at]! > before[at]!);
+    // A stitch says more than the knot it is in.
+    entered = rose.filter((name) => !rose.some((other) => other.startsWith(`${name}.`)));
   };
   run();
   for (const index of input.choices) {
@@ -180,7 +198,9 @@ export function inkPlay(workspace: AgentWorkspace, input: InkPlayInput): string 
   return [
     ...limited(lines),
     '',
-    offered.length === 0 ? 'The story ends here.' : `Choices now: ${offered.join('; ')}`,
+    offered.length === 0
+      ? `The story ends here${entered.length === 0 ? '' : `, in ${entered.join(', ')}`}.`
+      : `Stopped at ${placeOf(story.currentChoices[0].sourcePath)}. Choices now: ${offered.join('; ')}`,
     ...(variables.length === 0
       ? []
       : [

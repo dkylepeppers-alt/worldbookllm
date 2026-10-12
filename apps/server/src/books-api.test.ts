@@ -879,6 +879,26 @@ describe('interactive books', () => {
       payload: { path: '_index.md', content: '' },
     });
     expect(outside.statusCode).toBeGreaterThanOrEqual(400);
+    // A writable file that holds no ink is refused, not checked as if unchanged.
+    const notes = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/ink-check`,
+      payload: { path: 'notes/foo.md', content: '{oops' },
+    });
+    expect(notes.statusCode).toBe(400);
+
+    // A check overtaken by a newer one for the same book stops before compiling.
+    const books = app.services.books;
+    const input = { path: 'chapters/chapter-02.md', content: unsaved };
+    const [older, newer] = await Promise.allSettled([
+      books.inkCheck(slug, input),
+      books.inkCheck(slug, input),
+    ]);
+    expect(older).toMatchObject({
+      status: 'rejected',
+      reason: expect.objectContaining({ code: 'ink_check_superseded' }),
+    });
+    expect(newer).toMatchObject({ status: 'fulfilled', value: { compiled: false } });
   }, 30_000);
 
   it('reads the story structure: choices, conditions, stitches, variables, and what nothing reaches', async () => {
