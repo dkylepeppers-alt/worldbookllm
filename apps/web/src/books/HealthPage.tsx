@@ -1,4 +1,4 @@
-import type { BookCheckResult } from '@worldbookllm/shared';
+import type { BookCheckResult, PathReport } from '@worldbookllm/shared';
 import { Link } from 'react-router-dom';
 
 import { useApi } from '../api/useApi.js';
@@ -121,6 +121,8 @@ export function HealthPage() {
         </section>
       )}
 
+      {story?.compiled === true ? <PathsSection /> : null}
+
       {findings.length > 0 ? (
         <>
           <h3>Findings</h3>
@@ -135,6 +137,136 @@ export function HealthPage() {
               </li>
             ))}
           </ul>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+function pathSummary(report: PathReport): string {
+  const explored = report.complete
+    ? `Played every path: ${plural(report.explored, 'distinct state', 'distinct states')}.`
+    : `Played ${plural(report.explored, 'distinct state', 'distinct states')}, then stopped: the story has more, so this is partial.`;
+  const endings =
+    report.endings === 0 || report.shortest === null || report.longest === null
+      ? report.complete
+        ? 'No path reaches an ending.'
+        : 'No ending was reached in the states played.'
+      : `${plural(report.endings, 'distinct ending', 'distinct endings')}, reached in ${
+          report.shortest === report.longest
+            ? plural(report.shortest, 'choice', 'choices')
+            : `${report.shortest} to ${report.longest} choices`
+        }.`;
+  return `${explored} ${endings}`;
+}
+
+/**
+ * Health → Paths (ADR 0032): the story played down every path, for what
+ * reading its source cannot show.
+ */
+function PathsSection() {
+  const api = useApi();
+  const { slug, tree } = useBook();
+  const paths = useLoad(
+    (signal) => api.getPathReport(slug, signal),
+    `${slug}:${tree.files.map((file) => file.hash).join()}`,
+  );
+  const book = `/books/${encodeURIComponent(slug)}`;
+  const place = (path: string | null, line: number | null) =>
+    path === null ? null : (
+      <Link to={fileHref(slug, path)}>
+        {path}
+        {line === null ? '' : `, line ${line}`}
+      </Link>
+    );
+
+  return (
+    <section className="health-paths" aria-labelledby="health-paths-heading">
+      <h3 id="health-paths-heading">Paths</h3>
+      <p>
+        The story played down every path, as a reader could: where it stops with an error, how its
+        paths end, and what no path reaches.
+      </p>
+      {paths.status === 'loading' ? <LoadingState>Playing every path…</LoadingState> : null}
+      {paths.status === 'error' ? (
+        <ErrorState
+          title="The paths could not be played"
+          message={paths.message}
+          onRetry={paths.reload}
+        />
+      ) : null}
+      {paths.status === 'ready' ? (
+        <>
+          <p className="coordinate-label">{pathSummary(paths.data)}</p>
+          {paths.data.errors.length > 0 ? (
+            <>
+              <h4>Errors while playing</h4>
+              <ul className="entry-list" aria-label="Errors while playing">
+                {paths.data.errors.map((error) => (
+                  <li key={error.message}>
+                    <span className="coordinate-label">error</span>
+                    <span>{error.message}</span>
+                    <Link
+                      to={`${book}/branches/play?${new URLSearchParams({
+                        seed: '1',
+                        ...(error.path.length === 0 ? {} : { path: error.path.join('.') }),
+                      }).toString()}`}
+                    >
+                      Reproduce in Play ({plural(error.path.length, 'choice', 'choices')})
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {paths.data.unreached.length > 0 ? (
+            <>
+              <h4>
+                {paths.data.complete ? 'No path reaches' : 'Not reached in the states played'}
+              </h4>
+              {paths.data.complete ? null : (
+                <p className="coordinate-label">
+                  The rest of the story was not played, so these may still be reachable.
+                </p>
+              )}
+              <ul className="entry-list" aria-label="Knots no path reaches">
+                {paths.data.unreached.map((node) => (
+                  <li key={node.node}>
+                    <strong>{node.title}</strong>
+                    <span className="coordinate-label">{node.node}</span>
+                    {place(node.path, node.line)}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {paths.data.neverOffered.length > 0 ? (
+            <>
+              <h4>
+                {paths.data.complete
+                  ? 'Choices never offered'
+                  : 'Choices not offered in the states played'}
+              </h4>
+              {paths.data.complete ? null : (
+                <p className="coordinate-label">
+                  The rest of the story was not played, so these may still be offered.
+                </p>
+              )}
+              <ul className="entry-list" aria-label="Choices never offered">
+                {paths.data.neverOffered.map((choice) => (
+                  <li key={`${choice.node}:${choice.line ?? ''}:${choice.text}`}>
+                    <strong>{choice.text}</strong>
+                    <span className="coordinate-label">{choice.node}</span>
+                    {place(choice.path, choice.line)}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
         </>
       ) : null}
     </section>

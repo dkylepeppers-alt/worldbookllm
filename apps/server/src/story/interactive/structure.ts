@@ -22,6 +22,8 @@ interface Node extends ParsedNode {
   readonly isThread?: boolean;
   readonly isEnd?: boolean;
   readonly isDone?: boolean;
+  /** A choice's runtime choice point, whose path the runtime reports as the choice's source. */
+  readonly runtimeChoice?: { path?: { toString(): string } | null } | null;
   readonly isFunctionCall?: boolean;
   readonly variableName?: string;
   readonly varIdentifier?: { name: string | null } | null;
@@ -31,6 +33,8 @@ export interface StoryStructure {
   start: string | null;
   nodes: StoryNode[];
   variables: StoryVariable[];
+  /** Each choice's runtime source path, which the runtime reports when it offers it. */
+  choiceSources: Map<StoryChoice, string>;
 }
 
 const FLOWS = new Set(['Knot', 'Stitch', 'Function']);
@@ -96,6 +100,7 @@ export function storyStructure(parsed: ParsedNode, story: AssembledStory): Story
   };
   const drafts = new Map<string, Draft>();
   const tops: string[] = [];
+  const choiceSources = new Map<StoryChoice, string>();
 
   const draftFor = (flow: Node, knot: Node | null): Draft => {
     const own = nameOf(flow);
@@ -217,6 +222,8 @@ export function storyStructure(parsed: ParsedNode, story: AssembledStory): Story
             writes: [],
             line: at?.line ?? null,
           };
+          const source = runtimePath(child);
+          if (source !== null) choiceSources.set(record, source);
           current = { record, writes: new Set<string>() };
           choices.push(current);
           visit(child, current);
@@ -273,7 +280,17 @@ export function storyStructure(parsed: ParsedNode, story: AssembledStory): Story
     start,
     nodes: [...drafts.values()].map((draft) => draft.node),
     variables: variablesOf(root, story),
+    choiceSources,
   };
+}
+
+/** A parsed choice's runtime path, or null when it was not compiled. */
+function runtimePath(choice: Node): string | null {
+  try {
+    return choice.runtimeChoice?.path?.toString() ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const DECLARATION = /^\s*(?:VAR|CONST|LIST)\s+[A-Za-z_]\w*\s*=\s*(.*?)\s*(?:\/\/.*)?$/u;

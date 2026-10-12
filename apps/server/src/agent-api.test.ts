@@ -116,6 +116,7 @@ describe('agent turns', () => {
         ),
       () => sse(toolCall('play', 'ink_play', { choices: [0], set: { trust: 2 } })),
       () => sse(toolCall('look', 'ink_play', {})),
+      () => sse(toolCall('paths', 'ink_paths', {})),
       () => sse(text('Checked.')),
     ]);
     const books = app.services.books;
@@ -166,6 +167,9 @@ describe('agent turns', () => {
     expect(calls.get('play')?.result).toContain('The story ends here, in chapter_02.');
     expect(calls.get('look')?.result).toContain(
       'Stopped at chapter_01. Choices now: 0: Wait; 1: Go',
+    );
+    expect(calls.get('paths')?.result).toMatch(
+      /^Played every path: \d+ distinct states\.\n2 distinct endings, reached in 1 to 1 choices\.$/u,
     );
   }, 30_000);
 

@@ -2,6 +2,7 @@ import type { InkDiagnostic } from '@worldbookllm/shared';
 import { Story } from 'inkjs';
 
 import { parseFrontmatter } from '../story/book-index.js';
+import { explorePaths } from '../story/interactive/explore.js';
 import { describeDiagnostic, storyFindings } from '../story/interactive/findings.js';
 import { feedsInk, readInkStory, type InkReading } from '../story/interactive/read.js';
 import type { AgentWorkspace } from './workspace.js';
@@ -116,6 +117,60 @@ export function inkNoteAfterWrite(workspace: AgentWorkspace, path: string): stri
       : ' The ink compiles.';
   }
   return `\nThe ink in ${path} does not compile:\n${limited(mine.map((entry) => `- ${describeDiagnostic(entry)}`)).join('\n')}`;
+}
+
+/**
+ * Plays every path of the story (ADR 0032) and reports what reading the
+ * source cannot show: runtime errors with the choices that reach them,
+ * endings, and the knots and choices no path reaches.
+ */
+export function inkPaths(workspace: AgentWorkspace): string {
+  const reading = readWorkspaceInk(workspace);
+  if (reading.compiled.json === null || reading.structure === null) {
+    throw new Error('The ink does not compile, so its paths cannot be played. Run ink_check.');
+  }
+  const report = explorePaths(reading.compiled.json, reading.structure);
+  const place = (path: string | null, line: number | null) =>
+    path === null ? 'no file' : line === null ? path : `${path}:${line}`;
+  const lines = [
+    report.complete
+      ? `Played every path: ${report.explored} distinct states.`
+      : `Played ${report.explored} distinct states and stopped; the story has more, so this is partial.`,
+    report.endings === 0
+      ? report.complete
+        ? 'No path reaches an ending.'
+        : 'No ending was reached in the states played.'
+      : `${report.endings} distinct ${report.endings === 1 ? 'ending' : 'endings'}, reached in ${report.shortest} to ${report.longest} choices.`,
+  ];
+  if (report.errors.length > 0) {
+    lines.push(
+      'Runtime errors (choices are indexes for ink_play, seed 1):',
+      ...limited(
+        report.errors.map((error) => `- ${error.message} — choices [${error.path.join(', ')}]`),
+      ),
+    );
+  }
+  if (report.unreached.length > 0) {
+    lines.push(
+      report.complete
+        ? 'No path reaches:'
+        : 'Not reached in the states played (the rest was not played, so these may be reachable):',
+      ...limited(report.unreached.map((node) => `- ${node.node} (${place(node.path, node.line)})`)),
+    );
+  }
+  if (report.neverOffered.length > 0) {
+    lines.push(
+      report.complete
+        ? 'Choices no path offers:'
+        : 'Choices not offered in the states played (the rest was not played, so these may be offered):',
+      ...limited(
+        report.neverOffered.map(
+          (choice) => `- [${choice.text}] in ${choice.node} (${place(choice.path, choice.line)})`,
+        ),
+      ),
+    );
+  }
+  return lines.join('\n');
 }
 
 /** A runtime path's knot or stitch: `chapter_01.cellar.0.c-1` is `chapter_01.cellar`. */

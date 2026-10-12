@@ -486,6 +486,86 @@ describe('Health', () => {
     ).toBe('/books/gull-rock/files/chapters/chapter-02.md');
   });
 
+  it('plays every path: errors link to Play at their choices, and unreached knots to their file', async () => {
+    renderAt('/books/gull-rock/health', {
+      runBookCheck: report,
+      getInteractiveStory: () => Promise.resolve(storyOf([])),
+      getPathReport: () =>
+        Promise.resolve({
+          complete: true,
+          explored: 12,
+          endings: 3,
+          shortest: 2,
+          longest: 5,
+          unreached: [
+            {
+              node: 'chapter_03',
+              title: 'The Lamp',
+              path: 'chapters/chapter-03.md',
+              line: 5,
+            },
+          ],
+          neverOffered: [
+            { node: 'chapter_01', text: 'Fly', path: 'chapters/chapter-01.md', line: 9 },
+          ],
+          errors: [{ message: 'ran out of content', path: [1, 0] }],
+        }),
+    });
+    expect(
+      await screen.findByText(
+        'Played every path: 12 distinct states. 3 distinct endings, reached in 2 to 5 choices.',
+      ),
+    ).toBeTruthy();
+    const errors = screen.getByRole('list', { name: 'Errors while playing' });
+    expect(
+      within(errors)
+        .getByRole('link', { name: 'Reproduce in Play (2 choices)' })
+        .getAttribute('href'),
+    ).toBe('/books/gull-rock/branches/play?seed=1&path=1.0');
+    const unreached = screen.getByRole('list', { name: 'Knots no path reaches' });
+    expect(
+      within(unreached)
+        .getByRole('link', { name: 'chapters/chapter-03.md, line 5' })
+        .getAttribute('href'),
+    ).toBe('/books/gull-rock/files/chapters/chapter-03.md');
+    expect(screen.getByRole('list', { name: 'Choices never offered' }).textContent).toContain(
+      'Fly',
+    );
+  });
+
+  it('says when it stopped before playing every path', async () => {
+    renderAt('/books/gull-rock/health', {
+      runBookCheck: report,
+      getInteractiveStory: () => Promise.resolve(storyOf([])),
+      getPathReport: () =>
+        Promise.resolve({
+          complete: false,
+          explored: 3000,
+          endings: 1,
+          shortest: 4,
+          longest: 4,
+          unreached: [
+            { node: 'chapter_03', title: 'The Lamp', path: 'chapters/chapter-03.md', line: 5 },
+          ],
+          neverOffered: [
+            { node: 'chapter_01', text: 'Fly', path: 'chapters/chapter-01.md', line: 9 },
+          ],
+          errors: [],
+        }),
+    });
+    expect(
+      await screen.findByText(
+        'Played 3000 distinct states, then stopped: the story has more, so this is partial. 1 distinct ending, reached in 4 choices.',
+      ),
+    ).toBeTruthy();
+    // What it did not see is not called unreachable.
+    expect(screen.getByRole('heading', { name: 'Not reached in the states played' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Choices not offered in the states played' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'No path reaches' })).toBeNull();
+  });
+
   it('has no Ink section for a book that is not interactive', async () => {
     renderAt('/books/gull-rock/health', {
       getBookTree: () => Promise.resolve(linear),
@@ -493,6 +573,7 @@ describe('Health', () => {
     });
     expect(await screen.findByRole('heading', { name: 'Next' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Ink' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Paths' })).toBeNull();
   });
 });
 
