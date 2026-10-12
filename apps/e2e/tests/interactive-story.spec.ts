@@ -71,9 +71,10 @@ test('an interactive story in ink on a phone', async ({ page }) => {
       .toContain(
         '+ [Light the lamp]\n    ~ lamp_lit = true\n    -> chapter_02\n+ [Leave it dark] -> END\n',
       );
-    await expect(readFile(join(bookDir, 'ink/variables.md'), 'utf8')).resolves.toContain(
-      'VAR lamp_lit = false',
-    );
+    // The save writes the chapter, then declares the variable; wait for both.
+    await expect
+      .poll(() => readFile(join(bookDir, 'ink/variables.md'), 'utf8'))
+      .toContain('VAR lamp_lit = false');
   });
 
   await test.step('see an error in the ink editor as it is typed', async () => {
