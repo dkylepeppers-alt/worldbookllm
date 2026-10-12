@@ -8,7 +8,9 @@ needs lives under one data directory on the machine you run it on.
 ## Requirements
 
 - Node.js ≥ 24 and [pnpm](https://pnpm.io) 10 (or Docker, see below — it needs neither installed
-  on the host).
+  on the host). On Node 24, `corepack enable` provides the pinned pnpm; Node 25 and later no longer
+  bundle corepack, so install pnpm with `npm install -g pnpm@10`.
+- On Android, see [Running on Android](ANDROID.md) for Termux and proot-distro.
 - A machine or container that keeps running while you use the app (a laptop, a home server, a small
   VPS). Nothing here requires always-on availability the way a multi-user SaaS would.
 
@@ -171,15 +173,22 @@ Everything worth keeping lives under `DATA_DIR`:
 
 ```
 data/
-├── worldbookllm.db      # SQLite: metadata, chats, settings — a rebuildable index (ADR 0003)
+├── worldbookllm.db      # SQLite: the book index (rebuildable, ADR 0003) plus agent chats, history
+│                         #   checkpoints, custom agents, and settings, which are not rebuildable
 ├── secrets.json          # your AI provider API keys, stored locally, never sent anywhere but the provider
 ├── projects/
 │   └── <book-slug>/      # your books: story-skills Markdown, the source of truth (ADR 0014)
+├── series/
+│   └── <series-id>/      # a series: its series-bible/ and its books, side by side (ADR 0018)
+├── trash/                # books removed from the library, kept so they can be restored
 ├── notebooks.migrated/   # notebook-era sources, kept after the move into books (ADR 0017);
 │                         #   notebooks.migrated-<timestamp>/ if that name was taken
 └── skills/
     └── <name>/SKILL.md   # your creative skills, also source-of-truth Markdown (ADR 0011)
 ```
+
+`staging/` also appears while the agent runs a turn in review mode; it is temporary and needs no
+backup. A book's builds are written to its own `dist/` folder inside the book.
 
 A plain file copy or archive of `DATA_DIR` while the process is stopped is a complete, restorable
 backup. If you need to back up while the app is running, `worldbookllm.db` is a WAL-mode SQLite
@@ -199,5 +208,5 @@ pnpm build
 ```
 
 Then restart however you're running it (`systemctl restart worldbookllm`, `docker compose up -d
---build`, or re-run `pnpm start`). Database schema migrations run automatically on server startup
+--build`, or re-run `pnpm start`). On Android, see [Running on Android](ANDROID.md#update). Database schema migrations run automatically on server startup
 against `DATA_DIR`; there is nothing else to migrate manually.

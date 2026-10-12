@@ -39,9 +39,11 @@ Milestones are ordered so that every one ends with a working, demoable app. Each
 
 The initial database schema covers notebooks, sources, chats, and messages. Source provenance was added in schema v2 during M2.
 
-## M2 — Source ingestion pipeline
+## M2 — Source ingestion pipeline (superseded by M7)
 
 **Goal:** get real-world source material in, not just pasted text.
+
+**Later change (2026-10-08):** notebooks are retired (ADR 0017) and M7 takes over the remaining scope: material is now imported into books through one reviewed pipeline (ADR 0026), and source re-ingestion no longer applies. Webpage acquisition by URL is still unbuilt.
 
 **Status (2026-07-15):** in progress. Local file upload and conversion are implemented for Markdown, text, PDF, HTML, and SillyTavern lorebook and character-card JSON, including editable previews, batch save, provenance metadata, deletion, and ordinary editing (title/content) of a saved source. Webpage acquisition by URL and full re-ingestion (replacing origin/provenance) remain.
 
@@ -90,9 +92,13 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 
 **Done when:** a user can import or author a reusable preset, make it the global default or select it for a chat, tune controls and module depth/order, verify a generated exchange from its immutable inspector, and review/save the assistant response as a provenance-bearing Markdown source.
 
+**Later change (2026-09-30):** presets, prompt modules, and the exchange inspector were retired with notebooks (ADR 0017). The agent's generation settings (temperature, top-p, a token cap, thinking) are one global setting, and the agent's step inspector shows every recorded request.
+
 **Later additions on this base (2026-07-15):** an optional `thinking` generation control (reasoning shown collapsed in chat), regenerate-as-swipeable-variants on assistant messages, and bulk source selection (Select all/Clear all). See `docs/ARCHITECTURE.md` and `docs/superpowers/plans/2026-07-15-response-controls-plan.md`.
 
-## M5 — Creative outputs & exports
+## M5 — Creative outputs & exports (superseded by M7)
+
+**Later change (2026-09-30):** M7 supersedes this milestone. Book exports are `story build` formats from the Project tab (ADR 0020); the SillyTavern lorebook and character-card exports remain to be built.
 
 **Goal:** update existing material safely and export project knowledge in the formats creative users need.
 
@@ -110,6 +116,8 @@ The initial database schema covers notebooks, sources, chats, and messages. Sour
 **Goal:** reusable craft instructions ("skills") the model can be given per chat — the foundation for a later integrated agent. See ADR 0011.
 
 **Status (2026-07-17):** complete. Skills CRUD (server and UI), per-chat attachment with `## Skills` injection, exchange-snapshot capture shown in the Prompt Inspector, the one-click starter-set install, and stub-provider E2E coverage are all implemented. The starter set was subsequently rewritten to be generative-first (produce source-ready Markdown, not just critique) with provenance recorded in `apps/server/skills-starter/ATTRIBUTION.md`.
+
+**Later change (2026-09-30):** the jwynia starter set and per-chat skill attachment were replaced by the pinned story-skills set, which the book agent activates on demand (ADR 0015, ADR 0017). The skills library format and the Skills page remain.
 
 **Update (2026-07-18):** the starter catalog grew from a single generative kind into three — **generative** source-document producers, **interactive** facilitators (`game-facilitator`, a canon-aware session runner), and **authoring** tools (`skill-creator`) — plus the generative `adaptation-synthesis` skill for function-first adaptation across sources. The content-contract test is now kind-aware. See `docs/superpowers/specs/2026-07-18-skill-kinds-expansion.md`.
 
@@ -139,12 +147,30 @@ This supersedes the unfinished notebook-era scope: M2's remaining re-ingestion w
 
 Series (ADR 0018) adds sibling book folders and a series bible, canon drift and health, push/pull/carry/seed with rollback and per-book undo, same-series agent reads and explicit sync, duplicate-folder reporting, and detaching a book without losing its history. The phone journey covers conversion, seeding, adding a sequel, editing a bible alias, and pushing the resulting drift.
 
-Builds and project zips (ADR 0020): the Project tab builds any `story build` format (EPUB, DOCX, HTML review copy, print, and the rest) into `dist/` for download, and the library imports a zipped story-skills project as a new book. The SillyTavern lorebook and character-card exports are what remain of the "done when" list.
+Builds and project zips (ADR 0020): the Project tab builds `story build`'s single-file formats (EPUB, DOCX, HTML review copy, print, and the rest; not the folder-based `codex`) into `dist/` for download, and the library imports a zipped story-skills project as a new book. The SillyTavern lorebook and character-card exports are what remain of the "done when" list.
+
+**Status (2026-10-12):** phases 1–5 are complete and much of the polish has shipped; the SillyTavern exports remain.
+
+- **Series:** a series-wide style sheet (ADR 0019).
+- **Agent:**
+  - Installed story-skills stay on the bundled version unless edited (ADR 0021).
+  - The agent asks with clickable choices (ADR 0022).
+  - Long chats are compacted, with recent turns kept verbatim and prompt caching where supported (ADR 0023, ADR 0025).
+  - A Story commands panel runs the read-only checks from the Agent tab.
+- **Import:** loose-file zips and adding files to an existing book through one reviewed import pipeline (ADR 0024, ADR 0026).
+- **Reader:** a Reader tab shows the assembled manuscript.
+- **Interactive books are written in ink** (ADR 0027–0032):
+  - a Branches tab with a map, a choices form, and Play from any knot
+  - conversion and interactive editions
+  - `.ink`, compiled JSON, and web-page exports
+  - a CodeMirror ink editor with live errors
+  - Health → Paths, which plays every path it can within a 3,000-state, 2-second budget and says when its result is partial
+  - the agent's `ink_check`, `ink_play`, and `ink_paths` tools
 
 **Scope (in build order):**
 
 1. Story core: pinned `story-skills`, a sandboxed CLI runner, the book index and API, checkpoints, ingestion into books, and a one-time notebook-to-book migration
-2. Mobile shell: a library plus Write / Bible / Agent / Health / Project tabs, with schema-driven entity editors, CLI-backed actions, builds and SillyTavern exports, and undo history
+2. Mobile shell: a library plus Write / Reader / Bible / Agent / Health / Project tabs (and Branches for interactive books), with schema-driven entity editors, CLI-backed actions, builds and SillyTavern exports, and undo history
 3. Native tool calling in `packages/providers`, ported from SillyTavern `29e0df488`
 4. Agent: full read/write tools including write commands, skill activation, per-turn change summaries with undo, and opt-in review mode; story-skills replaces the jwynia starter set
 5. Series: a series bible (itself a story-skills project), linked books, identity/state sync with drift, series checks, and a series-aware agent
@@ -161,4 +187,4 @@ Builds and project zips (ADR 0020): the Project tab builds any `story build` for
 
 ## Later / unscheduled
 
-Ideas that are real but not yet committed to a milestone: integrating the worldbookllm-original `skill-creator` and `game-facilitator` skills (parked in git history by ADR 0015), retrieval smarter than FTS (embeddings), contradiction detection sweeps, timeline visualization, multi-notebook cross-referencing, alternate-canon branches, collaborative/multi-user mode, desktop packaging (Tauri), SillyTavern legacy text-completion backends if ever needed.
+Ideas that are real but not yet committed to a milestone: integrating the worldbookllm-original `skill-creator` and `game-facilitator` skills (parked in git history by ADR 0015), retrieval smarter than FTS (embeddings), contradiction detection sweeps, timeline visualization, collaborative/multi-user mode, desktop packaging (Tauri), SillyTavern legacy text-completion backends if ever needed.
