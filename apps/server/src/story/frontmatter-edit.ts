@@ -57,15 +57,6 @@ export function removeFrontmatterField(markdown: string, key: string): string {
 // gray-matter hands these options to js-yaml's dump, which its types do not describe.
 const DUMP = { lineWidth: -1 } as unknown as Parameters<typeof matter.stringify>[2];
 
-/** Frontmatter data as YAML lines, without the `---` fences; '' for no data. */
-export function frontmatterYaml(data: Record<string, unknown>): string {
-  if (Object.keys(data).length === 0) return '';
-  return matter
-    .stringify('', data, DUMP)
-    .replace(/^---\n/u, '')
-    .replace(/\n---\n*$/u, '');
-}
-
 /** Removes series metadata or one sibling's links while preserving unrelated YAML values/body. */
 export function removeSeriesLinks(markdown: string, removedBook?: string): string {
   const parsed = matter(markdown, {});

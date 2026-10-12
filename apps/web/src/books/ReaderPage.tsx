@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
+import { Link } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
 import { unified } from 'unified';
@@ -117,9 +118,20 @@ export function ReaderPage() {
   }
 
   const { warnings } = manuscript.data;
+  const interactive = tree.book.interactive === true;
   return (
     <section className="book-panel reader" aria-labelledby="reader-heading">
-      <p className="coordinate-label">story export</p>
+      {interactive ? (
+        <p className="coordinate-label">
+          Every chapter&apos;s text on any path, without its ink.{' '}
+          <Link to={`/books/${encodeURIComponent(slug)}/branches/play`}>
+            Play it to read it as a reader will
+          </Link>
+          .
+        </p>
+      ) : (
+        <p className="coordinate-label">story export</p>
+      )}
       <h2 id="reader-heading" className="visually-hidden">
         Reader
       </h2>

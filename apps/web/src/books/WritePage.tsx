@@ -19,10 +19,18 @@ export function WritePage() {
       {chapters.length === 0 ? null : (
         <p className="write-links">
           <Link to={`/books/${encodeURIComponent(slug)}/branches`}>
-            {tree.book.interactive === true ? 'Branches and choices' : 'Make it interactive'}
+            {tree.book.interactive === true
+              ? 'Branches and choices'
+              : tree.book.needsInkConversion === true
+                ? 'Convert to ink chapters'
+                : 'Make it interactive'}
           </Link>
-          <span aria-hidden="true"> · </span>
-          <Link to={`/books/${encodeURIComponent(slug)}/branches/play`}>Play through</Link>
+          {tree.book.interactive === true ? (
+            <>
+              <span aria-hidden="true"> · </span>
+              <Link to={`/books/${encodeURIComponent(slug)}/branches/play`}>Play through</Link>
+            </>
+          ) : null}
         </p>
       )}
       {chapters.length === 0 ? (

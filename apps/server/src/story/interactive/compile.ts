@@ -26,7 +26,7 @@ export interface CompiledStory {
 const MESSAGE = /^(ERROR|WARNING|TODO):\s*(?:'([^']*)'\s+)?(?:line (\d+):\s*)?([\s\S]*)$/u;
 
 /** A compiler message as a diagnostic at its book file and line. */
-export function diagnosticOf(
+function diagnosticOf(
   story: AssembledStory,
   message: string,
   severity: InkDiagnostic['severity'],

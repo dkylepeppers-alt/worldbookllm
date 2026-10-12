@@ -1244,11 +1244,11 @@ export class BookService {
     return this.locks.run(slug, async () => {
       if (!this.isInteractive(slug)) return exportManuscript(this.cli, this.files.root(slug));
       const { assembled } = this.readInk(slug);
-      const parts = [`# ${this.summary(slug).title}`];
+      const parts: string[] = [];
       for (const chapter of assembled.chapters) {
         const text = this.files.readBytes(slug, chapter.path)?.toString('utf8') ?? '';
         const prose = projectInk(inkSection(text, 'chapter').ink);
-        parts.push(`## ${chapter.title}`, prose === '' ? '_No prose yet._' : prose);
+        parts.push(`# ${chapter.title}`, prose === '' ? '_No prose yet._' : prose);
       }
       return { markdown: `${parts.join('\n\n')}\n`, warnings: [] };
     });
@@ -1356,7 +1356,7 @@ export class BookService {
   }
 
   /** Caller holds the book lock. */
-  private readPlay(slug: string): BookPlay & { combined: string } {
+  private readPlay(slug: string): BookPlay {
     this.assertInteractive(slug);
     const { assembled, compiled, structure } = this.readInk(slug);
     if (compiled.json === null || structure === null) {
@@ -1374,7 +1374,6 @@ export class BookService {
       title: this.summary(slug).title,
       ifid: isIfid(ifid) ? ifid.toUpperCase() : null,
       source: assembled.combined,
-      combined: assembled.combined,
       story: compiled.json,
       knots: assembled.chapters.map((chapter) => ({
         knot: chapter.knot,
@@ -1574,7 +1573,7 @@ export class BookService {
         const story = this.index.frontmatter(slug, 'story.md');
         const [name, content] =
           input.format === 'ink'
-            ? [`${slug}.ink`, play.combined]
+            ? [`${slug}.ink`, play.source]
             : input.format === 'ink-json'
               ? [`${slug}.json`, play.story]
               : [

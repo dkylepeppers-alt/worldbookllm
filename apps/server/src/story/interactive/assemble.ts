@@ -12,7 +12,7 @@ export interface InkChapterFile {
 }
 
 /** A Markdown file under `ink/` whose body is ink. */
-export interface InkSupportFile {
+interface InkSupportFile {
   path: string;
   text: string;
 }
@@ -25,7 +25,7 @@ export interface AssembleInput {
   inkFiles: readonly InkSupportFile[];
 }
 
-export interface AssembledChapter {
+interface AssembledChapter {
   id: string;
   title: string;
   path: string;
@@ -33,7 +33,7 @@ export interface AssembledChapter {
 }
 
 /** A place in a book file. */
-export interface SourcePlace {
+interface SourcePlace {
   path: string;
   line: number | null;
 }
@@ -55,7 +55,7 @@ export interface AssembledStory {
   combined: string;
 }
 
-export const ROOT_FILE = 'main.ink';
+const ROOT_FILE = 'main.ink';
 
 // ink files whose top-level content diverts before the first knot set the start.
 const KNOT_LINE = /^\s*={2,}/u;

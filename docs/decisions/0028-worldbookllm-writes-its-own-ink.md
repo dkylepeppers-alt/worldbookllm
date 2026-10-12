@@ -1,6 +1,6 @@
 # ADR 0028 — worldbookllm writes its own ink, with choice state
 
-**Status:** accepted · 2026-10-09 · supersedes ADR 0027 decision 3 (what Play runs), builds on ADR 0014
+**Status:** accepted · 2026-10-09 · supersedes ADR 0027 decision 3 (what Play runs), builds on ADR 0014 · decisions 2, 5, and 6 superseded by ADR 0030 (chapters are ink)
 
 ## Context
 

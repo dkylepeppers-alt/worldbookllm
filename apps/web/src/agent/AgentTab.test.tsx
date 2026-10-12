@@ -1176,44 +1176,41 @@ describe('story commands panel', () => {
         file('chapters/chapter-02.md', 'chapter', 'chapter-02', 'The Docks'),
       ],
     };
-    const chapter = (id: string, title: string, reachable = true) => ({
-      id,
-      title,
-      path: `chapters/${id}.md`,
-      hash: 'a'.repeat(64),
-      choices: [],
-      problems: [],
-      start: id === 'chapter-01',
-      ending: false,
-      reachable,
-    });
     localStorage.removeItem('worldbookllm.interactiveGuide.the-salt-road.hidden');
     renderAt('/books/the-salt-road/agent', {
       getBookTree: () => Promise.resolve(interactive),
-      getBranches: () =>
+      getInteractiveStory: () =>
         Promise.resolve({
-          branching: false,
+          title: 'The Salt Road',
           ifid: null,
-          invalidIfid: null,
-          flags: [],
-          chapters: [chapter('chapter-01', 'Arrival'), chapter('chapter-02', 'The Docks', false)],
+          chapters: [],
+          compiled: true,
+          start: 'chapter_01',
+          nodes: [],
+          variables: [],
+          diagnostics: [
+            {
+              severity: 'warning',
+              message: 'Nothing leads to The Docks (chapter_02)',
+              path: 'chapters/chapter-02.md',
+              line: null,
+            },
+          ],
         }),
     });
     const user = userEvent.setup();
 
     const guide = await screen.findByRole('region', { name: 'Interactive story' });
     expect(guide.textContent).toContain('adaptations/interactive/branch-map.md holds the plan.');
-    expect(
-      await within(guide).findByText(/1 unreachable chapter, 0 with broken choices/u),
-    ).toBeTruthy();
+    expect(await within(guide).findByText('1 note on Health.')).toBeTruthy();
     // The plan exists, so adding the choices is the next step.
     expect(within(guide).getByRole('button', { name: 'Add the choices' }).className).toBe(
       'button-primary',
     );
     const composer = screen.getByLabelText<HTMLTextAreaElement>('New chat');
     await user.click(within(guide).getByRole('button', { name: 'Add state' }));
-    expect(composer.value).toContain('`sets: [found_coat, not lamp_lit]`');
-    expect(composer.value).toContain('cannot be a chapter knot name');
+    expect(composer.value).toContain('under its ## Chapter Text heading');
+    expect(composer.value).toContain('{met_venn: She nods.|She looks you over.}');
 
     await user.click(within(guide).getByRole('button', { name: 'Hide this guide' }));
     expect(screen.queryByRole('region', { name: 'Interactive story' })).toBeNull();

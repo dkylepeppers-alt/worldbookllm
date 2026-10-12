@@ -10,7 +10,7 @@ import { chapterTextEnd } from './story-skills-markdown.js';
 const INK_RESERVED = new Set(['true', 'false', 'not', 'else', 'return', 'temp', 'function']);
 
 /** Where ink that is not a chapter lives: Markdown files whose bodies are ink. */
-export const INK_DIRECTORY = 'ink';
+const INK_DIRECTORY = 'ink';
 
 /** The file conversion writes a book's variables to. */
 export const INK_VARIABLES_FILE = `${INK_DIRECTORY}/variables.md`;
@@ -46,7 +46,7 @@ function isPositiveInteger(value: unknown): boolean {
  * The number a chapter is ordered by: a valid `number` field, else the
  * number in a `chapter-NN.md` file name, else 0.
  */
-export function chapterNumber(chapter: { path: string; number: unknown }): number {
+function chapterNumber(chapter: { path: string; number: unknown }): number {
   if (chapter.number !== undefined && isPositiveInteger(chapter.number)) {
     return Number(chapter.number);
   }

@@ -5,7 +5,9 @@ import {
   agentChatSchema,
   apiErrorSchema,
   appSettingsSchema,
-  bookBranchesSchema,
+  chapterEndingDetailSchema,
+  inkConversionPreviewSchema,
+  interactiveStorySchema,
   bookBuildFileSchema,
   bookPlaySchema,
   pinnedIfidSchema,
@@ -53,12 +55,14 @@ import {
   type AgentStreamEvent,
   type ApiErrorIssue,
   type AppSettings,
-  type BookBranches,
+  type ChapterEndingDetail,
+  type InkConversionPreview,
+  type InteractiveStory,
   type BookBuildFile,
   type BookPlay,
   type CreateInteractiveEditionInput,
   type PinnedIfid,
-  type SetChapterChoicesInput,
+  type SetChapterEndingInput,
   type BookBuildResult,
   type BookManuscript,
   type BookCheckCommand,
@@ -205,15 +209,24 @@ export interface ApiClient {
   undoCheckpoint(slug: string, id: string, signal?: AbortSignal): Promise<Checkpoint>;
   /** The manuscript as `story export` assembles it, for the Reader tab. */
   getManuscript(slug: string, signal?: AbortSignal): Promise<BookManuscript>;
-  /** The chapters as a branch graph, for the Branches screen. */
-  getBranches(slug: string, signal?: AbortSignal): Promise<BookBranches>;
-  setChapterChoices(
+  /** An interactive book's ink story: chapters, structure, and diagnostics (ADR 0030). */
+  getInteractiveStory(slug: string, signal?: AbortSignal): Promise<InteractiveStory>;
+  getChapterEnding(
     slug: string,
     chapterId: string,
-    input: SetChapterChoicesInput,
     signal?: AbortSignal,
-  ): Promise<BookBranches>;
-  /** The book as a playable story, assembled by the Twee build. */
+  ): Promise<ChapterEndingDetail>;
+  setChapterEnding(
+    slug: string,
+    chapterId: string,
+    input: SetChapterEndingInput,
+    signal?: AbortSignal,
+  ): Promise<ChapterEndingDetail>;
+  /** What converting the book to ink chapters would write. */
+  getInkConversion(slug: string, signal?: AbortSignal): Promise<InkConversionPreview>;
+  /** Converts the book to ink chapters and returns it. */
+  convertToInk(slug: string, signal?: AbortSignal): Promise<BookSummary>;
+  /** The story compiled for Play. */
   getPlay(slug: string, signal?: AbortSignal): Promise<BookPlay>;
   pinIfid(slug: string, signal?: AbortSignal): Promise<PinnedIfid>;
   /** Copies a book as a separate interactive edition and returns the new book. */
@@ -525,13 +538,26 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       }),
     getManuscript: (slug, signal) =>
       request(`${book(slug)}/manuscript`, { schema: bookManuscriptSchema, signal }),
-    getBranches: (slug, signal) =>
-      request(`${book(slug)}/branches`, { schema: bookBranchesSchema, signal }),
-    setChapterChoices: (slug, chapterId, input, signal) =>
-      request(`${book(slug)}/chapters/${encodeURIComponent(chapterId)}/choices`, {
+    getInteractiveStory: (slug, signal) =>
+      request(`${book(slug)}/story`, { schema: interactiveStorySchema, signal }),
+    getChapterEnding: (slug, chapterId, signal) =>
+      request(`${book(slug)}/chapters/${encodeURIComponent(chapterId)}/ending`, {
+        schema: chapterEndingDetailSchema,
+        signal,
+      }),
+    setChapterEnding: (slug, chapterId, input, signal) =>
+      request(`${book(slug)}/chapters/${encodeURIComponent(chapterId)}/ending`, {
         method: 'PUT',
         body: input,
-        schema: bookBranchesSchema,
+        schema: chapterEndingDetailSchema,
+        signal,
+      }),
+    getInkConversion: (slug, signal) =>
+      request(`${book(slug)}/ink-conversion`, { schema: inkConversionPreviewSchema, signal }),
+    convertToInk: (slug, signal) =>
+      request(`${book(slug)}/ink-conversion`, {
+        method: 'POST',
+        schema: bookSummarySchema,
         signal,
       }),
     getPlay: (slug, signal) => request(`${book(slug)}/play`, { schema: bookPlaySchema, signal }),

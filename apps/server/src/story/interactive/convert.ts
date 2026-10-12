@@ -17,7 +17,7 @@ import { chapterTextEnd, proseStart, scanMarkup } from './story-skills-markdown.
  * `interactive: true` with an IFID.
  */
 
-export interface ConvertChapter {
+interface ConvertChapter {
   id: string;
   path: string;
   number: unknown;
@@ -72,19 +72,6 @@ function legacyChoices(frontmatter: Record<string, unknown> | null): LegacyChoic
 function flagOf(entry: string): { name: string; negated: boolean } {
   const match = /^not\s+(.+)$/u.exec(entry);
   return match ? { name: match[1]!.trim(), negated: true } : { name: entry, negated: false };
-}
-
-/** Whether a book is interactive the earlier way and needs converting. */
-export function isLegacyInteractive(
-  story: Record<string, unknown> | null,
-  chapters: ReadonlyArray<Record<string, unknown> | null>,
-): boolean {
-  if (story?.interactive === true) return false;
-  const ifid = story?.ifid;
-  return (
-    (ifid !== undefined && ifid !== null && String(ifid).trim() !== '') ||
-    chapters.some((frontmatter) => legacyChoices(frontmatter).length > 0)
-  );
 }
 
 /**

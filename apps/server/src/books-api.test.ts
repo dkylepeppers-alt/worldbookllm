@@ -22,9 +22,14 @@ import type {
   ChapterEndingDetail,
   Checkpoint,
   CheckpointDetail,
-  InkConversionPreview,
   InteractiveStory,
   StoryCommandOutcome,
+} from '@worldbookllm/shared';
+import {
+  bookPlaySchema,
+  chapterEndingDetailSchema,
+  inkConversionPreviewSchema,
+  interactiveStorySchema,
 } from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 import { Story } from 'inkjs';
@@ -648,13 +653,14 @@ describe('interactive books', () => {
   async function story(slug: string): Promise<InteractiveStory> {
     const response = await app.inject({ method: 'GET', url: `/api/books/${slug}/story` });
     expect(response.statusCode).toBe(200);
-    return response.json<InteractiveStory>();
+    return interactiveStorySchema.parse(response.json());
   }
 
   async function play(slug: string): Promise<BookPlay> {
     const response = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
     expect(response.statusCode).toBe(200);
-    return response.json<BookPlay>();
+    // The web client parses it strictly, so it must be exactly the schema.
+    return bookPlaySchema.parse(response.json());
   }
 
   const summary = async (slug: string) =>
@@ -666,9 +672,9 @@ describe('interactive books', () => {
     const refused = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
     expect(refused.json()).toMatchObject({ error: 'not_interactive' });
 
-    const preview = (
-      await app.inject({ method: 'GET', url: `/api/books/${slug}/ink-conversion` })
-    ).json<InkConversionPreview>();
+    const preview = inkConversionPreviewSchema.parse(
+      (await app.inject({ method: 'GET', url: `/api/books/${slug}/ink-conversion` })).json(),
+    );
     expect(preview.files.map((file) => file.path)).toEqual([
       'chapters/chapter-01.md',
       'chapters/chapter-02.md',
@@ -798,7 +804,9 @@ describe('interactive books', () => {
     const slug = await threeChapters();
     await convert(slug);
     const url = `/api/books/${slug}/chapters/chapter-01/ending`;
-    const detail = (await app.inject({ method: 'GET', url })).json<ChapterEndingDetail>();
+    const detail = chapterEndingDetailSchema.parse(
+      (await app.inject({ method: 'GET', url })).json(),
+    );
     expect(detail).toMatchObject({ editable: true, ending: { choices: [], then: 'chapter_02' } });
 
     const ending = {
@@ -905,7 +913,7 @@ describe('interactive books', () => {
       await app.inject({ method: 'GET', url: `/api/books/${slug}/manuscript` })
     ).json<{ markdown: string }>();
     expect(manuscript.markdown).toContain(
-      '## Harbor Wall\n\nWaves greet a friend ignore a stranger.',
+      '# Harbor Wall\n\nWaves greet a friend ignore a stranger.',
     );
     expect(manuscript.markdown).not.toContain('->');
   }, 30_000);

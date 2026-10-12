@@ -1,5 +1,5 @@
 import {
-  BOOK_BUILD_FORMATS,
+  LINEAR_BUILD_FORMATS,
   PRINT_TRIM_SIZES,
   type BookBuildFormat,
   type CreateBookBuildInput,
@@ -23,27 +23,32 @@ const FORMAT_LABELS: Readonly<Record<BookBuildFormat, string>> = {
   narration: 'Audiobook narration script',
   metadata: 'Retailer metadata sheet',
   fountain: 'Screenplay skeleton (Fountain)',
-  twee: 'Twine story (Twee)',
-  ink: 'ink story',
+  ink: 'ink story for Inky (.ink)',
+  'ink-json': 'Compiled ink for game engines (JSON)',
+  web: 'Playable web page (HTML)',
 };
 
-/** Twee and ink read chapter `choices`, which nothing else in a build does. */
+/** What an interactive book's exports are for (ADR 0030). */
 function InteractiveHint({ slug }: { slug: string }) {
   return (
     <p id="build-format-hint">
-      Each chapter becomes a passage, starting with the first. Until any chapter has choices, the
-      chapters run in order; once one does, a chapter without choices is an ending. Set them up and
-      pin the story&apos;s IFID on the{' '}
-      <Link to={`/books/${encodeURIComponent(slug)}/branches/edit`}>Branches</Link> screen.
+      An interactive book exports as ink: one <code>.ink</code> file that opens in Inky, the
+      compiled story as JSON for ink's Unity, Godot, and web runtimes, or a single web page that
+      plays the story with nothing else to install. Fix any problems{' '}
+      <Link to={`/books/${encodeURIComponent(slug)}/health`}>Health</Link> lists first: a story that
+      does not compile cannot be exported.
     </p>
   );
 }
 
 /** EPUB first: it is what most writers reach for. */
-const FORMATS: readonly BookBuildFormat[] = [
+const LINEAR_FORMATS: readonly BookBuildFormat[] = [
   'epub',
-  ...BOOK_BUILD_FORMATS.filter((format) => format !== 'epub'),
+  ...LINEAR_BUILD_FORMATS.filter((format) => format !== 'epub'),
 ];
+
+/** The web page first: it is what a reader can open. */
+const INTERACTIVE_FORMATS: readonly BookBuildFormat[] = ['web', 'ink', 'ink-json'];
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -63,16 +68,17 @@ function formatTime(value: string): string {
 /** `story build` from the Project tab: pick a format, build into dist/, download. */
 export function BuildsSection() {
   const api = useApi();
-  const { slug } = useBook();
+  const { slug, tree } = useBook();
+  const interactive = tree.book.interactive === true;
+  const formats = interactive ? INTERACTIVE_FORMATS : LINEAR_FORMATS;
   const builds = useLoad((signal) => api.listBuilds(slug, signal), slug);
-  const [format, setFormat] = useState<BookBuildFormat>('epub');
+  const [format, setFormat] = useState<BookBuildFormat>(formats[0]!);
   const [shunn, setShunn] = useState(false);
   const [trim, setTrim] = useState<(typeof PRINT_TRIM_SIZES)[number]>('5.5x8.5');
   const [stamp, setStamp] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [output, setOutput] = useState<string | null>(null);
-  const interactive = format === 'twee' || format === 'ink';
 
   async function build(event: FormEvent) {
     event.preventDefault();
@@ -122,7 +128,7 @@ export function BuildsSection() {
             aria-describedby={interactive ? 'build-format-hint' : undefined}
             onChange={(event) => setFormat(event.target.value as BookBuildFormat)}
           >
-            {FORMATS.map((value) => (
+            {formats.map((value) => (
               <option key={value} value={value}>
                 {FORMAT_LABELS[value]}
               </option>

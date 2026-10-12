@@ -1,6 +1,7 @@
-import type { BookBranches } from '@worldbookllm/shared';
+import type { InteractiveStory } from '@worldbookllm/shared';
 import { Link } from 'react-router-dom';
 
+import { fileHref } from './book-sections.js';
 import {
   layoutBranchMap,
   NODE_HEIGHT,
@@ -40,10 +41,25 @@ function edgePath(edge: MapEdge, from: MapNode, to: MapNode): string {
   return `M ${startX} ${startY} C ${startX} ${startY + bend}, ${endX} ${endY - bend}, ${endX} ${endY}`;
 }
 
-function status(node: MapNode, branching: boolean): string {
+const EDGE_WORD: Record<MapEdge['kind'], string> = {
+  choice: 'Choice',
+  divert: 'Then',
+  tunnel: 'Visits',
+  thread: 'Weaves in',
+};
+
+function edgeLabel(edge: MapEdge, from: MapNode, to: MapNode): string {
+  if (edge.text === null) {
+    return `${from.place.title} ${edge.kind === 'tunnel' ? 'visits' : edge.kind === 'thread' ? 'weaves in' : 'goes on to'} ${to.place.title}`;
+  }
+  const condition = edge.condition === null ? '' : ` (only if ${edge.condition})`;
+  return `${from.place.title}: “${edge.text}” leads to ${to.place.title}${condition}`;
+}
+
+function status(node: MapNode): string {
   if (node.depth === null) return 'not reachable';
-  if (node.chapter.start) return 'start';
-  return branching && node.chapter.ending ? 'ending' : '';
+  if (node.place.start) return 'start';
+  return node.place.ends ? 'ending' : '';
 }
 
 /**
@@ -52,10 +68,16 @@ function status(node: MapNode, branching: boolean): string {
  * the chapter's choices; the same map follows as a list for screen readers
  * and anyone who prefers it.
  */
-export function BranchMap({ slug, branches }: { slug: string; branches: BookBranches }) {
-  const layout = layoutBranchMap(branches);
-  const nodes = new Map(layout.nodes.map((node) => [node.chapter.id, node]));
-  const editHref = (id: string) => `/books/${encodeURIComponent(slug)}/branches/edit#branch-${id}`;
+export function BranchMap({ slug, story }: { slug: string; story: InteractiveStory }) {
+  const layout = layoutBranchMap(story);
+  const nodes = new Map(layout.nodes.map((node) => [node.place.name, node]));
+  // A chapter opens its choices; a knot from ink/ opens its file.
+  const editHref = (node: MapNode) =>
+    node.place.chapterId !== null
+      ? `/books/${encodeURIComponent(slug)}/branches/edit#branch-${node.place.chapterId}`
+      : node.place.path !== null
+        ? fileHref(slug, node.place.path)
+        : `/books/${encodeURIComponent(slug)}/branches`;
   const width = Math.max(
     layout.width,
     ...layout.edges
@@ -78,7 +100,8 @@ export function BranchMap({ slug, branches }: { slug: string; branches: BookBran
           aria-labelledby="branch-map-title"
         >
           <title id="branch-map-title">
-            Map of {layout.nodes.length} chapters and {layout.edges.length} links between them
+            Map of {layout.nodes.length} {layout.nodes.length === 1 ? 'knot' : 'chapters and knots'}{' '}
+            and {layout.edges.length} links between them
           </title>
           <defs>
             <marker
@@ -105,35 +128,30 @@ export function BranchMap({ slug, branches }: { slug: string; branches: BookBran
                 }
                 markerEnd="url(#branch-map-arrow)"
               >
-                <title>
-                  {edge.text === null
-                    ? `${from.chapter.title} goes on to ${to.chapter.title}`
-                    : `${from.chapter.title}: “${edge.text}” leads to ${to.chapter.title}${edge.stateful ? ' (uses flags)' : ''}`}
-                </title>
+                <title>{edgeLabel(edge, from, to)}</title>
               </path>
             );
           })}
           {layout.nodes.map((node) => {
-            const label = status(node, branches.branching);
+            const label = status(node);
             return (
-              <Link
-                key={node.chapter.id}
-                to={editHref(node.chapter.id)}
-                className="branch-map-node-link"
-              >
+              <Link key={node.place.name} to={editHref(node)} className="branch-map-node-link">
                 <g
                   className={`branch-map-node${label === '' ? '' : ` branch-map-node-${label.replace(' ', '-')}`}`}
                 >
                   <title>
-                    {node.chapter.title}
+                    {node.place.title}
                     {label === '' ? '' : ` (${label})`}
+                    {node.place.stitches.length === 0
+                      ? ''
+                      : `, stitches: ${node.place.stitches.join(', ')}`}
                   </title>
                   <rect x={node.x} y={node.y} width={NODE_WIDTH} height={NODE_HEIGHT} rx={8} />
                   <text x={node.x + 12} y={node.y + 23} className="branch-map-title">
-                    {fit(node.chapter.title, 20)}
+                    {fit(node.place.title, 20)}
                   </text>
                   <text x={node.x + 12} y={node.y + 42} className="branch-map-meta">
-                    {label === '' ? node.chapter.id : `${node.chapter.id} · ${label}`}
+                    {label === '' ? node.place.name : `${fit(node.place.name, 12)} · ${label}`}
                   </text>
                 </g>
               </Link>
@@ -146,19 +164,19 @@ export function BranchMap({ slug, branches }: { slug: string; branches: BookBran
         <summary>The map as a list</summary>
         <ol>
           {layout.nodes.map((node) => {
-            const out = layout.edges.filter((edge) => edge.from === node.chapter.id);
-            const label = status(node, branches.branching);
+            const out = layout.edges.filter((edge) => edge.from === node.place.name);
+            const label = status(node);
             return (
-              <li key={node.chapter.id}>
-                <Link to={editHref(node.chapter.id)}>{node.chapter.title}</Link>
+              <li key={node.place.name}>
+                <Link to={editHref(node)}>{node.place.title}</Link>
                 {label === '' ? null : <span className="coordinate-label"> · {label}</span>}
                 {out.length === 0 ? null : (
                   <ul>
                     {out.map((edge, index) => (
                       <li key={`${edge.to}:${index}`}>
-                        {edge.text === null ? 'Then' : `“${edge.text}”`} →{' '}
-                        {nodes.get(edge.to)!.chapter.title}
-                        {edge.stateful ? ' (uses flags)' : ''}
+                        {edge.text === null ? EDGE_WORD[edge.kind] : `“${edge.text}”`} →{' '}
+                        {nodes.get(edge.to)!.place.title}
+                        {edge.condition === null ? '' : ` (only if ${edge.condition})`}
                       </li>
                     ))}
                   </ul>
