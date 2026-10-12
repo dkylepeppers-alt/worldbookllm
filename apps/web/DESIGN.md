@@ -113,6 +113,10 @@ The file-picker label (`.file-button`) is styled as a secondary button.
 
 Surface background, `--border-strong` border, 8px radius. Focus turns the border accent with a soft accent halo. Labels sit above the field in sentence case. Textareas use mono.
 
+### Ink editor
+
+An interactive book's chapters and `ink/` files open in CodeMirror (ADR 0031) instead of the textarea: mono text on `--surface` with an 8px radius and a `--border-strong` border, line numbers on `--surface-2`, and an accent outline when focused. Ink is coloured with tokens only: choices, gathers, `~`, and statements in accent weight 600, diverts and logic braces in accent, comments in muted italic, tags in muted, knot and stitch lines in heading weight. The compiler's errors and warnings are lint marks in the gutter and under the line; under the editor a polite live region lists this file's problems, each with a "Line N" text button that moves the cursor there. In Read mode, an ink file shows its planning as Markdown and its ink as mono source.
+
 ### Focus
 
 A 2px accent outline with 2px offset on every focusable element (inputs use the border + halo instead). Never remove focus styles.

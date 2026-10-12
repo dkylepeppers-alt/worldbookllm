@@ -6,24 +6,13 @@ import { chapterTextEnd } from './story-skills-markdown.js';
  * starts, and how plain text is written as ink.
  */
 
-/** Words ink reserves, which a knot cannot be named. */
-const INK_RESERVED = new Set(['true', 'false', 'not', 'else', 'return', 'temp', 'function']);
-
 /** Where ink that is not a chapter lives: Markdown files whose bodies are ink. */
 const INK_DIRECTORY = 'ink';
 
 /** The file conversion writes a book's variables to. */
 export const INK_VARIABLES_FILE = `${INK_DIRECTORY}/variables.md`;
 
-/**
- * A chapter id's knot name: `-` becomes `_`, and a name that starts with a
- * digit or is a reserved word takes a leading `_` (`chapter-03` is
- * `chapter_03`, `1-prologue` is `_1_prologue`).
- */
-export function inkKnotName(id: string): string {
-  const name = id.replace(/-/gu, '_');
-  return /^[0-9]/u.test(name) || INK_RESERVED.has(name) ? `_${name}` : name;
-}
+export { inkKnotName } from '@worldbookllm/shared';
 
 /** Whether a book file holds ink that is not a chapter. */
 export function isInkFile(path: string): boolean {

@@ -2772,3 +2772,27 @@ ol.inspector-sections {
 .branch-map-list ul {
   margin: 0.35rem 0;
 }
+
+/* The ink editor (ADR 0031): CodeMirror, its problems, and ink read as source. */
+.ink-source-editor {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.ink-source-editor .ink-editor {
+  min-width: 0;
+}
+
+.ink-problems {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ink-problems p {
+  margin: 0;
+}
+
+.ink-read {
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+}

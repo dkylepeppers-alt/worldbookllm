@@ -95,6 +95,75 @@ describe('agent turns', () => {
     expect(JSON.stringify(requests[0])).toContain('Books in order: harbor (Harbor)');
   }, 30_000);
 
+  it('writes ink in an interactive book, hears what does not compile, and plays a path', async () => {
+    const { app, book, chat } = await boot([
+      () =>
+        sse(
+          toolCall('break', 'edit_file', {
+            path: 'chapters/chapter-01.md',
+            find: '-> chapter_02',
+            replace: '* [Wait] {oops\n* [Go] -> chapter_02',
+          }),
+        ),
+      () => sse(toolCall('check', 'ink_check', {})),
+      () =>
+        sse(
+          toolCall('fix', 'edit_file', {
+            path: 'chapters/chapter-01.md',
+            find: '* [Wait] {oops',
+            replace: '* [Wait] Gulls wheel. {trust > 0: Venn waves.}\n    -> chapter_02',
+          }),
+        ),
+      () => sse(toolCall('play', 'ink_play', { choices: [0], set: { trust: 2 } })),
+      () => sse(text('Checked.')),
+    ]);
+    const books = app.services.books;
+    for (const name of ['Harbor Wall', 'The Ledge']) {
+      await books.addEntity(book.slug, { kind: 'chapter', name, options: {} });
+    }
+    for (const [path, prose] of [
+      ['chapters/chapter-01.md', 'Mara climbs.'],
+      ['chapters/chapter-02.md', 'The steps are slick.'],
+    ] as const) {
+      const file = books.readFile(book.slug, path);
+      await books.writeFile(book.slug, path, {
+        content: `${file.content}\n${prose}\n`,
+        expectedHash: file.hash,
+      });
+    }
+    const { token } = await books.inkConversion(book.slug);
+    await books.convertToInk(book.slug, { token });
+    const variables = books.readFile(book.slug, 'ink/variables.md');
+    await books.writeFile(book.slug, 'ink/variables.md', {
+      content: `${variables.content}VAR trust = 0\n`,
+      expectedHash: variables.hash,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/agent-chats/${chat.id}/messages`,
+      payload: { content: 'Add a choice to wait.' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const calls = new Map(
+      app.services.agent
+        .getChat(chat.id)
+        .messages.at(-1)!
+        .steps.flatMap((step) => step.toolCalls)
+        .map((call) => [call.id, call]),
+    );
+    expect(calls.get('break')?.result).toMatch(
+      /The ink in chapters\/chapter-01\.md does not compile:\n- chapters\/chapter-01\.md:\d+: /u,
+    );
+    expect(calls.get('check')?.result).toContain('The ink does not compile.');
+    expect(calls.get('fix')?.result).toContain('The ink compiles.');
+    expect(calls.get('play')).toMatchObject({ ok: true });
+    expect(calls.get('play')?.result).toContain(
+      '## Harbor Wall\nMara climbs.\n> Wait\nGulls wheel. Venn waves.\n## The Ledge',
+    );
+    expect(calls.get('play')?.result).toContain('Variables: trust = 2');
+  }, 30_000);
+
   it('pushes a bible alias into another book without changing its local role', async () => {
     const { app, book } = await boot([
       () =>

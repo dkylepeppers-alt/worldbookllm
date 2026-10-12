@@ -44,6 +44,7 @@ import {
   type BookPlay,
   type ChapterEndingDetail,
   type ConvertToInkInput,
+  type InkCheckInput,
   type InkConversionPreview,
   type InteractiveStory,
   type PinnedIfid,
@@ -85,14 +86,12 @@ import {
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { classifyBookPath } from '../story/book-paths.js';
 import { exportManuscript } from '../story/book-manuscript.js';
-import { assembleStory, type AssembledStory } from '../story/interactive/assemble.js';
-import { compileStory, type CompiledStory } from '../story/interactive/compile.js';
 import { convertToInk, type ConvertedFile } from '../story/interactive/convert.js';
 import { readEnding, writeEnding } from '../story/interactive/ending.js';
 import { describeDiagnostic, storyFindings } from '../story/interactive/findings.js';
 import { INK_VARIABLES_FILE, inkSection, isIfid, isInkFile } from '../story/interactive/format.js';
 import { projectInk } from '../story/interactive/projection.js';
-import { storyStructure, type StoryStructure } from '../story/interactive/structure.js';
+import { feedsInk, readInkStory, type InkReading } from '../story/interactive/read.js';
 import { appendDeclarations, undeclaredVariables } from '../story/interactive/variables.js';
 import { webPlayerHtml } from '../story/interactive/web-player.js';
 import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
@@ -136,14 +135,6 @@ function conversionToken(files: readonly ConvertedFile[]): string {
   for (const file of files)
     hash.update(`${file.path}\0${file.before === null ? '\u0001' : file.before}\0`);
   return hash.digest('hex');
-}
-
-/** A book's ink, assembled, compiled, and read (ADR 0030). */
-interface InkReading {
-  assembled: AssembledStory;
-  compiled: CompiledStory;
-  /** The story's structure, or null when it does not compile. */
-  structure: StoryStructure | null;
 }
 
 export interface BookChatLifecycle {
@@ -1301,62 +1292,56 @@ export class BookService {
    * standing in for files as they would be after an edit.
    */
   private inkReading(slug: string, overrides: ReadonlyMap<string, string>): InkReading {
-    const files = this.index.list(slug);
+    const indexed = this.index.list(slug).filter((file) => feedsInk(file.path));
     const read = (path: string) =>
       overrides.get(path) ?? this.files.readBytes(slug, path)?.toString('utf8') ?? '';
-    const story = this.index.frontmatter(slug, 'story.md');
-    const extra = [...overrides.keys()].filter(
-      (path) => isInkFile(path) && !files.some((file) => file.path === path),
+    const added = [...overrides.keys()].filter(
+      (path) => feedsInk(path) && !indexed.some((file) => file.path === path),
     );
-    const assembled = assembleStory({
-      title: stringField(story, 'title') ?? slug,
-      author: stringField(story, 'author') ?? '',
-      ifid: stringField(story, 'ifid'),
-      chapters: files
-        .filter((file) => file.kind === 'chapter' && file.entityId !== null)
-        .map((file) => {
-          const text = read(file.path);
-          return {
-            id: file.entityId!,
-            title: file.title,
-            path: file.path,
-            number: parseFrontmatter(text).frontmatter?.number,
-            text,
-          };
-        }),
-      inkFiles: [...files.map((file) => file.path).filter(isInkFile), ...extra].map((path) => ({
-        path,
-        text: read(path),
-      })),
-    });
-    const compiled = compileStory(assembled);
-    const structure =
-      compiled.parsed === null || compiled.json === null
-        ? null
-        : storyStructure(compiled.parsed, assembled);
-    return { assembled, compiled, structure };
+    return readInkStory(
+      [
+        ...indexed.map((file) => ({ path: file.path, title: file.title, text: read(file.path) })),
+        ...added.map((path) => ({ path, title: path, text: read(path) })),
+      ],
+      slug,
+    );
   }
 
   /** The book's ink story: its chapters, structure, and what the compiler said. */
   interactiveStory(slug: string): Promise<InteractiveStory> {
     return this.locks.run(slug, () => {
       this.assertInteractive(slug);
-      const { assembled, compiled, structure } = this.readInk(slug);
-      const ifid = stringField(this.index.frontmatter(slug, 'story.md'), 'ifid');
-      return {
-        title: this.summary(slug).title,
-        ifid: isIfid(ifid) ? ifid.toUpperCase() : null,
-        chapters: assembled.chapters.map((chapter) => ({
-          ...chapter,
-          hash: this.index.get(slug, chapter.path)?.hash ?? '',
-        })),
-        compiled: structure !== null,
-        start: structure?.start ?? null,
-        nodes: structure?.nodes ?? [],
-        variables: structure?.variables ?? [],
-        diagnostics: [...compiled.diagnostics, ...storyFindings(structure, ifid)],
-      };
+      return this.storyOf(slug, this.readInk(slug));
     });
+  }
+
+  /**
+   * The story as it would be with one file's unsaved text, for the ink
+   * editor to show errors as the writer types. Nothing is written.
+   */
+  inkCheck(slug: string, input: InkCheckInput): Promise<InteractiveStory> {
+    return this.locks.run(slug, () => {
+      this.assertInteractive(slug);
+      assertWritablePath(input.path);
+      return this.storyOf(slug, this.inkReading(slug, new Map([[input.path, input.content]])));
+    });
+  }
+
+  private storyOf(slug: string, { assembled, compiled, structure }: InkReading): InteractiveStory {
+    const ifid = stringField(this.index.frontmatter(slug, 'story.md'), 'ifid');
+    return {
+      title: this.summary(slug).title,
+      ifid: isIfid(ifid) ? ifid.toUpperCase() : null,
+      chapters: assembled.chapters.map((chapter) => ({
+        ...chapter,
+        hash: this.index.get(slug, chapter.path)?.hash ?? '',
+      })),
+      compiled: structure !== null,
+      start: structure?.start ?? null,
+      nodes: structure?.nodes ?? [],
+      variables: structure?.variables ?? [],
+      diagnostics: [...compiled.diagnostics, ...storyFindings(structure, ifid)],
+    };
   }
 
   /** The story compiled for Play. */

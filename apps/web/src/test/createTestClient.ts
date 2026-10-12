@@ -35,6 +35,7 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     undoCheckpoint: unused,
     getManuscript: unused,
     getInteractiveStory: unused,
+    checkInk: unused,
     getChapterEnding: unused,
     setChapterEnding: unused,
     getInkConversion: unused,

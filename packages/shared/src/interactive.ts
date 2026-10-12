@@ -8,6 +8,19 @@ import { bookFilePathSchema, bookSlugSchema, sha256Schema } from './books.js';
  * assembles, compiles, and reads the story itself.
  */
 
+/** Words ink reserves, which a knot cannot be named. */
+const INK_RESERVED = new Set(['true', 'false', 'not', 'else', 'return', 'temp', 'function']);
+
+/**
+ * A chapter id's knot name: `-` becomes `_`, and a name that starts with a
+ * digit or is a reserved word takes a leading `_` (`chapter-03` is
+ * `chapter_03`, `1-prologue` is `_1_prologue`).
+ */
+export function inkKnotName(id: string): string {
+  const name = id.replace(/-/gu, '_');
+  return /^[0-9]/u.test(name) || INK_RESERVED.has(name) ? `_${name}` : name;
+}
+
 export const chapterIdSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, {
   message: 'Chapter ids use lowercase letters, numbers, and single hyphens',
 });
@@ -205,6 +218,12 @@ export const inkConversionPreviewSchema = z.strictObject({
 
 export const convertToInkSchema = z.strictObject({ token: sha256Schema });
 
+/** A file's unsaved text, to check the story as it would be with it. */
+export const inkCheckSchema = z.strictObject({
+  path: bookFilePathSchema,
+  content: z.string().max(2_000_000),
+});
+
 export const pinnedIfidSchema = z.strictObject({ ifid: z.string() });
 
 export type InkDiagnostic = z.infer<typeof inkDiagnosticSchema>;
@@ -222,3 +241,4 @@ export type SetChapterEndingInput = z.infer<typeof setChapterEndingSchema>;
 export type InkConversionPreview = z.infer<typeof inkConversionPreviewSchema>;
 export type ConvertToInkInput = z.infer<typeof convertToInkSchema>;
 export type PinnedIfid = z.infer<typeof pinnedIfidSchema>;
+export type InkCheckInput = z.infer<typeof inkCheckSchema>;

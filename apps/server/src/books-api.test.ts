@@ -853,6 +853,34 @@ describe('interactive books', () => {
     expect(refused.json<{ message: string }>().message).toContain('chapters/chapter-02.md:');
   }, 30_000);
 
+  it("checks a file's unsaved ink against the story without writing it", async () => {
+    const slug = await threeChapters();
+    await convert(slug);
+    const path = chapterPath(slug, 2);
+    const saved = readFileSync(path, 'utf8');
+    const unsaved = saved.replace('The steps are slick.', 'The steps are {slick.');
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/ink-check`,
+      payload: { path: 'chapters/chapter-02.md', content: unsaved },
+    });
+    expect(response.statusCode).toBe(200);
+    const checked = interactiveStorySchema.parse(response.json());
+    expect(checked.compiled).toBe(false);
+    const error = checked.diagnostics.find((entry) => entry.severity === 'error')!;
+    expect(error.path).toBe('chapters/chapter-02.md');
+    expect(unsaved.split('\n')[error.line! - 1]).toBe('The steps are {slick.');
+    expect(readFileSync(path, 'utf8')).toBe(saved);
+    expect((await story(slug)).compiled).toBe(true);
+
+    const outside = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/ink-check`,
+      payload: { path: '_index.md', content: '' },
+    });
+    expect(outside.statusCode).toBeGreaterThanOrEqual(400);
+  }, 30_000);
+
   it('reads the story structure: choices, conditions, stitches, variables, and what nothing reaches', async () => {
     const slug = await threeChapters();
     await convert(slug);

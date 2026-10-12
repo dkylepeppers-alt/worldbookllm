@@ -286,6 +286,7 @@ const INK_BOOK_RULES = [
   '- Global VAR, CONST, and LIST declarations, functions, and shared knots go in Markdown files under ink/ (ink/variables.md); their bodies are ink.',
   '- Every path must end: a chapter needs choices, a divert, or `-> END`.',
   '- Each ink line is a paragraph. Inline *emphasis* works. Write a scene break as a line `# break`. Escape a Markdown heading or list marker with a backslash (`\\# Title`), and `//` in prose (a web address), which ink reads as a comment.',
+  "- After writing ink, the write tells you if that file does not compile. Use ink_check to see every problem and the story's structure, and ink_play to read a path the way a reader will (from any knot, with variables set, picking choices by index).",
   '- Do not run story build: the Builds screen exports the ink, compiled JSON, and a web player.',
 ];
 

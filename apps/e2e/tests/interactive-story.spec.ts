@@ -76,6 +76,24 @@ test('an interactive story in ink on a phone', async ({ page }) => {
     );
   });
 
+  await test.step('see an error in the ink editor as it is typed', async () => {
+    await page.goto('/books/the-gull-rock-light/files/chapters/chapter-02.md');
+    await expect(page.getByLabel('Ink')).toContainText('Glass crunches underfoot.');
+    await page.getByRole('button', { name: 'Edit' }).click();
+    const editor = page.getByRole('textbox', { name: 'chapters/chapter-02.md, ink' });
+    await expect(editor).toContainText('Glass crunches underfoot.');
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+End');
+    await page.keyboard.type('\nSee https://example.org now.\nThe lamp {oops');
+    const problems = page.getByRole('list', { name: 'Problems in this file' });
+    await expect(problems).toContainText('error');
+    await expect(problems.getByRole('button', { name: /^Line \d+$/u }).first()).toBeVisible();
+    // The web address's // is flagged as a comment trap on its line.
+    await expect(page.locator('.cm-lintRange-warning')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Discard edits' }).click();
+    await expect(page.getByLabel('Ink')).not.toContainText('oops');
+  });
+
   await test.step('see a compile error at its line, then fix it', async () => {
     const text = await readFile(chapter(2), 'utf8');
     await writeFile(
