@@ -99,7 +99,7 @@ pnpm install
 pnpm build
 ```
 
-`python3`, `make` and `g++` are needed even though nothing compiles. pnpm still runs better-sqlite3's build step, and that step only confirms the prebuilt binary is there.
+pnpm still runs better-sqlite3's build step, which needs `python3` and `make` even though it only confirms the prebuilt binary is there and compiles nothing. `g++` is only needed if that check fails and it falls back to compiling from source; it's in the list so the install still succeeds then.
 
 ### Start
 

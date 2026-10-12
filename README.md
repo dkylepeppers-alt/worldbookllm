@@ -6,8 +6,8 @@ It runs entirely on your own machine, or on an Android phone under Termux (see [
 
 ## The loop
 
-1. **Bring material in.** Paste text, or upload `.md`, `.txt`, PDF, HTML, SillyTavern lorebook/character-card JSON, or a zip of any of these. Everything is converted to Markdown you review _before_ it's filed into the book — as research notes by default, or as characters, chapters, and other entities when the material already fits. A manuscript can become a new book, and a zipped story-skills project imports whole.
-2. **Build the book.** Add characters, locations, chapters, and scenes; the `story` CLI keeps registries and cross-references correct, and the Health tab runs its continuity, timeline, and pacing checks. Read the manuscript in the Reader, and build it as EPUB, DOCX, HTML, and the other `story build` formats.
+1. **Bring material in.** Paste text, or upload `.md`, `.txt`, PDF, HTML, SillyTavern lorebook/character-card JSON, or a zip of any of these. Everything is converted to Markdown you review _before_ it's filed into the book — as research notes by default, or as characters, chapters, and other entities when the material already fits. A manuscript can become a new book, and a zipped story-skills project becomes a new book too (its Markdown, notes, and cover images; build output and other files are skipped and listed).
+2. **Build the book.** Add characters, locations, chapters, and scenes; the `story` CLI keeps registries and cross-references correct, and the Health tab runs its continuity, timeline, and pacing checks. Read the manuscript in the Reader, and build it as EPUB, DOCX, an HTML review copy, a print interior, and other `story build` formats.
 3. **Work with the agent.** Ask for a location, a revision, or a continuity pass. The agent loads the story-skills craft skills it needs, reads and searches the book, runs `story` commands, and writes files. Every turn ends with a change summary and per-file diffs you can undo, or, in review mode, proposed changes you apply or skip file by file. A step inspector shows exactly what the model received.
 4. **Shape the agent.** Save custom agents — a continuity checker, a line editor — with their own instructions and skills, and tune the generation settings (temperature, top-p, a token cap, thinking) in Settings.
 
@@ -21,14 +21,14 @@ The provider layer is ported from SillyTavern's battle-tested backends and suppo
 
 - **Books as story-skills projects** in a phone-first workspace: Write, Reader, Bible, Agent, Health, and Project tabs (plus Branches for interactive books), a Markdown editor, `story` checks, rename/remove, and history with undo
 - **Series** with a shared series bible: canon drift and health, push/pull/carry/seed between the bible and each book, and a series-wide style sheet ([ADR 0018](docs/decisions/0018-series-books-and-the-series-bible.md), [ADR 0019](docs/decisions/0019-series-wide-style-sheet.md))
-- **Ingestion** of `.md`, `.txt`, PDF, HTML, SillyTavern lorebook/character-card JSON, and zips of them, through one reviewed preview; manuscripts split into chapters; zipped story-skills projects imported as books ([ADR 0026](docs/decisions/0026-one-reviewed-import-pipeline.md))
-- **Builds** from the Project tab in every `story build` format (EPUB, DOCX, HTML review copy, print, …), downloaded from the app ([ADR 0020](docs/decisions/0020-builds-and-project-zip-import.md))
+- **Ingestion** of `.md`, `.txt`, PDF, HTML, SillyTavern lorebook/character-card JSON, and zips of them, through one reviewed preview; manuscripts split into chapters; zipped story-skills projects imported as new books, with skipped files reported ([ADR 0026](docs/decisions/0026-one-reviewed-import-pipeline.md))
+- **Builds** from the Project tab in `story build`'s single-file formats (EPUB, DOCX, Markdown and Shunn manuscripts, an HTML review copy, a print interior, an audiobook narration script, a retailer metadata sheet, and a Fountain screenplay skeleton), downloaded from the app; the folder-based `codex` format isn't offered ([ADR 0020](docs/decisions/0020-builds-and-project-zip-import.md))
 - **The book agent:** streaming tool-calling turns, change summaries with diffs and undo, review mode, questions with clickable choices, a step inspector, stop, and context compaction for long chats
 - **Interactive books written in [ink](https://www.inklestudios.com/ink/)** ([ADR 0030](docs/decisions/0030-interactive-books-are-written-in-ink.md)):
   - Make any book interactive, or start an interactive edition of it.
   - Edit chapters in an ink editor that shows compile errors as you type ([ADR 0031](docs/decisions/0031-the-ink-editor-uses-codemirror.md)), or edit each chapter's closing choices in a form.
   - See the story as a branch map, and play it in the app from any knot, with variables preset.
-  - Health plays every path to find dead ends, knots no path reaches, and choices that are never offered ([ADR 0032](docs/decisions/0032-paths-are-checked-by-playing-the-story.md)).
+  - Health plays the story down every path it can within a time and state budget, to find dead ends, knots no path reaches, and choices that are never offered; when the budget runs out, it says the result is partial ([ADR 0032](docs/decisions/0032-paths-are-checked-by-playing-the-story.md)).
   - Export it as `.ink` for Inky, as compiled JSON, or as a web page that plays on its own.
   - The agent can check, play, and path-test the ink it writes.
 - Skills library (the pinned story-skills set plus your own) and saved custom agents

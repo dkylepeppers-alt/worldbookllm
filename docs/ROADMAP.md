@@ -147,7 +147,7 @@ This supersedes the unfinished notebook-era scope: M2's remaining re-ingestion w
 
 Series (ADR 0018) adds sibling book folders and a series bible, canon drift and health, push/pull/carry/seed with rollback and per-book undo, same-series agent reads and explicit sync, duplicate-folder reporting, and detaching a book without losing its history. The phone journey covers conversion, seeding, adding a sequel, editing a bible alias, and pushing the resulting drift.
 
-Builds and project zips (ADR 0020): the Project tab builds any `story build` format (EPUB, DOCX, HTML review copy, print, and the rest) into `dist/` for download, and the library imports a zipped story-skills project as a new book. The SillyTavern lorebook and character-card exports are what remain of the "done when" list.
+Builds and project zips (ADR 0020): the Project tab builds `story build`'s single-file formats (EPUB, DOCX, HTML review copy, print, and the rest; not the folder-based `codex`) into `dist/` for download, and the library imports a zipped story-skills project as a new book. The SillyTavern lorebook and character-card exports are what remain of the "done when" list.
 
 **Status (2026-10-12):** phases 1–5 are complete and much of the polish has shipped; the SillyTavern exports remain.
 
@@ -164,7 +164,7 @@ Builds and project zips (ADR 0020): the Project tab builds any `story build` for
   - conversion and interactive editions
   - `.ink`, compiled JSON, and web-page exports
   - a CodeMirror ink editor with live errors
-  - Health → Paths, which plays every path
+  - Health → Paths, which plays every path it can within a 3,000-state, 2-second budget and says when its result is partial
   - the agent's `ink_check`, `ink_play`, and `ink_paths` tools
 
 **Scope (in build order):**
