@@ -57,6 +57,7 @@ import {
   type AppSettings,
   type ChapterEndingDetail,
   type ConvertToInkInput,
+  type InkCheckInput,
   type InkConversionPreview,
   type InteractiveStory,
   type BookBuildFile,
@@ -212,6 +213,8 @@ export interface ApiClient {
   getManuscript(slug: string, signal?: AbortSignal): Promise<BookManuscript>;
   /** An interactive book's ink story: chapters, structure, and diagnostics (ADR 0030). */
   getInteractiveStory(slug: string, signal?: AbortSignal): Promise<InteractiveStory>;
+  /** The story as it would be with one file's unsaved text, for the ink editor. */
+  checkInk(slug: string, input: InkCheckInput, signal?: AbortSignal): Promise<InteractiveStory>;
   getChapterEnding(
     slug: string,
     chapterId: string,
@@ -541,6 +544,13 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       request(`${book(slug)}/manuscript`, { schema: bookManuscriptSchema, signal }),
     getInteractiveStory: (slug, signal) =>
       request(`${book(slug)}/story`, { schema: interactiveStorySchema, signal }),
+    checkInk: (slug, input, signal) =>
+      request(`${book(slug)}/ink-check`, {
+        method: 'POST',
+        body: input,
+        schema: interactiveStorySchema,
+        signal,
+      }),
     getChapterEnding: (slug, chapterId, signal) =>
       request(`${book(slug)}/chapters/${encodeURIComponent(chapterId)}/ending`, {
         schema: chapterEndingDetailSchema,

@@ -129,9 +129,9 @@ function stepsFor(files: readonly BookFile[], story: InteractiveStory | null): S
       done: false,
       action: 'Check the paths',
       prompt: [
-        "Check the interactive story: read every chapter's ink and find knots nothing leads to, chapters that run out of story without choices, a divert, or -> END,",
-        'choices whose conditions can never hold, and variables that are set but never read.',
-        'Fix what you can, ask me before changing any prose, and tell me what you could not fix.',
+        'Check the interactive story: run ink_check, then fix what it reports (compile errors, knots nothing leads to, chapters that run out of story, variables nothing reads).',
+        'Use ink_play to read each ending path and the branches that depend on variables, and look for choices whose conditions can never hold.',
+        'Ask me before changing any prose, and tell me what you could not fix.',
       ].join(' '),
     },
   ];

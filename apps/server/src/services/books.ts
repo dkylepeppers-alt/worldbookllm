@@ -44,6 +44,7 @@ import {
   type BookPlay,
   type ChapterEndingDetail,
   type ConvertToInkInput,
+  type InkCheckInput,
   type InkConversionPreview,
   type InteractiveStory,
   type PinnedIfid,
@@ -85,14 +86,12 @@ import {
 import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { classifyBookPath } from '../story/book-paths.js';
 import { exportManuscript } from '../story/book-manuscript.js';
-import { assembleStory, type AssembledStory } from '../story/interactive/assemble.js';
-import { compileStory, type CompiledStory } from '../story/interactive/compile.js';
 import { convertToInk, type ConvertedFile } from '../story/interactive/convert.js';
 import { readEnding, writeEnding } from '../story/interactive/ending.js';
 import { describeDiagnostic, storyFindings } from '../story/interactive/findings.js';
 import { INK_VARIABLES_FILE, inkSection, isIfid, isInkFile } from '../story/interactive/format.js';
 import { projectInk } from '../story/interactive/projection.js';
-import { storyStructure, type StoryStructure } from '../story/interactive/structure.js';
+import { feedsInk, readInkStory, type InkReading } from '../story/interactive/read.js';
 import { appendDeclarations, undeclaredVariables } from '../story/interactive/variables.js';
 import { webPlayerHtml } from '../story/interactive/web-player.js';
 import { removeSeriesLinks, setFrontmatterField } from '../story/frontmatter-edit.js';
@@ -138,14 +137,6 @@ function conversionToken(files: readonly ConvertedFile[]): string {
   return hash.digest('hex');
 }
 
-/** A book's ink, assembled, compiled, and read (ADR 0030). */
-interface InkReading {
-  assembled: AssembledStory;
-  compiled: CompiledStory;
-  /** The story's structure, or null when it does not compile. */
-  structure: StoryStructure | null;
-}
-
 export interface BookChatLifecycle {
   /** Refuses while one of the book's chats has a turn running; `action` ends the message. */
   assertIdle(book: string, action?: string): void;
@@ -187,6 +178,8 @@ export class BookService {
   private readonly locks = new KeyedMutex();
   private readonly checkCache = new Map<string, { revision: number; result: BookCheckResult }>();
   private readonly inkCache = new Map<string, { key: string; reading: InkReading }>();
+  /** The latest ink check started for each book; older ones stop before compiling. */
+  private readonly inkCheckGeneration = new Map<string, number>();
   private chatLifecycle: BookChatLifecycle | null = null;
 
   constructor(
@@ -1301,62 +1294,75 @@ export class BookService {
    * standing in for files as they would be after an edit.
    */
   private inkReading(slug: string, overrides: ReadonlyMap<string, string>): InkReading {
-    const files = this.index.list(slug);
+    return readInkStory(this.inkFiles(slug, overrides), slug);
+  }
+
+  /** The text of every file the ink reads, with `overrides` in place. Caller holds the book lock. */
+  private inkFiles(
+    slug: string,
+    overrides: ReadonlyMap<string, string>,
+  ): Array<{ path: string; title: string; text: string }> {
+    const indexed = this.index.list(slug).filter((file) => feedsInk(file.path));
     const read = (path: string) =>
       overrides.get(path) ?? this.files.readBytes(slug, path)?.toString('utf8') ?? '';
-    const story = this.index.frontmatter(slug, 'story.md');
-    const extra = [...overrides.keys()].filter(
-      (path) => isInkFile(path) && !files.some((file) => file.path === path),
+    const added = [...overrides.keys()].filter(
+      (path) => feedsInk(path) && !indexed.some((file) => file.path === path),
     );
-    const assembled = assembleStory({
-      title: stringField(story, 'title') ?? slug,
-      author: stringField(story, 'author') ?? '',
-      ifid: stringField(story, 'ifid'),
-      chapters: files
-        .filter((file) => file.kind === 'chapter' && file.entityId !== null)
-        .map((file) => {
-          const text = read(file.path);
-          return {
-            id: file.entityId!,
-            title: file.title,
-            path: file.path,
-            number: parseFrontmatter(text).frontmatter?.number,
-            text,
-          };
-        }),
-      inkFiles: [...files.map((file) => file.path).filter(isInkFile), ...extra].map((path) => ({
-        path,
-        text: read(path),
-      })),
-    });
-    const compiled = compileStory(assembled);
-    const structure =
-      compiled.parsed === null || compiled.json === null
-        ? null
-        : storyStructure(compiled.parsed, assembled);
-    return { assembled, compiled, structure };
+    return [
+      ...indexed.map((file) => ({ path: file.path, title: file.title, text: read(file.path) })),
+      ...added.map((path) => ({ path, title: path, text: read(path) })),
+    ];
   }
 
   /** The book's ink story: its chapters, structure, and what the compiler said. */
   interactiveStory(slug: string): Promise<InteractiveStory> {
     return this.locks.run(slug, () => {
       this.assertInteractive(slug);
-      const { assembled, compiled, structure } = this.readInk(slug);
-      const ifid = stringField(this.index.frontmatter(slug, 'story.md'), 'ifid');
+      return this.storyOf(slug, this.readInk(slug));
+    });
+  }
+
+  /**
+   * The story as it would be with one file's unsaved text, for the ink
+   * editor to show errors as the writer types. Nothing is written.
+   */
+  async inkCheck(slug: string, input: InkCheckInput): Promise<InteractiveStory> {
+    assertWritablePath(input.path);
+    if (!feedsInk(input.path)) {
+      throw new ValidationError('Only chapters and files under ink/ hold ink.');
+    }
+    // Checks come as the writer types. Only the read holds the book lock, so
+    // compiling never holds up saves, and a check overtaken by a newer one
+    // for the same book stops before compiling.
+    const generation = (this.inkCheckGeneration.get(slug) ?? 0) + 1;
+    this.inkCheckGeneration.set(slug, generation);
+    const snapshot = await this.locks.run(slug, () => {
+      this.assertInteractive(slug);
       return {
-        title: this.summary(slug).title,
-        ifid: isIfid(ifid) ? ifid.toUpperCase() : null,
-        chapters: assembled.chapters.map((chapter) => ({
-          ...chapter,
-          hash: this.index.get(slug, chapter.path)?.hash ?? '',
-        })),
-        compiled: structure !== null,
-        start: structure?.start ?? null,
-        nodes: structure?.nodes ?? [],
-        variables: structure?.variables ?? [],
-        diagnostics: [...compiled.diagnostics, ...storyFindings(structure, ifid)],
+        meta: this.storyMeta(slug),
+        files: this.inkFiles(slug, new Map([[input.path, input.content]])),
       };
     });
+    if (this.inkCheckGeneration.get(slug) !== generation) {
+      throw new ConflictError(
+        'ink_check_superseded',
+        'A newer check of this book replaced this one.',
+      );
+    }
+    return storyFrom(snapshot.meta, readInkStory(snapshot.files, slug));
+  }
+
+  private storyOf(slug: string, reading: InkReading): InteractiveStory {
+    return storyFrom(this.storyMeta(slug), reading);
+  }
+
+  /** What the story's summary needs from the book besides its ink. Caller holds the book lock. */
+  private storyMeta(slug: string): StoryMeta {
+    return {
+      title: this.summary(slug).title,
+      ifid: stringField(this.index.frontmatter(slug, 'story.md'), 'ifid'),
+      hashes: new Map(this.index.list(slug).map((file) => [file.path, file.hash])),
+    };
   }
 
   /** The story compiled for Play. */
@@ -2173,4 +2179,31 @@ function uniqueId(base: string, directory: string, taken: ReadonlySet<string>): 
     candidate = `${base}-${suffix}`;
   }
   return candidate;
+}
+
+interface StoryMeta {
+  title: string;
+  ifid: string | null;
+  /** Every file's hash, by path. */
+  hashes: ReadonlyMap<string, string>;
+}
+
+/** The story's summary: its chapters, structure, and what the compiler and checks said. */
+function storyFrom(
+  meta: StoryMeta,
+  { assembled, compiled, structure }: InkReading,
+): InteractiveStory {
+  return {
+    title: meta.title,
+    ifid: isIfid(meta.ifid) ? meta.ifid.toUpperCase() : null,
+    chapters: assembled.chapters.map((chapter) => ({
+      ...chapter,
+      hash: meta.hashes.get(chapter.path) ?? '',
+    })),
+    compiled: structure !== null,
+    start: structure?.start ?? null,
+    nodes: structure?.nodes ?? [],
+    variables: structure?.variables ?? [],
+    diagnostics: [...compiled.diagnostics, ...storyFindings(structure, meta.ifid)],
+  };
 }

@@ -1,5 +1,5 @@
 import type { BookEntityKind, BookFileDetail } from '@worldbookllm/shared';
-import { BOOK_ENTITY_KINDS } from '@worldbookllm/shared';
+import { BOOK_ENTITY_KINDS, inkKnotName } from '@worldbookllm/shared';
 import { type FormEvent, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -12,6 +12,8 @@ import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useStoredDraft } from '../drafts.js';
 import { useBook } from './book-context.js';
 import { fileHref, KIND_LABELS } from './book-sections.js';
+import { InkSourceEditor } from './ink-editor/InkSourceEditor.js';
+import { inkStartLine } from './ink-editor/ink-text.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 function fieldValue(value: unknown): string {
@@ -25,6 +27,49 @@ function fieldValue(value: unknown): string {
 function bodyOf(content: string): string {
   const match = /^---\n[\s\S]*?\n---(?:\n|$)/u.exec(content);
   return match ? content.slice(match[0].length) : content;
+}
+
+/**
+ * An ink file as written: a chapter's planning as Markdown, then its ink as
+ * source, since ink markup read as Markdown would mislead. Play shows it as
+ * a reader sees it.
+ */
+function InkFileView({
+  slug,
+  content,
+  kind,
+  knot,
+}: {
+  slug: string;
+  content: string;
+  kind: 'chapter' | 'ink';
+  /** The chapter's knot, to play from it; null for an `ink/` file. */
+  knot: string | null;
+}) {
+  const lines = content.split('\n');
+  const start = inkStartLine(content, kind) - 1;
+  const planning = bodyOf(lines.slice(0, start).join('\n')).trim();
+  return (
+    <>
+      {planning === '' ? null : (
+        <div className="markdown-body">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{planning}</ReactMarkdown>
+        </div>
+      )}
+      <pre className="build-output ink-read" aria-label="Ink">
+        {lines.slice(start).join('\n').trim()}
+      </pre>
+      {knot === null ? null : (
+        <p>
+          <Link
+            to={`/books/${encodeURIComponent(slug)}/branches/play?from=${encodeURIComponent(knot)}`}
+          >
+            Play from this chapter
+          </Link>
+        </p>
+      )}
+    </>
+  );
 }
 
 function isEntityKind(kind: string): kind is BookEntityKind {
@@ -61,7 +106,7 @@ interface FileDraft {
 function FileView({ file, onChanged }: FileViewProps) {
   const api = useApi();
   const navigate = useNavigate();
-  const { slug, reload } = useBook();
+  const { slug, tree, reload } = useBook();
   const [stored, setStored, restored] = useStoredDraft<FileDraft | null>(
     `book-file:${slug}:${file.path}`,
     null,
@@ -78,6 +123,15 @@ function FileView({ file, onChanged }: FileViewProps) {
   const [conflict, setConflict] = useState(false);
   const [removing, setRemoving] = useState(false);
   const entityKind = file.entityId !== null && isEntityKind(file.kind) ? file.kind : null;
+  // An interactive book's chapters and ink/ files are edited as ink (ADR 0030).
+  const inkKind =
+    tree.book.interactive !== true
+      ? null
+      : file.kind === 'chapter'
+        ? ('chapter' as const)
+        : file.path.startsWith('ink/')
+          ? ('ink' as const)
+          : null;
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -194,15 +248,28 @@ function FileView({ file, onChanged }: FileViewProps) {
               ))}
             </dl>
           ) : null}
-          <div className="markdown-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{bodyOf(file.content)}</ReactMarkdown>
-          </div>
+          {inkKind === null ? (
+            <div className="markdown-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{bodyOf(file.content)}</ReactMarkdown>
+            </div>
+          ) : (
+            <InkFileView
+              slug={slug}
+              content={file.content}
+              kind={inkKind}
+              knot={
+                inkKind === 'chapter' && file.entityId !== null ? inkKnotName(file.entityId) : null
+              }
+            />
+          )}
         </>
       ) : null}
 
       {mode === 'edit' ? (
         <form className="source-editor" onSubmit={(event) => void save(event)}>
-          <label htmlFor="book-file-editor">Markdown, including frontmatter</label>
+          {inkKind === null ? (
+            <label htmlFor="book-file-editor">Markdown, including frontmatter</label>
+          ) : null}
           {stale ? (
             <p className="change-note" role="status">
               This file changed after you started editing it. Your unsaved edits are below; saving
@@ -213,12 +280,25 @@ function FileView({ file, onChanged }: FileViewProps) {
               Your unsaved edits were restored.
             </p>
           ) : null}
-          <textarea
-            id="book-file-editor"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={20}
-          />
+          {inkKind === null ? (
+            <textarea
+              id="book-file-editor"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              rows={20}
+            />
+          ) : (
+            <InkSourceEditor
+              slug={slug}
+              path={file.path}
+              kind={inkKind}
+              knot={
+                inkKind === 'chapter' && file.entityId !== null ? inkKnotName(file.entityId) : null
+              }
+              value={draft}
+              onChange={setDraft}
+            />
+          )}
           <div className="dialog-actions">
             <button
               type="button"

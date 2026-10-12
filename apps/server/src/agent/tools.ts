@@ -18,6 +18,7 @@ import { z } from 'zod';
 import type { SkillService } from '../services/skills.js';
 import { confine } from '../story/book-paths.js';
 import { isStoryCommand, type StoryCommandName } from '../story/story-commands.js';
+import { inkNoteAfterWrite, inkPlay, inkReport, isInteractiveWorkspace } from './ink-tools.js';
 import type { AgentWorkspace } from './workspace.js';
 import type { BookService } from '../services/books.js';
 
@@ -63,6 +64,12 @@ const AGENT_STORY_COMMANDS: ReadonlySet<StoryCommandName> = new Set<StoryCommand
 ]);
 
 const SKILL_FILE_MAX_BYTES = 64 * 1024;
+
+function assertInteractive(context: ToolContext): void {
+  if (!isInteractiveWorkspace(context.workspace)) {
+    throw new Error('This book is not interactive; ink tools work on books written in ink.');
+  }
+}
 
 export interface ToolContext {
   workspace: AgentWorkspace;
@@ -239,7 +246,7 @@ export class AgentToolRegistry {
         }),
         async ({ path, content, expectedHash }, context) => {
           await context.workspace.writeFile(path, content, expectedHash);
-          return `Wrote ${path}.`;
+          return `Wrote ${path}.${inkNoteAfterWrite(context.workspace, path)}`;
         },
       ),
       tool(
@@ -255,7 +262,60 @@ export class AgentToolRegistry {
         },
         z.strictObject({ path: bookFilePathSchema, find: z.string().min(1), replace: z.string() }),
         ({ path, find, replace }, context) =>
-          context.workspace.editFile(path, find, replace).then(() => `Edited ${path}.`),
+          context.workspace
+            .editFile(path, find, replace)
+            .then(() => `Edited ${path}.${inkNoteAfterWrite(context.workspace, path)}`),
+      ),
+      tool(
+        'ink_check',
+        "Compile an interactive book's ink and report what the compiler and the story's structure say (errors and warnings at file and line, knots nothing leads to, chapters that run out of story, variables nothing reads), with each knot's choices and diverts. Pass path to see only one file's problems. Only for interactive books.",
+        { properties: { path: pathParameter } },
+        z.strictObject({ path: bookFilePathSchema.optional() }),
+        ({ path }, context) => {
+          assertInteractive(context);
+          return inkReport(context.workspace, path);
+        },
+      ),
+      tool(
+        'ink_play',
+        "Play an interactive book's ink with inkle's runtime and return the text, the choices offered and picked, where it stopped, and every variable's value. Use it to check that a path reads right: start from a knot or knot.stitch, set variables first, and pick choices by index.",
+        {
+          properties: {
+            from: { type: 'string', description: 'A knot or knot.stitch, e.g. chapter_03.cellar' },
+            choices: {
+              type: 'array',
+              items: { type: 'integer', minimum: 0 },
+              description: 'Choice indexes to pick in turn, from 0',
+            },
+            set: {
+              type: 'object',
+              description: 'Variables to set before starting, e.g. {"trust": 2, "met_venn": true}',
+            },
+            seed: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Random seed; the same seed replays the same',
+            },
+          },
+        },
+        z.strictObject({
+          from: z
+            .string()
+            .regex(/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?$/u)
+            .optional(),
+          choices: z.array(z.number().int().min(0)).max(200).default([]),
+          set: z
+            .record(
+              z.string().regex(/^[A-Za-z_]\w*$/u),
+              z.union([z.string(), z.number(), z.boolean()]),
+            )
+            .default({}),
+          seed: z.number().int().min(1).default(1),
+        }),
+        (input, context) => {
+          assertInteractive(context);
+          return inkPlay(context.workspace, input);
+        },
       ),
       tool(
         'run_story',
