@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { ClosingChoice } from '@worldbookllm/shared';
 
+import { ConflictError } from '../../errors.js';
 import { parseFrontmatter } from '../book-index.js';
 import { removeFrontmatterField, setFrontmatterField } from '../frontmatter-edit.js';
 import { choiceLines } from './ending.js';
@@ -47,26 +48,63 @@ interface LegacyChoice {
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
-function entries(value: unknown): string[] {
-  const list = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
-  return list
+// A flag (`lamp_lit`, `not lamp_lit`), or in `requires` a chapter id too (`chapter-03`).
+const FLAG = /^(?:not\s+)?[A-Za-z_][A-Za-z0-9_]*$/u;
+const READ_CHAPTER = /^(?:not\s+)?[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+
+/** A `sets` or `requires` value as entries, with a problem for anything that is not one. */
+function entries(
+  value: unknown,
+  at: string,
+  key: 'sets' | 'requires',
+  problems: string[],
+): string[] {
+  if (value === undefined || value === null) return [];
+  const list = Array.isArray(value) ? value : [value];
+  const valid = list
     .filter((entry): entry is string => typeof entry === 'string')
     .map((entry) => entry.trim())
     .filter((entry) => entry !== '');
+  const shaped = valid.filter(
+    (entry) => FLAG.test(entry) || (key === 'requires' && READ_CHAPTER.test(entry)),
+  );
+  if (valid.length !== list.length || shaped.length !== valid.length) {
+    problems.push(`${at} has ${key} that are not flag names`);
+  }
+  return shaped;
 }
 
-/** A chapter's frontmatter `choices` in the earlier format, as the builds read them. */
-function legacyChoices(frontmatter: Record<string, unknown> | null): LegacyChoice[] {
+/**
+ * A chapter's frontmatter `choices` in the earlier format, and a description
+ * of every entry conversion could not carry over, so nothing is dropped
+ * without the writer knowing.
+ */
+function legacyChoices(
+  frontmatter: Record<string, unknown> | null,
+  ids: ReadonlySet<string>,
+): { choices: LegacyChoice[]; problems: string[] } {
   const value = frontmatter?.choices;
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry: unknown) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return [];
+  if (value === undefined || value === null) return { choices: [], problems: [] };
+  if (!Array.isArray(value)) return { choices: [], problems: ['choices is not a list'] };
+  const problems: string[] = [];
+  const choices = value.flatMap((entry: unknown, index) => {
+    const at = `choice ${index + 1}`;
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      problems.push(`${at} is not a choice with text and to`);
+      return [];
+    }
     const record = entry as Record<string, unknown>;
     const text = typeof record.text === 'string' ? record.text.trim() : '';
     const to = typeof record.to === 'string' ? record.to.trim() : '';
-    if (text === '' || !KEBAB.test(to)) return [];
-    return [{ text, to, sets: entries(record.sets), requires: entries(record.requires) }];
+    const before = problems.length;
+    if (text === '') problems.push(`${at} has no text`);
+    if (!KEBAB.test(to)) problems.push(`${at} does not lead to a chapter id`);
+    else if (!ids.has(to)) problems.push(`${at} leads to ${to}, which is not a chapter`);
+    const sets = entries(record.sets, at, 'sets', problems);
+    const requires = entries(record.requires, at, 'requires', problems);
+    return problems.length > before ? [] : [{ text, to, sets, requires }];
   });
+  return { choices, problems };
 }
 
 function flagOf(entry: string): { name: string; negated: boolean } {
@@ -105,11 +143,24 @@ const FRONTMATTER = /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$
 
 /** The files converting a book writes, with what each held before. */
 export function convertToInk(input: ConvertInput): ConvertedFile[] {
+  const ids = new Set(input.chapters.map((chapter) => chapter.id));
+  const problems: string[] = [];
   const chapters = orderChapters(input.chapters).map((chapter) => {
     const parsed = parseFrontmatter(chapter.text);
-    return { ...chapter, choices: legacyChoices(parsed.frontmatter) };
+    if (parsed.error !== undefined) {
+      problems.push(`${chapter.path}: its frontmatter is not valid YAML (${parsed.error})`);
+    }
+    const read = legacyChoices(parsed.frontmatter, ids);
+    problems.push(...read.problems.map((problem) => `${chapter.path}: ${problem}`));
+    return { ...chapter, choices: read.choices };
   });
-  const ids = new Set(chapters.map((chapter) => chapter.id));
+  if (problems.length > 0) {
+    // Converting removes the frontmatter choices, so nothing is converted until all of them can be.
+    throw new ConflictError(
+      'legacy_choices_invalid',
+      `Fix these chapters' choices before converting the book:\n${problems.join('\n')}`,
+    );
+  }
   const branching = chapters.some((chapter) => chapter.choices.length > 0);
   const flags = new Set<string>();
   const knot = (id: string) => inkKnotName(id);

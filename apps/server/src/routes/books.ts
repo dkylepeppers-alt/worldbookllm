@@ -8,6 +8,7 @@ import {
   bookParamsSchema,
   bookSearchQuerySchema,
   chapterParamsSchema,
+  convertToInkSchema,
   checkpointParamsSchema,
   createBookBuildSchema,
   createBookImportSchema,
@@ -208,7 +209,7 @@ export function registerBookRoutes(app: FastifyInstance): void {
 
   app.post('/api/books/:book/ink-conversion', (request) => {
     const { book } = bookParamsSchema.parse(request.params);
-    return books().convertToInk(book);
+    return books().convertToInk(book, convertToInkSchema.parse(request.body));
   });
 
   app.post('/api/books/:book/interactive-edition', async (request, reply) => {

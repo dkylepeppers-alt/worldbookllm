@@ -154,7 +154,12 @@ function parseSet(value: string | null): Record<string, string> {
   const set: Record<string, string> = {};
   for (const entry of (value ?? '').split(',')) {
     const match = /^([A-Za-z_]\w*):(.*)$/u.exec(entry.trim());
-    if (match) set[match[1]!] = decodeURIComponent(match[2]!);
+    if (match === null) continue;
+    try {
+      set[match[1]!] = decodeURIComponent(match[2]!);
+    } catch {
+      // A hand-edited address with a broken escape: leave that variable as declared.
+    }
   }
   return set;
 }

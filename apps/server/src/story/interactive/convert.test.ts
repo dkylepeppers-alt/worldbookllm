@@ -145,4 +145,31 @@ describe('converting a book to ink chapters', () => {
     );
     expect(text(play(files))).toBe('Mara climbs.\nShe waits.');
   });
+
+  it('refuses choices it cannot carry over, and frontmatter that is not YAML, naming each', () => {
+    const convert = (frontmatter: string) => () =>
+      convertToInk({
+        story: STORY,
+        variables: null,
+        chapters: [
+          chapter('chapter-01', 1, frontmatter, 'One.\n'),
+          chapter('chapter-02', 2, '', 'Two.\n'),
+        ],
+      });
+    expect(convert('choices: nope\n')).toThrow('chapters/chapter-01.md: choices is not a list');
+    expect(
+      convert('choices:\n  - text: Go\n    to: chapter-02\n    sets: ["has space"]\n'),
+    ).toThrow('chapters/chapter-01.md: choice 1 has sets that are not flag names');
+    expect(convert('choices:\n  - text: Go\n    to: Chapter Two\n')).toThrow(
+      'chapters/chapter-01.md: choice 1 does not lead to a chapter id',
+    );
+    expect(convert('choices:\n  - text: Go: down\n    to: chapter-02\n')).toThrow(
+      'chapters/chapter-01.md: its frontmatter is not valid YAML',
+    );
+    expect(
+      convert(
+        'choices:\n  - text: Go\n    to: chapter-02\n    requires: ["chapter-02", "not seen"]\n',
+      ),
+    ).not.toThrow();
+  });
 });

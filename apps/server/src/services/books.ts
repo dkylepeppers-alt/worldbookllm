@@ -43,6 +43,7 @@ import {
   type WriteBookFileInput,
   type BookPlay,
   type ChapterEndingDetail,
+  type ConvertToInkInput,
   type InkConversionPreview,
   type InteractiveStory,
   type PinnedIfid,
@@ -129,6 +130,14 @@ const INK_REFUSED_COMMANDS = new Set<StoryCommandName>(['build', 'export', 'spli
 const BUILD_TIMEOUT_MS = 120_000;
 
 /** Agent chats tied to a book. Attached after both services exist (they refer to each other). */
+/** Names a conversion by everything it reads, so the one applied is the one reviewed. */
+function conversionToken(files: readonly ConvertedFile[]): string {
+  const hash = createHash('sha256');
+  for (const file of files)
+    hash.update(`${file.path}\0${file.before === null ? '\u0001' : file.before}\0`);
+  return hash.digest('hex');
+}
+
 /** A book's ink, assembled, compiled, and read (ADR 0030). */
 interface InkReading {
   assembled: AssembledStory;
@@ -1481,7 +1490,10 @@ export class BookService {
 
   /** What converting the book to ink chapters would write (ADR 0030). */
   inkConversion(slug: string): Promise<InkConversionPreview> {
-    return this.locks.run(slug, () => ({ files: this.conversionOf(slug) }));
+    return this.locks.run(slug, () => {
+      const files = this.conversionOf(slug);
+      return { files, token: conversionToken(files) };
+    });
   }
 
   private conversionOf(slug: string): ConvertedFile[] {
@@ -1511,21 +1523,27 @@ export class BookService {
     });
   }
 
-  /** Converts the book to ink chapters as one checkpointed change, which can be undone. */
-  convertToInk(slug: string): Promise<BookSummary> {
+  /**
+   * Converts the book to ink chapters as one checkpointed change, which can
+   * be undone: the one the writer reviewed, named by its preview's token.
+   * A failed write or reindex puts every file back as it was.
+   */
+  convertToInk(slug: string, input: ConvertToInkInput): Promise<BookSummary> {
     return this.locks.run(slug, async () => {
       const files = this.conversionOf(slug);
+      if (conversionToken(files) !== input.token) {
+        throw new ConflictError(
+          'file_changed',
+          'The book changed since you reviewed the conversion. Review it again.',
+        );
+      }
       await this.checkpoints.record(slug, 'Convert to ink chapters', 'user', 'book', async () => {
         const before = this.files.snapshot(slug);
-        for (const file of files) this.files.write(slug, file.path, file.after);
         try {
+          for (const file of files) this.files.write(slug, file.path, file.after);
           await this.cli.runOrThrow({ command: 'reindex', root: this.files.root(slug) });
         } catch (error) {
-          for (const file of files) {
-            const previous = before.get(file.path);
-            if (previous === undefined) this.files.remove(slug, file.path);
-            else this.files.write(slug, file.path, previous);
-          }
+          this.restoreSnapshot(slug, before);
           throw error;
         }
       });
@@ -1736,15 +1754,23 @@ export class BookService {
     try {
       await this.cli.runOrThrow({ command: 'reindex', root: this.files.root(slug) });
     } catch (error) {
-      for (const [file, bytes] of this.files.snapshot(slug)) {
-        const previous = before.get(file);
-        if (previous === undefined) this.files.remove(slug, file);
-        else if (!previous.equals(bytes)) this.files.write(slug, file, previous);
-      }
-      for (const [file, bytes] of before) {
-        if (this.files.readBytes(slug, file) === null) this.files.write(slug, file, bytes);
-      }
+      this.restoreSnapshot(slug, before);
       throw error;
+    }
+  }
+
+  /**
+   * Puts every Markdown file back as a snapshot had it: files added since
+   * are removed, changed ones rewritten, and removed ones written again.
+   */
+  private restoreSnapshot(slug: string, before: ReadonlyMap<string, Buffer>): void {
+    for (const [file, bytes] of this.files.snapshot(slug)) {
+      const previous = before.get(file);
+      if (previous === undefined) this.files.remove(slug, file);
+      else if (!previous.equals(bytes)) this.files.write(slug, file, previous);
+    }
+    for (const [file, bytes] of before) {
+      if (this.files.readBytes(slug, file) === null) this.files.write(slug, file, bytes);
     }
   }
 

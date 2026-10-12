@@ -199,7 +199,11 @@ export const inkConversionPreviewSchema = z.strictObject({
       after: z.string(),
     }),
   ),
+  /** Names this conversion, so the one applied is the one reviewed. */
+  token: sha256Schema,
 });
+
+export const convertToInkSchema = z.strictObject({ token: sha256Schema });
 
 export const pinnedIfidSchema = z.strictObject({ ifid: z.string() });
 
@@ -216,4 +220,5 @@ export type ChapterEnding = z.infer<typeof chapterEndingSchema>;
 export type ChapterEndingDetail = z.infer<typeof chapterEndingDetailSchema>;
 export type SetChapterEndingInput = z.infer<typeof setChapterEndingSchema>;
 export type InkConversionPreview = z.infer<typeof inkConversionPreviewSchema>;
+export type ConvertToInkInput = z.infer<typeof convertToInkSchema>;
 export type PinnedIfid = z.infer<typeof pinnedIfidSchema>;

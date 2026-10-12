@@ -56,6 +56,7 @@ import {
   type ApiErrorIssue,
   type AppSettings,
   type ChapterEndingDetail,
+  type ConvertToInkInput,
   type InkConversionPreview,
   type InteractiveStory,
   type BookBuildFile,
@@ -224,8 +225,8 @@ export interface ApiClient {
   ): Promise<ChapterEndingDetail>;
   /** What converting the book to ink chapters would write. */
   getInkConversion(slug: string, signal?: AbortSignal): Promise<InkConversionPreview>;
-  /** Converts the book to ink chapters and returns it. */
-  convertToInk(slug: string, signal?: AbortSignal): Promise<BookSummary>;
+  /** Converts the book to ink chapters, as the preview with this token showed, and returns it. */
+  convertToInk(slug: string, input: ConvertToInkInput, signal?: AbortSignal): Promise<BookSummary>;
   /** The story compiled for Play. */
   getPlay(slug: string, signal?: AbortSignal): Promise<BookPlay>;
   pinIfid(slug: string, signal?: AbortSignal): Promise<PinnedIfid>;
@@ -554,9 +555,10 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       }),
     getInkConversion: (slug, signal) =>
       request(`${book(slug)}/ink-conversion`, { schema: inkConversionPreviewSchema, signal }),
-    convertToInk: (slug, signal) =>
+    convertToInk: (slug, input, signal) =>
       request(`${book(slug)}/ink-conversion`, {
         method: 'POST',
+        body: input,
         schema: bookSummarySchema,
         signal,
       }),

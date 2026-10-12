@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { DiffDialog } from '../agent/DiffDialog.js';
+import { ApiClientError } from '../api/client.js';
 import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
@@ -175,7 +176,15 @@ function ConvertOffer({ legacy }: { legacy: boolean }) {
             disabled={busy}
             onClick={() =>
               void run(async () => {
-                await api.convertToInk(slug);
+                try {
+                  await api.convertToInk(slug, { token: preview.token });
+                } catch (caught) {
+                  // The book changed since this preview: show the writer the new one to review.
+                  if (caught instanceof ApiClientError && caught.code === 'file_changed') {
+                    setPreview(null);
+                  }
+                  throw caught;
+                }
                 reload();
               })
             }
@@ -185,7 +194,7 @@ function ConvertOffer({ legacy }: { legacy: boolean }) {
         </>
       )}
       {error === null ? null : (
-        <p className="form-error" role="alert">
+        <p className="form-error pre-line" role="alert">
           {error}
         </p>
       )}

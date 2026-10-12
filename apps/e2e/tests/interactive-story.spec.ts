@@ -84,7 +84,8 @@ test('an interactive story in ink on a phone', async ({ page }) => {
     );
     await tabs.getByRole('link', { name: 'Health' }).click();
     const findings = page.getByRole('list', { name: 'Ink findings' });
-    await expect(findings).toContainText('chapters/chapter-02.md, line');
+    // Health runs story report and story next first, which take a while on a busy machine.
+    await expect(findings).toContainText('chapters/chapter-02.md, line', { timeout: 30_000 });
     await writeFile(
       chapter(2),
       text.replace(

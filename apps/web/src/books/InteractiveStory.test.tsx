@@ -20,6 +20,7 @@ import { createTestClient } from '../test/createTestClient.js';
 import { markdownOf } from './play-markdown.js';
 
 const HASH = 'a'.repeat(64);
+const TOKEN = 'b'.repeat(64);
 
 const book: BookSummary = {
   slug: 'gull-rock',
@@ -157,6 +158,7 @@ describe('Branches tab', () => {
             },
             { path: 'ink/variables.md', before: null, after: '---\ntitle: Story variables\n---\n' },
           ],
+          token: TOKEN,
         }),
       convertToInk,
     });
@@ -175,8 +177,37 @@ describe('Branches tab', () => {
 
     const loads = getBookTree.mock.calls.length;
     await user.click(screen.getByRole('button', { name: 'Convert to ink chapters' }));
-    expect(convertToInk).toHaveBeenCalledWith('gull-rock');
+    expect(convertToInk).toHaveBeenCalledWith('gull-rock', { token: TOKEN });
     await waitFor(() => expect(getBookTree.mock.calls.length).toBeGreaterThan(loads));
+  });
+
+  it('asks for a new review when the book changed since the preview', async () => {
+    const getInkConversion = vi.fn(() =>
+      Promise.resolve({
+        files: [{ path: 'story.md', before: 'a', after: 'b' }],
+        token: TOKEN,
+      }),
+    );
+    renderAt('/books/gull-rock/branches', {
+      getBookTree: () => Promise.resolve(linear),
+      getInkConversion,
+      convertToInk: () =>
+        Promise.reject(
+          new ApiClientError(
+            409,
+            'file_changed',
+            'The book changed since you reviewed the conversion. Review it again.',
+          ),
+        ),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Review the changes' }));
+    await user.click(await screen.findByRole('button', { name: 'Convert to ink chapters' }));
+    expect(await screen.findByText(/Review it again/u)).toBeTruthy();
+    // The stale preview is gone, so nothing unreviewed can be converted.
+    expect(screen.queryByRole('button', { name: 'Convert to ink chapters' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Review the changes' }));
+    expect(getInkConversion).toHaveBeenCalledTimes(2);
   });
 
   it('offers a book in the earlier format the conversion, with its own tab', async () => {
@@ -633,6 +664,14 @@ describe('Play', () => {
     cleanup();
     renderAt('/books/gull-rock/branches/play?from=chapter-02', { getPlay });
     expect(await screen.findByRole('heading', { name: 'The Ledge' })).toBeTruthy();
+  });
+
+  it('skips a preset variable whose value is not a valid escape', async () => {
+    renderAt('/books/gull-rock/branches/play?set=trust:%25E0,found_coat:true', { getPlay });
+    expect(await screen.findByRole('heading', { name: 'Harbor Wall' })).toBeTruthy();
+    const state = screen.getByRole('region', { name: 'Story state' }).textContent;
+    expect(state).toContain('found_coat true');
+    expect(state).toContain('trust 0');
   });
 
   it('saves a moment and reopens it', async () => {

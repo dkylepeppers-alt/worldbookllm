@@ -644,10 +644,35 @@ describe('interactive books', () => {
     writeFileSync(path, `${text.slice(0, at)}## Chapter Text\n\n${ink}\n`);
   }
 
+  async function preview(slug: string) {
+    const response = await app.inject({ method: 'GET', url: `/api/books/${slug}/ink-conversion` });
+    expect(response.statusCode).toBe(200);
+    return inkConversionPreviewSchema.parse(response.json());
+  }
+
+  /** Converts as the writer does: the conversion the preview showed, named by its token. */
   async function convert(slug: string): Promise<BookSummary> {
-    const response = await app.inject({ method: 'POST', url: `/api/books/${slug}/ink-conversion` });
+    const { token } = await preview(slug);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/ink-conversion`,
+      payload: { token },
+    });
     expect(response.statusCode).toBe(200);
     return response.json<BookSummary>();
+  }
+
+  /** Every Markdown file in a book and its content. */
+  function bookFiles(slug: string): Map<string, string> {
+    const root = join(dataDir, 'projects', slug);
+    return new Map(
+      readdirSync(root, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+        .map((entry) => {
+          const path = join(entry.parentPath, entry.name);
+          return [path.slice(root.length + 1), readFileSync(path, 'utf8')];
+        }),
+    );
   }
 
   async function story(slug: string): Promise<InteractiveStory> {
@@ -672,10 +697,8 @@ describe('interactive books', () => {
     const refused = await app.inject({ method: 'GET', url: `/api/books/${slug}/play` });
     expect(refused.json()).toMatchObject({ error: 'not_interactive' });
 
-    const preview = inkConversionPreviewSchema.parse(
-      (await app.inject({ method: 'GET', url: `/api/books/${slug}/ink-conversion` })).json(),
-    );
-    expect(preview.files.map((file) => file.path)).toEqual([
+    const reviewed = await preview(slug);
+    expect(reviewed.files.map((file) => file.path)).toEqual([
       'chapters/chapter-01.md',
       'chapters/chapter-02.md',
       'chapters/chapter-03.md',
@@ -715,6 +738,79 @@ describe('interactive books', () => {
     expect(undone.statusCode).toBe(200);
     expect(await summary(slug)).toMatchObject({ interactive: false });
     expect(readFileSync(chapterPath(slug, 1), 'utf8')).not.toContain('-> chapter_02');
+  }, 30_000);
+
+  it('converts only what the writer reviewed: a book changed since the preview is refused', async () => {
+    const slug = await threeChapters();
+    const { token } = await preview(slug);
+    const path = chapterPath(slug, 2);
+    writeFileSync(path, `${readFileSync(path, 'utf8')}\nA line written after the preview.\n`);
+    const before = bookFiles(slug);
+    const stale = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/ink-conversion`,
+      payload: { token },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: 'file_changed' });
+    expect(bookFiles(slug)).toEqual(before);
+    expect(await summary(slug)).toMatchObject({ interactive: false });
+  }, 30_000);
+
+  it('puts every file back when the conversion fails partway', async () => {
+    const slug = await threeChapters();
+    const bookDir = join(dataDir, 'projects', slug);
+    const before = bookFiles(slug);
+    const { token } = await preview(slug);
+    const original = StoryCli.prototype.runOrThrow;
+    const spy = vi.spyOn(StoryCli.prototype, 'runOrThrow').mockImplementation(function (
+      this: StoryCli,
+      request,
+    ) {
+      if (request.command !== 'reindex') return original.call(this, request);
+      // A reindex killed partway: a registry rewritten, then the failure.
+      writeFileSync(join(bookDir, 'chapters/_index.md'), '# Half written\n');
+      return Promise.reject(new Error('story reindex timed out'));
+    });
+    try {
+      const failed = await app.inject({
+        method: 'POST',
+        url: `/api/books/${slug}/ink-conversion`,
+        payload: { token },
+      });
+      expect(failed.statusCode).toBeGreaterThanOrEqual(400);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(bookFiles(slug)).toEqual(before);
+    expect(await summary(slug)).toMatchObject({ interactive: false });
+  }, 30_000);
+
+  it('refuses to convert choices in the earlier format it cannot carry over', async () => {
+    const slug = await threeChapters();
+    const path = chapterPath(slug, 2);
+    writeFileSync(
+      path,
+      readFileSync(path, 'utf8').replace(
+        /^---\n/u,
+        '---\nchoices:\n  - text: Go on\n    to: chapter-03\n  - to: chapter-01\n  - text: Nowhere\n    to: chapter-09\n',
+      ),
+    );
+    const before = bookFiles(slug);
+    const refused = await app.inject({ method: 'GET', url: `/api/books/${slug}/ink-conversion` });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: 'legacy_choices_invalid' });
+    const message = refused.json<{ message: string }>().message;
+    expect(message).toContain('chapters/chapter-02.md: choice 2 has no text');
+    expect(message).toContain(
+      'chapters/chapter-02.md: choice 3 leads to chapter-09, which is not a chapter',
+    );
+    const edition = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/interactive-edition`,
+    });
+    expect(edition.json()).toMatchObject({ error: 'legacy_choices_invalid' });
+    expect(bookFiles(slug)).toEqual(before);
   }, 30_000);
 
   it('converts frontmatter choices from the earlier format into ink choices', async () => {
