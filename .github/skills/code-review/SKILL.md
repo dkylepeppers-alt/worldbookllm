@@ -43,7 +43,7 @@ Five findings that clear it beat twenty that do not. If nothing clears it, say t
 - **Every write is a checkpoint** (`checkpoints.record`, a `CheckpointSession`, or `BookService.writeDiscover`), so it can be undone.
 - **Writes check what they read.** A write based on an earlier read must compare an expected hash (`expectedHash`, an `expected` map, a `file_changed` conflict). Read, then await (a model call, a CLI run), then write without a check is a lost update.
 - **Entity changes reindex.** A failed reindex restores the snapshot. Registries (`_index.md`) and `dist/` are never written directly (`assertWritablePath`).
-- **App frontmatter** is flat and JSON-quoted (`discover: "seed"`). Nested maps fail `story validate`.
+- **App frontmatter** is flat: top-level scalars only, since nested maps fail `story validate`. String values are JSON-quoted (`discover: "seed"`). Numbers and booleans stay typed scalars (`lookahead: 1`, `interactive: true`); quoting them turns them into strings.
 
 ### Interactive books in ink (ADR 0030–0033)
 
@@ -53,12 +53,12 @@ Five findings that clear it beat twenty that do not. If nothing clears it, say t
 - Code that rewrites an ending respects `readEnding(...).editable` and keeps the planning above `## Chapter Text`.
 - **Discovery (ADR 0033):**
   - Whether a beat is a seed, edited, or stale is derived from the files by `discoverBeats` (frontmatter plus seed ink plus hashes). Code that decides from frontmatter alone will disagree with it.
-  - Every path that writes choices passes `checkBeat` / `checkChoices` and the review pass.
+  - Every path where the beat writer writes choices passes `checkBeat` / `checkChoices` and the review pass. Choices the writer saves themselves (the choices form, `setChapterEnding`) are compiled but deliberately get no model review.
   - Lead mode writes only while the setup says `lead`, and its background work stays bounded by the look-ahead.
 
 ### The agent and the beat writer (ADR 0015, ADR 0016, ADR 0033)
 
-- **Tool results are capped and errors go back to the model.** Results go through `truncateResult`, and tool errors return to the model as results. An error the model cannot fix (`ConflictError`, `NotFoundError`, an abort) must stop the loop, not spin it.
+- **Tool results are capped and errors go back to the model.** Results go through `truncateResult`. In the chat agent, every tool error returns to the model as a result (`AgentToolRegistry.execute`), because the model can often correct it, for example by reading the right path after a `NotFoundError`. The beat writer's loop is the exception: there, a `ConflictError` or `NotFoundError` means the book changed under the job, so it stops the run. Flag a loop that retries an error which invalidates the whole run, and a loop that aborts on one the model could fix.
 - **Changes survive failure.** A turn's checkpoint commits even when the turn fails or is stopped. In review mode, writes go to the staged copy only.
 - **Every model loop is bounded:** step limits, review rounds, a dedupe of queued jobs.
 
@@ -76,7 +76,7 @@ This is ported from SillyTavern under the AGPL. Apply the `providers-port` skill
 ### Server, data, and API contract
 
 - **Imports:** ESM with NodeNext, so relative imports end in `.js`.
-- **Schemas:** request bodies and parameters are parsed with `z.strictObject` schemas from `@worldbookllm/shared`, which the client also uses to parse responses. A field added to a response schema must be filled by the server and by `apps/web/src/test/createTestClient.ts` fixtures. A strict request schema rejects unknown keys, so client and server change together.
+- **Schemas:** request bodies and parameters are parsed with `z.strictObject` schemas. Schemas the client also uses (response shapes, request bodies it sends) live in `@worldbookllm/shared`; route-local parameter and small body schemas may stay in the route file (`routes/discover.ts`). A field added to a response schema must be filled by the server and by `apps/web/src/test/createTestClient.ts` fixtures. A strict request schema rejects unknown keys, so client and server change together.
 - **Status codes:** errors map in `routes/helpers.ts` (`ValidationError` 400, `NotFoundError` 404, `ConflictError` 409). A plain `Error` becomes a 500, so expected failures need the right class.
 - **Locks:** book operations run under the book's `KeyedMutex`. Look for slow awaits (model calls) inside the lock, and for read-then-write that drops the lock between the two without re-checking.
 - **Migrations** (`apps/server/src/db/migrations/`):
@@ -95,7 +95,7 @@ This is ported from SillyTavern under the AGPL. Apply the `providers-port` skill
 - **Every new screen** works at phone width, in light and dark mode, and by keyboard: labelled inputs, visible focus, and `aria-live` for status that changes on its own.
 - **React hooks:**
   - effect dependencies are complete and stable;
-  - flag `eslint-disable` of `exhaustive-deps`, `setState` called directly in an effect, and objects or functions rebuilt every render in a dependency list (request loops);
+  - flag a missing dependency, a `setState` in an effect, or an object or function rebuilt every render in a dependency list only when you can show the failure: a stale value, an effect that never re-runs when it must, or a loop of renders or requests. A suppression with a comment explaining a one-time setup (as in `InkEditor.tsx`) is deliberate;
   - polling and requests clean up on unmount (`AbortController`, `clearInterval`).
 - **Server agreement:** the UI never offers an action the server is certain to refuse in that state, and it shows the server's error message when a request fails.
 
@@ -123,7 +123,7 @@ When a diff has one of these shapes, check it closely:
 
 These are deliberate. Do not flag them unless the PR changes their premise:
 
-- Frontmatter keys added by the app (`origin-type`, `discover-*`), and JSON-quoted scalars in YAML.
+- Frontmatter keys added by the app (`origin-type`, `discover-*`), and JSON-quoted string scalars in YAML.
 - Polling discovery state every 1.5 seconds instead of streaming it. Agent turns stream over SSE; discovery deliberately does not.
 - Discovery jobs held in memory and lost on restart (stated in ADR 0033; lead mode replans).
 - The vendored story-skills command table and `story-skills-markdown.ts` (kept in sync with upstream by a test).
