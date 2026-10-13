@@ -5,6 +5,7 @@ import type Database from 'better-sqlite3';
 import { supportsTools } from '@worldbookllm/providers';
 import {
   discoverVariableSchema,
+  isBeatWriterSkill,
   storyDraftSchema,
   type BeatDraft,
   type CustomAgent,
@@ -225,7 +226,8 @@ export class DiscoverService {
 
   /**
    * The custom agent the setup picks for the beat writer: its instructions
-   * and its skills. The skills it names come loaded, with the text a chat's
+   * and its skills, of those the beat writer uses (beat writer skills and the
+   * writer's own). The skills it names come loaded, with the text a chat's
    * activate_skill gives, so every beat follows them; an agent allowed every
    * skill gets the list to load from, as in a chat. A deleted agent leaves
    * the default beat writer.
@@ -238,21 +240,24 @@ export class DiscoverService {
     } catch {
       return null;
     }
-    const allowed = agent.skills === null ? null : new Set(agent.skills);
+    // Only beat writer skills and the writer's own, whatever the agent allows (ADR 0034).
+    const named = agent.skills === null ? null : new Set(agent.skills);
+    const usable = this.roles.skills
+      .list()
+      .filter((skill) => isBeatWriterSkill(skill) && (named === null || named.has(skill.name)));
+    const allowed = new Set(usable.map((skill) => skill.name));
     return {
       name: agent.name,
       instructions: agent.instructions,
       allowed,
-      skills: this.roles.skills
-        .list()
-        .filter((skill) => allowed === null || allowed.has(skill.name))
+      skills: usable
         .map((skill) => ({
           name: skill.name,
           description: skill.description,
-          content: allowed === null ? null : this.loadedSkill(skill.name, allowed),
+          content: named === null ? null : this.loadedSkill(skill.name, allowed),
         }))
         // A named skill that cannot be read is left out rather than offered.
-        .filter((skill) => allowed === null || skill.content !== null),
+        .filter((skill) => named === null || skill.content !== null),
     };
   }
 

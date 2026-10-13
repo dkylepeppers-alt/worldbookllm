@@ -24,8 +24,8 @@ const REJOIN = {
 export interface BeatRole {
   name: string;
   instructions: string;
-  /** The skills it may load; null allows every installed skill. */
-  allowed: ReadonlySet<string> | null;
+  /** The skills it may load: those below. */
+  allowed: ReadonlySet<string>;
   /**
    * Its skills. A skill the agent names comes loaded, with the text
    * activate_skill gives; with every skill allowed, each is listed (content

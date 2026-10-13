@@ -350,7 +350,7 @@ describe('discovering an interactive book', () => {
     ]);
   }, 30_000);
 
-  it('writes beats as the custom agent the setup picks, with the skills it names loaded and the rest to load', async () => {
+  it('writes beats as the custom agent the setup picks, with its beat writer skills loaded or to load, never Story Skills', async () => {
     const { app, slug, requests } = await boot(
       [
         () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
@@ -372,6 +372,14 @@ describe('discovering an interactive book', () => {
       },
     });
     expect(skill.statusCode, skill.body).toBe(201);
+    // A Story Skill is written for chats; the beat writer leaves it out even when named.
+    app.services.skills.create({
+      name: 'scene-craft',
+      description: 'Plan a scene.',
+      content: '# Scene craft\n\nRun story scenes.',
+      license: 'MIT',
+      origin: { type: 'story-skills', package: 'story-skills@0.23.0', skillId: 'scene-craft' },
+    });
     const agent = (
       await app.inject({
         method: 'POST',
@@ -379,7 +387,7 @@ describe('discovering an interactive book', () => {
         payload: {
           name: 'Gothic narrator',
           instructions: 'Let the sea feel watchful.',
-          skills: ['cold-prose'],
+          skills: ['cold-prose', 'scene-craft'],
         },
       })
     ).json<{ id: string }>();
@@ -423,6 +431,7 @@ describe('discovering an interactive book', () => {
     expect(system).toContain('#### Skill: cold-prose');
     expect(system).toContain('Short sentences. No adverbs.');
     expect(system).not.toContain('### Skills you can load');
+    expect(system).not.toContain('scene-craft');
 
     // An agent allowed every skill gets the list, and loads one when it fits, as in a chat.
     await app.inject({
@@ -433,6 +442,7 @@ describe('discovering an interactive book', () => {
     await write('chapter-02');
     const listed = JSON.stringify(requests[2]);
     expect(listed).toContain('- cold-prose: Spare, cold prose.');
+    expect(listed).not.toContain('scene-craft');
     expect(listed).not.toContain('Short sentences. No adverbs.');
     expect(JSON.stringify(requests[3])).toContain('Short sentences. No adverbs.');
 

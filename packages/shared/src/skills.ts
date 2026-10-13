@@ -93,3 +93,13 @@ export type SkillDetail = z.infer<typeof skillDetailSchema>;
 export type CreateSkill = z.output<typeof createSkillSchema>;
 export type CreateSkillInput = z.input<typeof createSkillSchema>;
 export type PatchSkill = z.infer<typeof patchSkillSchema>;
+
+/**
+ * Whether the discovery beat writer uses a skill (ADR 0034): the beat writer
+ * skills and skills the writer made. Story Skills are written for chats and
+ * the retired starter set predates discovery, so it leaves them out.
+ */
+export function isBeatWriterSkill(skill: Pick<SkillMetadata, 'origin'>): boolean {
+  const { type } = skill.origin;
+  return type === 'beat-skills' || type === 'created' || type === 'paste';
+}

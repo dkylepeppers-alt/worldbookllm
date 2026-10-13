@@ -6,6 +6,7 @@ import type {
   DiscoverBeat,
   DiscoverJob,
   DiscoverState,
+  SkillMetadata,
 } from '@worldbookllm/shared';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -399,22 +400,50 @@ describe('Story setup', () => {
       name: 'Gothic narrator',
       description: 'Dread, slowly.',
       instructions: 'Let the sea feel watchful.',
-      skills: ['cold-prose'],
+      skills: ['cold-prose', 'scene-craft'],
       createdAt: book.updatedAt,
       updatedAt: book.updatedAt,
     };
+    const skill = (name: string, origin: SkillMetadata['origin']): SkillMetadata => ({
+      id:
+        name === 'cold-prose'
+          ? '77777777-7777-4777-8777-777777777777'
+          : '88888888-8888-4888-8888-888888888888',
+      name,
+      description: name,
+      dirPath: `skills/${name}`,
+      origin,
+      license: null,
+      wordCount: 1,
+      contentHash: 'a'.repeat(64),
+      createdAt: book.updatedAt,
+      updatedAt: book.updatedAt,
+    });
     const saveDiscoverSetup = vi.fn<ApiClient['saveDiscoverSetup']>(() =>
       Promise.resolve(discovering),
     );
     renderAt('/books/gull-rock/branches/discover', {
       listCustomAgents: () => Promise.resolve([agent]),
+      listSkills: () =>
+        Promise.resolve([
+          skill('cold-prose', { type: 'created' }),
+          skill('scene-craft', {
+            type: 'story-skills',
+            package: 'story-skills@0.23.0',
+            skillId: 'scene-craft',
+          }),
+        ]),
       saveDiscoverSetup,
     });
     const user = userEvent.setup();
     const picker = await screen.findByLabelText(/^Beat writer/u);
     await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
     await user.selectOptions(picker, 'Gothic narrator');
-    expect(screen.getByText(/Skills, followed on every beat: cold-prose/u)).toBeTruthy();
+    expect(
+      await screen.findByText(
+        /Skills, followed on every beat: cold-prose\. Not used here, since Story Skills are for chats: scene-craft\./u,
+      ),
+    ).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Save and go to Play' }));
     await waitFor(() => expect(saveDiscoverSetup).toHaveBeenCalled());
     expect(saveDiscoverSetup.mock.calls[0]![1].setup.agentId).toBe(agent.id);
