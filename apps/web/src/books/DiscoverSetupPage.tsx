@@ -1,9 +1,11 @@
-import type {
-  CustomAgent,
-  DiscoverSetup,
-  DiscoverState,
-  DiscoverVariable,
-  StoryDraft,
+import {
+  isBeatWriterSkill,
+  type CustomAgent,
+  type DiscoverSetup,
+  type DiscoverState,
+  type DiscoverVariable,
+  type SkillMetadata,
+  type StoryDraft,
 } from '@worldbookllm/shared';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -12,7 +14,7 @@ import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { useDiscover } from './useDiscover.js';
-import { useLoad } from './useLoad.js';
+import { errorMessage, useLoad } from './useLoad.js';
 
 const DEFAULT_SETUP: DiscoverSetup = {
   mode: 'lead',
@@ -145,7 +147,15 @@ function SetupForm({
   const pickAgent = (agentId: string | null) => setSetup((current) => ({ ...current, agentId }));
   const api = useApi();
   const agents = useLoad((signal) => api.listCustomAgents(signal), 'agents');
-  const agentList = agents.status === 'ready' ? agents.data : null;
+  // The agent Add the Beat writer agent made, until the reloaded list has it.
+  const [added, setAdded] = useState<CustomAgent | null>(null);
+  const agentList =
+    agents.status !== 'ready'
+      ? null
+      : added === null || agents.data.some((agent) => agent.id === added.id)
+        ? agents.data
+        : [...agents.data, added];
+  const skills = useLoad((signal) => api.listSkills(signal), 'skills');
   // A deleted agent cannot be saved; the default beat writer takes its place.
   const agentId =
     agentList !== null && !agentList.some((agent) => agent.id === setup.agentId)
@@ -396,7 +406,21 @@ function SetupForm({
             Co-write: it drafts a beat only when you ask
           </label>
         </fieldset>
-        <BeatWriterPicker agents={agentList} agentId={setup.agentId} onChange={pickAgent} />
+        <BeatWriterPicker
+          agents={agentList}
+          skills={skills.status === 'ready' ? skills.data : null}
+          agentId={setup.agentId}
+          onChange={pickAgent}
+        />
+        {agentList === null || agentList.some((agent) => agent.name === 'Beat writer') ? null : (
+          <AddBeatWriter
+            onAdded={(agent) => {
+              setAdded(agent);
+              agents.reload();
+              pickAgent(agent.id);
+            }}
+          />
+        )}
         <details className="discover-more">
           <summary>
             More options <span className="field-hint">{options}</span>
@@ -659,13 +683,77 @@ function SetupForm({
  * from the Agents page, whose instructions and the skills it names guide
  * every beat.
  */
+/** Installs the beat writer skills and the agent that names them (ADR 0034), and picks it. */
+function AddBeatWriter({ onAdded }: { onAdded: (agent: CustomAgent) => void }) {
+  const api = useApi();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="branch-actions">
+      <button
+        type="button"
+        className="button-secondary"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          api
+            .installBeatWriter()
+            .then((result) => onAdded(result.agent))
+            .catch((caught: unknown) => setError(errorMessage(caught)))
+            .finally(() => setBusy(false));
+        }}
+      >
+        {busy ? 'Adding…' : 'Add the Beat writer agent'}
+      </button>
+      <span className="field-hint">
+        Six skills written for discovery: beat shape, choices, memory, branching, voice, and the
+        reader&apos;s own actions.
+      </span>
+      {error === null ? null : <p className="form-error">{error}</p>}
+    </div>
+  );
+}
+
+/** What the picked agent's skills come to in the beat writer, which uses beat writer skills and the writer's own (ADR 0034). */
+function skillsHint(named: string[] | null, skills: SkillMetadata[] | null): string {
+  if (named === null) {
+    return 'Skills: the beat writer skills and your own, loaded when one fits. Story Skills are for chats and are not used here.';
+  }
+  if (named.length === 0) return 'No skills.';
+  // Until the skills load, which of them the beat writer uses is not known.
+  if (skills === null) return `Skills: ${named.join(', ')}.`;
+  const installed = (name: string) => skills.find((skill) => skill.name === name);
+  const used = named.filter((name) => {
+    const skill = installed(name);
+    return skill !== undefined && isBeatWriterSkill(skill);
+  });
+  const unused = named.filter((name) => {
+    const skill = installed(name);
+    return skill !== undefined && !isBeatWriterSkill(skill);
+  });
+  const missing = named.filter((name) => installed(name) === undefined);
+  return [
+    used.length === 0
+      ? 'None of its skills are used here.'
+      : `Skills, followed on every beat: ${used.join(', ')}.`,
+    unused.length === 0
+      ? ''
+      : ` Not used here, since Story Skills are for chats: ${unused.join(', ')}.`,
+    missing.length === 0 ? '' : ` Not installed: ${missing.join(', ')}.`,
+  ].join('');
+}
+
 function BeatWriterPicker({
   agents,
+  skills,
   agentId,
   onChange,
 }: {
   /** The custom agents, or null while they load. */
   agents: CustomAgent[] | null;
+  /** The installed skills, or null while they load. */
+  skills: SkillMetadata[] | null;
   agentId: string | null;
   onChange: (agentId: string | null) => void;
 }) {
@@ -675,8 +763,8 @@ function BeatWriterPicker({
     <label>
       Beat writer
       <span className="field-hint">
-        A custom agent writes with its own instructions and skills, as it does in a chat.{' '}
-        <Link to="/agents">Make or edit agents</Link>.
+        A custom agent writes with its own instructions and follows the beat writer skills and your
+        own skills it names on every beat. <Link to="/agents">Make or edit agents</Link>.
       </span>
       <select
         value={gone ? '' : (agentId ?? '')}
@@ -697,11 +785,7 @@ function BeatWriterPicker({
       ) : picked !== undefined ? (
         <span className="field-hint">
           {picked.description === '' ? null : `${picked.description} `}
-          {picked.skills === null
-            ? 'Skills: every installed skill.'
-            : picked.skills.length === 0
-              ? 'No skills.'
-              : `Skills: ${picked.skills.join(', ')}.`}
+          {skillsHint(picked.skills, skills)}
         </span>
       ) : null}
     </label>

@@ -171,7 +171,7 @@ Builds and project zips (ADR 0020): the Project tab builds `story build`'s singl
   - seed chapters for every choice not written yet, so the story always compiles and plays
   - a beat writer whose choices pass structural checks and a review against the rules before they are written
   - lead mode, writing one or two steps ahead of the reader; co-write mode, with three drafts to pick from
-  - Something else at every choice point in Play, which becomes a real choice or is declined with a reason
+  - Something else at every choice point in Play, which becomes a real choice or is declined with a reason the writer can overrule (Write it anyway)
   - stale beats rewritten when unread and unedited, otherwise listed on Health for review; open threads on Health and the map
 
 **Scope (in build order):**

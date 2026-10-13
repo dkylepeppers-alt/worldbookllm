@@ -2,10 +2,16 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { BookSummary, Checkpoint, DiscoverState } from '@worldbookllm/shared';
+import type {
+  BeatWriterInstallResult,
+  BookSummary,
+  Checkpoint,
+  DiscoverState,
+} from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { BEAT_SKILLS_PACKAGE } from './agent/discover/beat-skills.js';
 import { buildApp } from './app.js';
 import { parseFrontmatter } from './story/book-index.js';
 import { inkSection } from './story/interactive/format.js';
@@ -344,14 +350,16 @@ describe('discovering an interactive book', () => {
     ]);
   }, 30_000);
 
-  it('writes beats as the custom agent the setup picks, loading its skills as a chat does', async () => {
+  it('writes beats as the custom agent the setup picks, with its beat writer skills loaded or to load, never Story Skills', async () => {
     const { app, slug, requests } = await boot(
       [
+        () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
+        PASS,
         () => sse(toolCall('skill', 'activate_skill', { name: 'cold-prose' })),
         () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
         PASS,
       ],
-      ['The keeper waits.'],
+      ['The keeper waits.', 'The sea waits.'],
     );
     const skill = await app.inject({
       method: 'POST',
@@ -364,6 +372,22 @@ describe('discovering an interactive book', () => {
       },
     });
     expect(skill.statusCode, skill.body).toBe(201);
+    // Two more long skills: past the budget for loaded skills, the last is listed to load instead.
+    for (const name of ['grey-dialogue', 'salt-weather']) {
+      app.services.skills.create({
+        name,
+        description: `${name} notes.`,
+        content: `# ${name}\n\n${'Say less. '.repeat(2_200)}End of ${name}.`,
+      });
+    }
+    // A Story Skill is written for chats; the beat writer leaves it out even when named.
+    app.services.skills.create({
+      name: 'scene-craft',
+      description: 'Plan a scene.',
+      content: '# Scene craft\n\nRun story scenes.',
+      license: 'MIT',
+      origin: { type: 'story-skills', package: 'story-skills@0.23.0', skillId: 'scene-craft' },
+    });
     const agent = (
       await app.inject({
         method: 'POST',
@@ -371,7 +395,7 @@ describe('discovering an interactive book', () => {
         payload: {
           name: 'Gothic narrator',
           instructions: 'Let the sea feel watchful.',
-          skills: ['cold-prose'],
+          skills: ['cold-prose', 'grey-dialogue', 'salt-weather', 'scene-craft'],
         },
       })
     ).json<{ id: string }>();
@@ -395,23 +419,43 @@ describe('discovering an interactive book', () => {
           variables: [],
         },
       });
+    const write = async (chapterId: string) => {
+      await app.inject({
+        method: 'POST',
+        url: `/api/books/${slug}/discover/write`,
+        payload: { chapterId, position: null },
+      });
+      return settle(app, slug);
+    };
     const saved = await save(agent.id);
     expect(saved.statusCode, saved.body).toBe(200);
     expect(saved.json<DiscoverState>().setup?.agentId).toBe(agent.id);
 
-    await app.inject({
-      method: 'POST',
-      url: `/api/books/${slug}/discover/write`,
-      payload: { chapterId: 'chapter-01', position: null },
-    });
-    await settle(app, slug);
+    // A skill the agent names comes loaded, whole, so every beat follows it.
+    await write('chapter-01');
     const system = JSON.stringify(requests[0]);
     expect(system).toContain('## Your role: Gothic narrator');
     expect(system).toContain('Let the sea feel watchful.');
-    expect(system).toContain('- cold-prose: Spare, cold prose.');
-    expect(system).not.toContain('Short sentences. No adverbs.');
-    // The skill it loaded came back as the tool's answer.
-    expect(JSON.stringify(requests[1])).toContain('Short sentences. No adverbs.');
+    expect(system).toContain('#### Skill: cold-prose');
+    expect(system).toContain('Short sentences. No adverbs.');
+    expect(system).toContain('End of grey-dialogue.');
+    expect(system).not.toContain('End of salt-weather.');
+    expect(system).toContain('### Skills you can load');
+    expect(system).toContain('- salt-weather: salt-weather notes.');
+    expect(system).not.toContain('scene-craft');
+
+    // An agent allowed every skill gets the list, and loads one when it fits, as in a chat.
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/agents/${agent.id}`,
+      payload: { skills: null },
+    });
+    await write('chapter-02');
+    const listed = JSON.stringify(requests[2]);
+    expect(listed).toContain('- cold-prose: Spare, cold prose.');
+    expect(listed).not.toContain('scene-craft');
+    expect(listed).not.toContain('Short sentences. No adverbs.');
+    expect(JSON.stringify(requests[3])).toContain('Short sentences. No adverbs.');
 
     // An agent that no longer exists cannot be picked.
     await app.inject({ method: 'DELETE', url: `/api/agents/${agent.id}` });
@@ -481,8 +525,70 @@ describe('discovering an interactive book', () => {
     );
   }, 30_000);
 
-  it('turns the reader’s own action into a real choice, or declines it with a reason', async () => {
-    const { app, slug } = await boot([
+  it('installs the beat writer skills and the agent that names them, which the beat writer then follows', async () => {
+    const { app, slug, requests } = await boot(
+      [() => sse(toolCall('choices', 'write_choices', { choices: THREE })), PASS],
+      ['The keeper waits.'],
+    );
+    const first = await app.inject({ method: 'POST', url: '/api/beat-writer/install' });
+    expect(first.statusCode, first.body).toBe(201);
+    const installed = first.json<BeatWriterInstallResult>();
+    const names = [
+      'beat-shape',
+      'branch-economy',
+      'choice-design',
+      'memory-and-state',
+      'reader-actions',
+      'voice-continuity',
+    ];
+    expect(installed.skills.installed.map((skill) => skill.name)).toEqual(names);
+    expect(installed.skills.installed[0]).toMatchObject({
+      license: 'AGPL-3.0-only',
+      origin: { type: 'beat-skills', package: BEAT_SKILLS_PACKAGE, skillId: 'beat-shape' },
+    });
+    expect(installed.agent).toMatchObject({ name: 'Beat writer', skills: names });
+
+    // Installing again keeps the agent the writer may have edited.
+    const second = (
+      await app.inject({ method: 'POST', url: '/api/beat-writer/install' })
+    ).json<BeatWriterInstallResult>();
+    expect(second.agent.id).toBe(installed.agent.id);
+    expect(second.skills.skipped).toEqual(names);
+
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/discover/setup`,
+      payload: {
+        setup: {
+          mode: 'cowrite',
+          lookahead: 1,
+          choices: 3,
+          beatLength: 'scene',
+          rejoin: 'sometimes',
+          endings: '',
+          kernel: '',
+          shape: '',
+          agentId: installed.agent.id,
+        },
+        rules: '1. Different intents.',
+        variables: [],
+      },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/write`,
+      payload: { chapterId: 'chapter-01', position: null },
+    });
+    await settle(app, slug);
+    // All six fit the beat writer's skill budget, whole.
+    const system = JSON.stringify(requests[0]);
+    for (const name of names) expect(system).toContain(`#### Skill: ${name}`);
+    expect(system).toContain('Accept by default');
+  }, 30_000);
+
+  it('turns the reader’s own action into a real choice, or declines it with a reason the writer can overrule', async () => {
+    const { app, slug, requests } = await boot([
       () =>
         sse(
           toolCall('decline', 'decline_action', {
@@ -503,6 +609,23 @@ describe('discovering an interactive book', () => {
               title: 'Aloud',
               summary: 'You read it to her.',
               ink: 'You read it aloud.',
+              ending: true,
+              choices: [],
+            },
+          }),
+        ),
+      () =>
+        sse(
+          toolCall('anyway', 'accept_action', {
+            choice: {
+              text: 'Row for the mainland',
+              intent: 'escape',
+              consequence: 'the rock is left dark',
+            },
+            beat: {
+              title: 'The Crossing',
+              summary: 'You find a boat after all.',
+              ink: 'The old skiff was still under the tarp.',
               ending: true,
               choices: [],
             },
@@ -532,6 +655,7 @@ describe('discovering an interactive book', () => {
       status: 'done',
       outcome: {
         accepted: false,
+        action: 'Row a boat to the mainland',
         reason: 'There is no boat on the rock.',
         suggestion: 'Signal the passing ship',
       },
@@ -551,6 +675,23 @@ describe('discovering an interactive book', () => {
       '* [Wait] -> END\n* [Read the letter aloud to her]\n    ~ trust += 1\n    -> chapter_02\n',
     );
     expect(chapter(app, slug, 'chapter-02')).toContain('You read it aloud.');
+
+    // The writer overrules the decline: the beat writer is not offered decline_action.
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/something-else`,
+      payload: { position, action: 'Row a boat to the mainland', force: true },
+    });
+    state = await settle(app, slug);
+    expect(state.jobs.at(-1)).toMatchObject({
+      title: 'Writing "Row a boat to the mainland"',
+      status: 'done',
+      outcome: { accepted: true, chapterId: 'chapter-01', choice: 4 },
+    });
+    const forced = requests.at(-1) as { tools: Array<{ function: { name: string } }> };
+    expect(forced.tools.map((tool) => tool.function.name)).not.toContain('decline_action');
+    expect(JSON.stringify(forced)).toContain('The writer has decided this happens here');
+    expect(chapter(app, slug, 'chapter-03')).toContain('The old skiff was still under the tarp.');
   }, 30_000);
 
   it('rewrites stale beats no one read, lists read ones for review, and records variable proposals', async () => {

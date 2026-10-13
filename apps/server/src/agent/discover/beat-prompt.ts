@@ -24,9 +24,14 @@ const REJOIN = {
 export interface BeatRole {
   name: string;
   instructions: string;
-  /** The skills it may load; null allows every installed skill. */
-  allowed: ReadonlySet<string> | null;
-  skills: ReadonlyArray<{ name: string; description: string }>;
+  /** The skills it may load: those below. */
+  allowed: ReadonlySet<string>;
+  /**
+   * Its skills. A skill the agent names comes loaded, with the text
+   * activate_skill gives; with every skill allowed, each is listed (content
+   * null) for the beat writer to load when it fits.
+   */
+  skills: ReadonlyArray<{ name: string; description: string; content: string | null }>;
 }
 
 export function beatSystemPrompt(input: {
@@ -102,13 +107,29 @@ function roleSection(role: BeatRole | null): string[] {
     `## Your role: ${role.name}`,
     'The writer chose this role for the beat writer. Write as it says; the tools, the rules above, and the rules for choices still apply.',
     ...(role.instructions.trim() === '' ? [] : ['', role.instructions.trim()]),
-    ...(role.skills.length === 0
+    ...skillsSection(role),
+  ];
+}
+
+function skillsSection(role: BeatRole): string[] {
+  const loaded = role.skills.filter((skill) => skill.content !== null);
+  const listed = role.skills.filter((skill) => skill.content === null);
+  return [
+    ...(loaded.length === 0
       ? []
       : [
           '',
           '### Skills',
+          'The writer gave this role these skills. They are loaded below: follow them on every beat, and load their reference files with read_skill_file when they say to.',
+          ...loaded.flatMap((skill) => ['', `#### Skill: ${skill.name}`, skill.content!.trim()]),
+        ]),
+    ...(listed.length === 0
+      ? []
+      : [
+          '',
+          '### Skills you can load',
           'When a skill below fits the beat, load it with activate_skill and follow it; load its references with read_skill_file when it says to.',
-          ...role.skills.map((skill) => `- ${skill.name}: ${skill.description}`),
+          ...listed.map((skill) => `- ${skill.name}: ${skill.description}`),
         ]),
   ];
 }
@@ -191,7 +212,15 @@ export function beatTaskPrompt(
     | { kind: 'beat'; direction: string | null; avoid: readonly string[] }
     | { kind: 'choices'; ink: string; title: string }
     | { kind: 'rewrite'; ink: string; title: string; choices: string }
-    | { kind: 'something-else'; action: string; ink: string; title: string; choices: string },
+    | {
+        kind: 'something-else';
+        action: string;
+        /** The writer overruled a decline: the action happens. */
+        force: boolean;
+        ink: string;
+        title: string;
+        choices: string;
+      },
 ): string {
   const { place } = input;
   const instructions: string[] = [];
@@ -235,7 +264,9 @@ export function beatTaskPrompt(
       `The reader is at the end of "${task.title}" (${place.chapterId}) and, instead of the choices offered, typed their own action:`,
       `> ${task.action}`,
       '',
-      'Judge it by the rules for choices: is it possible in this scene, with what the character knows, and true to the character? If it is, call accept_action: rewrite it as a choice in the book voice (keep what the reader meant) and write the beat it leads to, with its own choices. If it is not, call decline_action with a short reason addressed to the reader and the nearest action that would work.',
+      task.force
+        ? 'The writer has decided this happens here, even if it does not fit what the scene has set up. Call accept_action: rewrite it as a choice in the book voice (keep what the reader meant, and do not water it down) and write the beat it leads to, with its own choices. Where it strains the scene, the character, or what they know, let the beat show how it happens or what it costs.'
+        : 'Judge it by the rules for choices: is it possible in this scene, with what the character knows, and true to the character? If it is, call accept_action: rewrite it as a choice in the book voice (keep what the reader meant) and write the beat it leads to, with its own choices. If it is not, call decline_action with a short reason addressed to the reader and the nearest action that would work.',
       '',
       '## The choices offered now',
       task.choices,

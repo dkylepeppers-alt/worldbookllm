@@ -5,6 +5,7 @@ import type Database from 'better-sqlite3';
 import { supportsTools } from '@worldbookllm/providers';
 import {
   discoverVariableSchema,
+  isBeatWriterSkill,
   storyDraftSchema,
   type BeatDraft,
   type CustomAgent,
@@ -28,6 +29,7 @@ import { ConfigurationError, ConflictError, NotFoundError, ValidationError } fro
 import type { BookService, DiscoverFiles } from '../../services/books.js';
 import type { SkillService } from '../../services/skills.js';
 import type { CustomAgentService } from '../custom-agents.js';
+import { truncateResult } from '../agent-service.js';
 import type { AgentToolRegistry } from '../tools.js';
 import type { ProviderService } from '../../services/providers.js';
 import type { SettingsService } from '../../services/settings.js';
@@ -111,6 +113,8 @@ const ENTRY_BUDGET = 3_000;
 const KEEP_FINISHED = 20;
 /** Prose from the written scenes a drafted story setup reads. */
 const SCENES_BUDGET = 10_000;
+/** Text from the skills an agent names that comes loaded on every beat; the rest are listed to load. */
+const NAMED_SKILLS_BUDGET = 48_000;
 
 type Task =
   | { kind: 'beat'; chapterId: string; position: PlayPosition | null; direction: string | null }
@@ -124,7 +128,7 @@ type Task =
       force: boolean;
     }
   | { kind: 'drafts'; chapterId: string; position: PlayPosition | null; direction: string | null }
-  | { kind: 'something-else'; position: PlayPosition; action: string }
+  | { kind: 'something-else'; position: PlayPosition; action: string; force: boolean }
   | { kind: 'variables'; kernel: string; shape: string }
   | { kind: 'story'; draft: ProposeStoryInput };
 
@@ -224,8 +228,12 @@ export class DiscoverService {
 
   /**
    * The custom agent the setup picks for the beat writer: its instructions
-   * and the skills it may load, as in a chat. A deleted agent leaves the
-   * default beat writer.
+   * and its skills, of those the beat writer uses (beat writer skills and the
+   * writer's own). The skills it names come loaded, with the text a chat's
+   * activate_skill gives, so every beat follows them (within a budget, past
+   * which the rest are listed to load); an agent allowed every
+   * skill gets the list to load from, as in a chat. A deleted agent leaves
+   * the default beat writer.
    */
   private role(setup: DiscoverSetup): BeatRole | null {
     if (setup.agentId === null) return null;
@@ -235,16 +243,41 @@ export class DiscoverService {
     } catch {
       return null;
     }
-    const allowed = agent.skills === null ? null : new Set(agent.skills);
-    return {
-      name: agent.name,
-      instructions: agent.instructions,
-      allowed,
-      skills: this.roles.skills
-        .list()
-        .filter((skill) => allowed === null || allowed.has(skill.name))
-        .map((skill) => ({ name: skill.name, description: skill.description })),
-    };
+    // Only beat writer skills and the writer's own, whatever the agent allows (ADR 0034).
+    const named = agent.skills === null ? null : new Set(agent.skills);
+    const usable = this.roles.skills
+      .list()
+      .filter((skill) => isBeatWriterSkill(skill) && (named === null || named.has(skill.name)));
+    const allowed = new Set(usable.map((skill) => skill.name));
+    const skills: BeatRole['skills'][number][] = [];
+    let left = NAMED_SKILLS_BUDGET;
+    for (const skill of usable) {
+      const entry = { name: skill.name, description: skill.description, content: null };
+      if (named === null) {
+        skills.push(entry);
+        continue;
+      }
+      // A named skill that cannot be read is left out rather than offered.
+      const content = this.loadedSkill(skill.name, allowed);
+      if (content === null) continue;
+      // Each loaded skill is whole; past the budget, the rest are listed to load.
+      if (content.length > left) {
+        skills.push(entry);
+        continue;
+      }
+      left -= content.length;
+      skills.push({ ...entry, content });
+    }
+    return { name: agent.name, instructions: agent.instructions, allowed, skills };
+  }
+
+  /** A named skill's text as activate_skill gives it, under the same limit; null if it cannot be read. */
+  private loadedSkill(name: string, allowed: ReadonlySet<string>): string | null {
+    try {
+      return truncateResult(this.roles.tools.activateSkill(name, allowed));
+    } catch {
+      return null;
+    }
   }
 
   // ---- State ----------------------------------------------------------------
@@ -602,9 +635,14 @@ export class DiscoverService {
 
   somethingElse(book: string, input: SomethingElseInput): Promise<DiscoverState> {
     return this.enqueueAndState(book, {
-      task: { kind: 'something-else', position: input.position, action: input.action },
+      task: {
+        kind: 'something-else',
+        position: input.position,
+        action: input.action,
+        force: input.force === true,
+      },
       chapterId: null,
-      title: `Trying "${input.action.length > 60 ? `${input.action.slice(0, 57)}…` : input.action}"`,
+      title: `${input.force === true ? 'Writing' : 'Trying'} "${input.action.length > 60 ? `${input.action.slice(0, 57)}…` : input.action}"`,
       lead: false,
     });
   }
@@ -1063,13 +1101,21 @@ export class DiscoverService {
     const handlers = this.readHandlers(book, currentId, setup);
     const notes: string[] = [];
     const review = this.reviewer(model, context, notes);
-    handlers.decline_action = (args) => {
-      record.job = {
-        ...record.job,
-        outcome: { accepted: false, reason: args.reason, suggestion: args.suggestion },
+    // When the writer overrules a decline, declining is not offered.
+    if (!task.force) {
+      handlers.decline_action = (args) => {
+        record.job = {
+          ...record.job,
+          outcome: {
+            accepted: false,
+            action: task.action,
+            reason: args.reason,
+            suggestion: args.suggestion,
+          },
+        };
+        return Promise.resolve({ done: true });
       };
-      return Promise.resolve({ done: true });
-    };
+    }
     handlers.accept_action = async (args) => {
       const fresh = await this.bookService.discoverFiles(book);
       const parent = chapterOf(fresh, currentId);
@@ -1152,11 +1198,12 @@ export class DiscoverService {
       task: beatTaskPrompt(context, {
         kind: 'something-else',
         action: task.action,
+        force: task.force,
         ink: inkOf(current),
         title: current.title,
         choices: this.currentChoices(files, current),
       }),
-      tools: ['accept_action', 'decline_action'],
+      tools: task.force ? ['accept_action'] : ['accept_action', 'decline_action'],
       handlers,
     });
     if (record.job.outcome?.accepted === false) return record.job.outcome.reason;

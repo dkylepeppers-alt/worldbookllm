@@ -80,7 +80,7 @@ Model + provider selection is a single **global setting** (ADR 0013), configured
 
 ## Creative skills library
 
-Skills are reusable craft instructions in the agentskills.io format: a directory per skill at `data/skills/<name>/` whose `SKILL.md` carries `name`/`description` frontmatter and a Markdown instruction body. The files are the source of truth and SQLite is a rebuildable index; skills are global, shared by every book. The agent sees the skill catalog (names and descriptions) and activates a skill on demand (ADR 0015); a custom agent can be limited to a subset (ADR 0016). The pinned story-skills skills are the bundled set, installed from the Skills page or the Agent tab, and writers can write their own. See ADR 0011 for the library format.
+Skills are reusable craft instructions in the agentskills.io format: a directory per skill at `data/skills/<name>/` whose `SKILL.md` carries `name`/`description` frontmatter and a Markdown instruction body. The files are the source of truth and SQLite is a rebuildable index; skills are global, shared by every book. The agent sees the skill catalog (names and descriptions) and activates a skill on demand (ADR 0015); a custom agent can be limited to a subset (ADR 0016). The pinned story-skills skills are the bundled set, installed from the Skills page or the Agent tab, and writers can write their own. worldbookllm's own beat writer skills (`apps/server/beat-skills/`, ADR 0034) install the same way, with a Beat writer agent, from the discovery story setup. See ADR 0011 for the library format.
 
 ## Story-skills books and the agent (M7)
 

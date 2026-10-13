@@ -183,6 +183,8 @@ export const discoverJobSchema = z.strictObject({
       }),
       z.strictObject({
         accepted: z.literal(false),
+        /** The action declined, for the writer to overrule. */
+        action: z.string(),
         reason: z.string(),
         suggestion: z.string(),
       }),
@@ -237,6 +239,8 @@ export const somethingElseInputSchema = z.strictObject({
   position: playPositionSchema,
   /** What the reader does, in their own words. */
   action: z.string().trim().min(1).max(500),
+  /** The writer overrules a decline: the action happens, and the beat writer may not decline it. */
+  force: z.boolean().optional(),
 });
 
 export const proposeVariablesInputSchema = z.strictObject({
