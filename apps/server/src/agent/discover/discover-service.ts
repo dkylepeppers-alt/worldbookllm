@@ -1234,10 +1234,14 @@ export class DiscoverService {
   private readHandlers(book: string, chapterId: string): BeatHandlers {
     return {
       read: (path) => {
+        // A chapter asked for by id or knot ("chapter-04", "chapter_04.txt") is the chapter's file.
+        const chapterId = /^(?:chapters\/)?chapter[-_](\d+)(?:\.\w+)?$/u.exec(path.trim())?.[1];
+        const file =
+          chapterId === undefined ? path : `chapters/chapter-${chapterId.padStart(2, '0')}.md`;
         try {
-          return this.bookService.readFile(book, path).content;
+          return this.bookService.readFile(book, file).content;
         } catch (error) {
-          return `Error: ${error instanceof Error ? error.message : String(error)}`;
+          return `Error: ${error instanceof Error ? error.message : String(error)} Chapters are read as chapters/chapter-04.md; search finds other files.`;
         }
       },
       search: (query) => {
@@ -1550,7 +1554,8 @@ export class DiscoverService {
       '## Bible',
       this.bible(book, task.kernel).slice(0, 12_000) || '(no entries yet)',
       '',
-      'Reply with JSON only: {"variables": [{"name": "trust_mara", "initial": "0", "meaning": "How much Mara trusts you (0–3); opens her help and changes the ending"}]}. Names use letters, digits, and _. initial is a number, true, false, or "quoted text". meaning is one line.',
+      // The example names no character, so a model copying its shape does not copy its story.
+      'Reply with JSON only: {"variables": [{"name": "name_of_state", "initial": "0", "meaning": "One line: what it tracks, its range, and what it changes"}]}. Name each one after this story (its characters, places, secrets); the protagonist is the one the reader plays, so track what others think of them, not what they think of themselves. Names use letters, digits, and _. initial is a number, true, false, or "quoted text". meaning is one line.',
     ].join('\n');
     const request = model.providers.createChatRequest(
       model.config,

@@ -21,6 +21,22 @@ export function readJsonReply(text: string): unknown {
   return undefined;
 }
 
+/** The last JSON object in a reply that parses, or undefined. */
+export function lastJsonObject(text: string): Record<string, unknown> | undefined {
+  const visible = text.replace(/<think>[\s\S]*?<\/think>/giu, '');
+  for (const span of balanced(visible).reverse()) {
+    try {
+      const value = JSON.parse(span) as unknown;
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+      }
+    } catch {
+      // Not JSON; try the one before.
+    }
+  }
+  return undefined;
+}
+
 /** Every top-level balanced `{…}` or `[…]` span, ignoring brackets inside strings. */
 function balanced(text: string): string[] {
   const spans: string[] = [];

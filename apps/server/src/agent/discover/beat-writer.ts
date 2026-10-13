@@ -1,12 +1,14 @@
-import type { ChatMessage, ToolDefinition } from '@worldbookllm/providers';
+import type { ChatMessage, StreamedToolCall, ToolDefinition } from '@worldbookllm/providers';
 import type { AgentGeneration, ProviderConfig } from '@worldbookllm/shared';
 import type { z } from 'zod';
 
 import { ConflictError, NotFoundError } from '../../errors.js';
 import type { ProviderService } from '../../services/providers.js';
 import { providerToolArguments, streamStep } from '../provider-step.js';
+import { lastJsonObject } from './model-json.js';
 import {
   BEAT_TOOLS,
+  WRITING_EXAMPLES,
   acceptActionArgs,
   declineActionArgs,
   proposeVariableArgs,
@@ -116,14 +118,21 @@ export async function runBeatWriter(
       model.controls,
       definitions(tools),
     );
-    const { text, calls } = await streamStep(model.providers, model.config, request, model.signal);
+    const streamed = await streamStep(model.providers, model.config, request, model.signal);
+    const { text } = streamed;
+    // A model that writes the tool's arguments as text instead of calling it has still written them.
+    const calls = streamed.calls.length > 0 ? streamed.calls : callsInText(text, tools, step);
     if (calls.length === 0) {
       nudges += 1;
-      if (nudges > 2) throw new BeatWriterError('The model answered without writing the beat.');
+      // Some models plan aloud and stop before calling the tool; MAX_STEPS still bounds the whole job.
+      if (nudges > 4) throw new BeatWriterError('The model answered without writing the beat.');
       messages.push({ role: 'assistant', content: text });
       messages.push({
         role: 'user',
-        content: `Finish by calling ${input.tools.join(' or ')}; do not answer in prose.`,
+        content: `Call ${input.tools.join(' or ')} now, with the full arguments; do not describe what you will do. ${input.tools
+          .filter((name): name is keyof typeof WRITING_EXAMPLES => name in WRITING_EXAMPLES)
+          .map((name) => `${name} takes arguments like ${WRITING_EXAMPLES[name]}`)
+          .join('; ')}.`,
       });
       continue;
     }
@@ -190,6 +199,47 @@ export async function runBeatWriter(
       ? `The beat writer did not finish in ${MAX_STEPS} steps.`
       : `The beat writer could not satisfy the rules: ${lastProblems.join(' ')}`,
   );
+}
+
+/** The keys that mark a JSON object as one tool's arguments, most specific first. */
+const TOOL_SHAPES: ReadonlyArray<[BeatToolName, readonly string[]]> = [
+  ['accept_action', ['choice', 'beat']],
+  ['write_beat', ['title', 'ink']],
+  ['write_choices', ['choices']],
+  ['decline_action', ['reason']],
+  ['propose_variable', ['name', 'meaning']],
+  ['read_file', ['path']],
+  ['search', ['query']],
+];
+
+/**
+ * A tool's arguments written out as JSON in a reply, as the call they
+ * stand for, or none: some models print a call (`Let's read it.{"path": …}`)
+ * instead of making it. The call is checked like any other, so a mistake
+ * in it goes back to the model to fix.
+ */
+function callsInText(
+  text: string,
+  tools: readonly BeatToolName[],
+  step: number,
+): StreamedToolCall[] {
+  // A call printed after planning comes last; an example of the arguments earlier in the plan is not it.
+  const json = lastJsonObject(text);
+  if (json === undefined) return [];
+  // {"name": "write_beat", "arguments": {…}}, the shape of a call itself, names its tool.
+  const named = typeof json.name === 'string' && tools.includes(json.name as BeatToolName);
+  const args = typeof json.arguments === 'string' ? lastJsonObject(json.arguments) : json.arguments;
+  if (named && typeof args === 'object' && args !== null && !Array.isArray(args)) {
+    return [
+      { id: `text-call-${step}`, name: json.name as string, arguments: JSON.stringify(args) },
+    ];
+  }
+  const shape = TOOL_SHAPES.find(
+    ([name, keys]) => tools.includes(name) && keys.every((key) => key in json),
+  );
+  return shape === undefined
+    ? []
+    : [{ id: `text-call-${step}`, name: shape[0], arguments: JSON.stringify(json) }];
 }
 
 async function runWriting(
