@@ -58,7 +58,16 @@ function Hub({ slug, story }: { slug: string; story: InteractiveStory }) {
   const errors = story.diagnostics.filter((entry) => entry.severity === 'error').length;
   const warnings = story.diagnostics.filter((entry) => entry.severity === 'warning').length;
   const choices = story.nodes.reduce((sum, node) => sum + node.choices.length, 0);
-  const endings = story.nodes.filter((node) => node.ends && node.reachable).length;
+  // A seed ends the story only until it is written (ADR 0033).
+  const seeds = new Set(
+    (discover.state?.beats ?? [])
+      .filter((beat) => beat.state === 'seed')
+      .map((beat) => beat.chapterId),
+  );
+  const endings = story.nodes.filter(
+    (node) =>
+      node.ends && node.reachable && (node.chapterId === null || !seeds.has(node.chapterId)),
+  ).length;
   const count = (value: number, one: string, many: string) =>
     `${value} ${value === 1 ? one : many}`;
 
@@ -99,17 +108,7 @@ function Hub({ slug, story }: { slug: string; story: InteractiveStory }) {
       </div>
       {discover.state === null ? null : <DiscoverCard slug={slug} state={discover.state} />}
       {story.compiled ? (
-        <BranchMap
-          slug={slug}
-          story={story}
-          seeds={
-            new Set(
-              (discover.state?.beats ?? [])
-                .filter((beat) => beat.state === 'seed')
-                .map((beat) => beat.chapterId),
-            )
-          }
-        />
+        <BranchMap slug={slug} story={story} seeds={seeds} />
       ) : (
         <p className="empty-map">The map appears once the ink compiles.</p>
       )}

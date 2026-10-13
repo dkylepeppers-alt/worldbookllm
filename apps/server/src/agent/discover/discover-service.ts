@@ -260,13 +260,17 @@ export class DiscoverService {
 
   /** Asks the beat writer for the variables the story should track, for the setup form. */
   proposeVariables(book: string, input: ProposeVariablesInput): Promise<DiscoverState> {
-    this.enqueue(book, {
+    // A new proposal replaces the last one, which the form has shown or the writer dismissed.
+    const jobs = this.jobs(book);
+    jobs.records = jobs.records.filter(
+      (record) => record.task.kind !== 'variables' || record.job.status === 'running',
+    );
+    return this.enqueueAndState(book, {
       task: { kind: 'variables', kernel: input.kernel, shape: input.shape },
       title: 'Proposing story variables',
       chapterId: null,
       lead: false,
     });
-    return this.state(book);
   }
 
   async decideProposal(

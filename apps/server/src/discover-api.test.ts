@@ -466,4 +466,27 @@ describe('discovering an interactive book', () => {
     expect(picked.json<DiscoverState>().jobs).toEqual([]);
     expect(chapter(app, slug, 'chapter-01')).toContain('Fire.');
   }, 30_000);
+
+  it('proposes variables from the premise for the setup form', async () => {
+    const { app, slug } = await boot([
+      () =>
+        sse(
+          text(
+            'Here: {"variables": [{"name": "courage", "initial": "0", "meaning": "How brave"}, {"name": "bad name!", "initial": "0", "meaning": "x"}]}',
+          ),
+        ),
+    ]);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/variables`,
+      payload: { kernel: 'A keeper.', shape: '' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const state = await settle(app, slug);
+    expect(state.jobs[0]).toMatchObject({
+      kind: 'variables',
+      status: 'done',
+      variables: [{ name: 'courage', initial: '0', meaning: 'How brave' }],
+    });
+  }, 30_000);
 });

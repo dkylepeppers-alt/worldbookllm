@@ -275,14 +275,6 @@ function SetupForm({
                   }
                 />
               </label>
-              <button
-                type="button"
-                className="button-secondary"
-                aria-label={`Remove ${variable.name || 'this variable'}`}
-                onClick={() => setVariables(variables.filter((_entry, at) => at !== index))}
-              >
-                Remove
-              </button>
               <label className="discover-meaning">
                 What it means
                 <input
@@ -297,6 +289,14 @@ function SetupForm({
                   }
                 />
               </label>
+              <button
+                type="button"
+                className="button-secondary"
+                aria-label={`Remove ${variable.name || 'this variable'}`}
+                onClick={() => setVariables(variables.filter((_entry, at) => at !== index))}
+              >
+                Remove
+              </button>
             </li>
           ))}
         </ul>

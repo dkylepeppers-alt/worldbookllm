@@ -331,6 +331,11 @@ function InkPlayer({
     );
   }
 
+  // While discovering, a seed's TODO is an open thread, which Health lists; it is not a note.
+  const warnings =
+    discover === null
+      ? play.warnings
+      : play.warnings.filter((warning) => !/TODO: Write what happens after "/u.test(warning));
   const fromKnot = start.from?.split('.')[0];
   const fromTitle =
     fromKnot === undefined
@@ -340,11 +345,11 @@ function InkPlayer({
 
   return (
     <>
-      {play.warnings.length > 0 ? (
+      {warnings.length > 0 ? (
         <details className="reader-notes">
-          <summary>Notes from the compiler ({play.warnings.length})</summary>
+          <summary>Notes from the compiler ({warnings.length})</summary>
           <ul>
-            {play.warnings.map((warning) => (
+            {warnings.map((warning) => (
               <li key={warning}>{warning}</li>
             ))}
           </ul>

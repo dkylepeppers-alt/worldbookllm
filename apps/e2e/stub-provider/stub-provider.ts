@@ -27,6 +27,102 @@ export const STUB_ASK_REPLY = 'Answer received.';
 // test can exercise stop/abort behavior before the stream finishes.
 export const SLOW_MARKER = '[slow]';
 
+// Discovery's beat writer (ADR 0033): every beat is written at once with
+// three different choices, the reader's own action is always accepted, and
+// variables proposed from the premise are always this one.
+export const STUB_BEAT_CHOICES = ['Climb to the lamp', 'Wait for the tide', 'Signal the ship'];
+export const STUB_VARIABLE = {
+  name: 'courage',
+  initial: '0',
+  meaning: 'How brave the keeper has been',
+};
+
+function isBeatWriterRequest(body: ChatCompletionRequest): boolean {
+  const system = body.messages?.find((message) => message.role === 'system')?.content ?? '';
+  return isAgentRequest(body) && system.startsWith('You are the beat writer in worldbookllm');
+}
+
+function toolNames(body: ChatCompletionRequest): string[] {
+  return (body.tools ?? []).flatMap((entry) => {
+    const name = (entry as { function?: { name?: unknown } }).function?.name;
+    return typeof name === 'string' ? [name] : [];
+  });
+}
+
+function call(name: string, args: unknown) {
+  return {
+    choices: [
+      {
+        index: 0,
+        delta: {
+          tool_calls: [
+            {
+              index: 0,
+              id: `stub_${name}`,
+              type: 'function',
+              function: { name, arguments: JSON.stringify(args) },
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+const stubChoices = () =>
+  STUB_BEAT_CHOICES.map((text, index) => ({
+    text,
+    intent: ['ascend', 'patience', 'help'][index],
+    consequence: ['sees the sea', 'loses time', 'is seen'][index],
+    leads_to: 'new',
+  }));
+
+/** One beat-writer step: write the beat (or choices, or the reader's action) in one call. */
+function beatWriterStep(body: ChatCompletionRequest): unknown[] {
+  const tools = toolNames(body);
+  const task = body.messages?.find((message) => message.role === 'user')?.content ?? '';
+  if (tools.includes('accept_action')) {
+    const action = /typed their own action:\n> (.+)/u.exec(task)?.[1]?.trim() ?? 'Something else';
+    const text = action.charAt(0).toUpperCase() + action.slice(1);
+    return [
+      call('accept_action', {
+        choice: { text, intent: 'the reader’s own', consequence: 'something new' },
+        beat: {
+          title: text,
+          summary: `The keeper does it: ${action}.`,
+          ink: `You ${action}. The light turns on the water.`,
+          ending: true,
+          choices: [],
+        },
+      }),
+    ];
+  }
+  if (tools.includes('write_choices')) return [call('write_choices', { choices: stubChoices() })];
+  const chosen = /when the reader chooses "([^"]+)"/u.exec(task)?.[1];
+  const title = chosen ?? 'The Rock';
+  return [
+    call('write_beat', {
+      title,
+      summary: `What happens: ${title}.`,
+      ink:
+        chosen === undefined
+          ? 'Wind on the rock. The lamp is dark.'
+          : `You chose to ${chosen.toLowerCase()}. The fog thins.`,
+      ending: false,
+      choices: stubChoices(),
+    }),
+  ];
+}
+
+function streamChunks(res: ServerResponse, chunks: unknown[]): void {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache',
+  });
+  for (const chunk of chunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+  res.end('data: [DONE]\n\n');
+}
+
 export interface StubProvider {
   url: string;
   close(): Promise<void>;
@@ -75,6 +171,29 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const body = await readJson(req);
     if (body === null) {
       json(res, 400, { error: { message: 'invalid JSON body' } });
+      return;
+    }
+    if (body.stream === true && isBeatWriterRequest(body)) {
+      streamChunks(res, beatWriterStep(body));
+      return;
+    }
+    const prompt = body.messages?.at(-1)?.content ?? '';
+    if (body.stream === true && prompt.includes('Reply with JSON only, no prose')) {
+      // The beat writer's review pass: every set of choices follows the rules.
+      streamChunks(res, [{ choices: [{ index: 0, delta: { content: '{"pass": true}' } }] }]);
+      return;
+    }
+    if (body.stream === true && prompt.includes('Reply with JSON only: {"variables"')) {
+      streamChunks(res, [
+        {
+          choices: [
+            {
+              index: 0,
+              delta: { content: JSON.stringify({ variables: [STUB_VARIABLE] }) },
+            },
+          ],
+        },
+      ]);
       return;
     }
     if (body.stream === true && isAgentRequest(body) && !wantsSlowStream(body)) {

@@ -163,6 +163,20 @@ Branches → Play runs the compiled story with the inkjs runtime: each passage i
 
 Health → Paths (ADR 0032), shown under Ink when the story compiles, plays every path and reports what playing finds. A mono summary line says how many states were played, or that it stopped early and is partial, and how many distinct endings it reached and in how many choices. Under it are entry lists: "Errors while playing", each with a "Reproduce in Play (N choices)" link that opens Play at those choices with seed 1; "No path reaches", the knots with links to their file and line; and "Choices never offered". In a partial report those two read "Not reached in the states played" and "Choices not offered in the states played", each with a muted note that the rest was not played. While it plays it shows the shared loading state, and a failure shows the shared error state with Retry.
 
+### Discovery
+
+Branches → Story setup (ADR 0033) is one column of `.branch-card` fieldsets: the story (premise and opening scene in the prose serif, since they are the writer's words), how you write (radio rows at 44px for mode and write-ahead, selects for choices per beat and beat length), what the story remembers (variable rows like choice rows, with a full-width "What it means"; proposed variables arrive in a panel with an accent left edge), the rules for choices (a mono textarea), and, for a book with no chapters, the opening. The Branches hub adds a Discovery card with the mode, the open threads, and Play and write / Story setup.
+
+In Play, discovery adds:
+
+- a polite status line with a small pulsing accent dot (still under reduced motion) while the beat writer works, and failed jobs as warning blocks with Try again;
+- "Your path", a wrapping row of the choices taken, each a text button back to that moment, the current one in weight 620;
+- "Something else…" as a dashed, muted last choice that opens an inline form; a declined action shows the reason as a warning block with a "Try: …" text button;
+- at a beat not written yet, a dashed-border panel ("Not written yet") with how it is reached, Draft three directions / Write it now, Write it yourself, and its note; drafts are cards with the prose in the serif, the choices with their intent and where they lead, the ink folded away, and Use this draft;
+- "Write what happens next" at a beat that leads nowhere yet, a "Rewrite …" disclosure with a direction, and a card for variables the beat writer asks for.
+
+The map draws a seed as an open node: `--bg` fill and a dashed `--border-strong` outline, labelled "not written". Health → Discovery lists open threads (each a link into Play at the fewest choices that reach it) and beats that need review, with Mark reviewed.
+
 ### Dialogs
 
 Bottom sheet on phones (12px top corners), centered card from 620px. `--backdrop` scrim and `--shadow-dialog`.
