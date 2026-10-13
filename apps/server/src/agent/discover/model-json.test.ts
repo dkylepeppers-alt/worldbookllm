@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readJsonReply } from './model-json.js';
+import { lastJsonObject, readJsonReply } from './model-json.js';
 
 describe('readJsonReply', () => {
   it('finds the JSON in prose, fences, and after a think block', () => {
@@ -14,5 +14,17 @@ describe('readJsonReply', () => {
   it('is undefined when nothing parses', () => {
     expect(readJsonReply('No variables needed.')).toBeUndefined();
     expect(readJsonReply('{not json}')).toBeUndefined();
+  });
+});
+
+describe('lastJsonObject', () => {
+  it('takes the call printed after planning, not an example earlier in the plan', () => {
+    expect(
+      lastJsonObject(
+        'The format is {"title": "..."}. Now the call.{"title": "The Knock", "ink": "x"}',
+      ),
+    ).toEqual({ title: 'The Knock', ink: 'x' });
+    expect(lastJsonObject('Read it. {"path": "a"} and then [1, 2]')).toEqual({ path: 'a' });
+    expect(lastJsonObject('Nothing to call.')).toBeUndefined();
   });
 });

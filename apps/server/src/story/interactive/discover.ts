@@ -149,7 +149,15 @@ export function readSetup(setupText: string | null, storyText: string): Discover
     endings: stringField(frontmatter, 'endings') ?? '',
     kernel: readKernel(storyText),
     shape: section(body, 'Shape') ?? '',
+    agentId: uuidField(frontmatter, 'beat-agent'),
   };
+}
+
+function uuidField(frontmatter: Record<string, unknown> | null, key: string): string | null {
+  const value = stringField(frontmatter, key);
+  return value !== null && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(value)
+    ? value.toLowerCase()
+    : null;
 }
 
 /** setup.md for a setup. Its values are JSON strings, which YAML reads as written. */
@@ -163,6 +171,7 @@ export function setupFile(setup: DiscoverSetup): string {
     `beat-length: "${setup.beatLength}"`,
     `rejoin: "${setup.rejoin}"`,
     `endings: ${JSON.stringify(setup.endings)}`,
+    ...(setup.agentId === null ? [] : [`beat-agent: ${JSON.stringify(setup.agentId)}`]),
     '---',
     '',
     '# Story setup',

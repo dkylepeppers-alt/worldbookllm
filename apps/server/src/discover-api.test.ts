@@ -344,6 +344,114 @@ describe('discovering an interactive book', () => {
     ]);
   }, 30_000);
 
+  it('writes beats as the custom agent the setup picks, with the skills it names', async () => {
+    const { app, slug, requests } = await boot(
+      [() => sse(toolCall('choices', 'write_choices', { choices: THREE })), PASS],
+      ['The keeper waits.'],
+    );
+    const skill = await app.inject({
+      method: 'POST',
+      url: '/api/skills',
+      payload: {
+        name: 'cold-prose',
+        description: 'Spare, cold prose.',
+        content: '# Cold prose\n\nShort sentences. No adverbs.',
+      },
+    });
+    expect(skill.statusCode, skill.body).toBe(201);
+    const agent = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/agents',
+        payload: {
+          name: 'Gothic narrator',
+          instructions: 'Let the sea feel watchful.',
+          skills: ['cold-prose'],
+        },
+      })
+    ).json<{ id: string }>();
+    const save = (agentId: string | null) =>
+      app.inject({
+        method: 'PUT',
+        url: `/api/books/${slug}/discover/setup`,
+        payload: {
+          setup: {
+            mode: 'cowrite',
+            lookahead: 1,
+            choices: 3,
+            beatLength: 'scene',
+            rejoin: 'sometimes',
+            endings: '',
+            kernel: '',
+            shape: '',
+            agentId,
+          },
+          rules: '1. Different intents.',
+          variables: [],
+        },
+      });
+    const saved = await save(agent.id);
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json<DiscoverState>().setup?.agentId).toBe(agent.id);
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/write`,
+      payload: { chapterId: 'chapter-01', position: null },
+    });
+    await settle(app, slug);
+    const system = JSON.stringify(requests[0]);
+    expect(system).toContain('## Your role: Gothic narrator');
+    expect(system).toContain('Let the sea feel watchful.');
+    expect(system).toContain('### Skill: cold-prose');
+    expect(system).toContain('Short sentences. No adverbs.');
+
+    // An agent that no longer exists cannot be picked.
+    await app.inject({ method: 'DELETE', url: `/api/agents/${agent.id}` });
+    expect((await save(agent.id)).statusCode).toBe(400);
+  }, 30_000);
+
+  it('follows calls a model prints instead of making, as some do', async () => {
+    const { app, slug, requests } = await boot(
+      [
+        // Planning that ends in a read call written out, as gpt-oss on some hosts does.
+        () => sse(text('We need the opening. Let\'s read it.{"path": "chapter_01.txt"}')),
+        // Then the writing call, wrapped as a call object, with a chapter id where leads_to wants "existing".
+        () =>
+          sse(
+            text(
+              `Now the call: ${JSON.stringify({
+                name: 'write_choices',
+                arguments: {
+                  choices: [
+                    choice('Open the letter', 'curiosity'),
+                    choice('Burn it unread', 'refusal'),
+                    { ...choice('Read it again', 'doubt'), leads_to: 'chapter-01' },
+                  ],
+                },
+              })}`,
+            ),
+          ),
+        PASS,
+      ],
+      ['The keeper finds a letter on the step.', 'She carries it up the stairs.'],
+    );
+    await setUp(app, slug, { mode: 'cowrite', opening: null });
+    const write = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/write`,
+      payload: { chapterId: 'chapter-02', position: null },
+    });
+    expect(write.statusCode, write.body).toBe(200);
+    const state = await settle(app, slug);
+    expect(state.jobs.filter((job) => job.status === 'failed').map((job) => job.message)).toEqual(
+      [],
+    );
+    // The printed read was answered with the chapter, found from its knot-style name.
+    expect(JSON.stringify(requests[1])).toContain('The keeper finds a letter on the step.');
+    expect(chapter(app, slug, 'chapter-02')).toContain('* [Read it again] -> chapter_01');
+  }, 30_000);
+
   it('gives the beat writer the path that reaches the writer’s own chapter', async () => {
     const { app, slug, requests } = await boot(
       [() => sse(toolCall('choices', 'write_choices', { choices: THREE })), PASS],

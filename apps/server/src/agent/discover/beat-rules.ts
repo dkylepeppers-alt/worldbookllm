@@ -16,7 +16,16 @@ const line = (max: number) =>
     .max(max)
     .refine((text) => !/[\r\n]/u.test(text), { message: 'one line' });
 
-const choiceArgs = z.object({
+/** A chapter id given as where a choice leads (`"leads_to": "chapter-04"`) means rejoining it. */
+function rejoinByChapterId(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value;
+  const choice = value as Record<string, unknown>;
+  return typeof choice.leads_to === 'string' && /^chapter-[\w-]+$/u.test(choice.leads_to)
+    ? { ...choice, leads_to: 'existing', chapter: choice.chapter ?? choice.leads_to }
+    : value;
+}
+
+const choiceFields = z.object({
   text: line(120).pipe(z.string().min(1)),
   intent: line(300).default(''),
   consequence: line(300).default(''),
@@ -28,6 +37,8 @@ const choiceArgs = z.object({
   /** For `new`: where the new beat should go, for whoever writes it. */
   note: line(500).default(''),
 });
+
+const choiceArgs = z.preprocess(rejoinByChapterId, choiceFields);
 
 export const writeBeatArgs = z.object({
   title: line(80).pipe(z.string().min(1)),
@@ -42,7 +53,7 @@ export const writeChoicesArgs = z.object({
 });
 
 export const acceptActionArgs = z.object({
-  choice: choiceArgs.omit({ leads_to: true, chapter: true, note: true }),
+  choice: choiceFields.omit({ leads_to: true, chapter: true, note: true }),
   beat: writeBeatArgs,
 });
 
@@ -124,27 +135,41 @@ const beatProperties = {
   choices: { type: 'array', items: choiceParameters },
 } as const;
 
+// Some models are shown a tool's top-level description but not the fields of the objects in its arrays,
+// so the writing tools' descriptions spell out their arguments.
+const CHOICE_EXAMPLE =
+  '{"text": "Open the door", "intent": "curiosity", "consequence": "she sees who knocked", "leads_to": "new", "note": "who is outside"}';
+
+/** What a writing tool's arguments look like, for its description and for reminding a model that answered in prose. */
+export const WRITING_EXAMPLES = {
+  write_beat: `{"title": "The Knock", "summary": "Someone knocks at night.", "ink": "The knock came twice.\\nShe did not move.", "ending": false, "choices": [${CHOICE_EXAMPLE}]}`,
+  write_choices: `{"choices": [${CHOICE_EXAMPLE}]}`,
+  accept_action: `{"choice": {"text": "Read the letter aloud", "intent": "honesty", "consequence": "he hears it too"}, "beat": {"title": "Aloud", "summary": "She reads it to him.", "ink": "She read it aloud.", "ending": false, "choices": [${CHOICE_EXAMPLE}]}}`,
+  decline_action:
+    '{"reason": "There is no boat on the rock.", "suggestion": "Signal the passing ship"}',
+} as const;
+
+const CHOICE_FIELDS =
+  'Each choice: text (what the reader picks), intent, consequence, leads_to ("new" for a beat not written yet, "end", or "existing" to rejoin a chapter, written as "leads_to": "existing", "chapter": "chapter-04"), and optionally note, condition (ink without braces, like "trust > 1"), and effects (a list of ink assignments as strings, like ["trust += 1"]).';
+
 /** Tool definitions in the shape the providers package sends. */
 export const BEAT_TOOLS = {
   write_beat: {
-    description:
-      'Write the beat: its prose as ink and the choices it ends with. Checked against the rules before anything is written; fix what it reports and call it again.',
+    description: `Write the beat: its prose as ink and the choices it ends with. Checked against the rules before anything is written; fix what it reports and call it again. ${CHOICE_FIELDS} Arguments look like ${WRITING_EXAMPLES.write_beat}`,
     parameters: {
       required: ['title', 'summary', 'ink', 'ending', 'choices'],
       properties: beatProperties,
     },
   },
   write_choices: {
-    description:
-      "Write the closing choices for a beat whose prose already exists. Checked like write_beat's choices.",
+    description: `Write the closing choices for a beat whose prose already exists. Checked like write_beat's choices. ${CHOICE_FIELDS} Arguments look like ${WRITING_EXAMPLES.write_choices}`,
     parameters: {
       required: ['choices'],
       properties: { choices: { type: 'array', items: choiceParameters } },
     },
   },
   accept_action: {
-    description:
-      "The reader's own action works here: add it as a choice (rewritten in the book's voice) and write the beat it leads to.",
+    description: `The reader's own action works here: add it as a choice (rewritten in the book's voice) and write the beat it leads to. Arguments look like ${WRITING_EXAMPLES.accept_action}`,
     parameters: {
       required: ['choice', 'beat'],
       properties: {

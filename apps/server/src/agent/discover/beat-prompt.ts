@@ -20,10 +20,18 @@ const REJOIN = {
 } as const;
 
 /** The beat writer's standing instructions. */
+/** The custom agent the writer picked for the beat writer: its instructions and the skills it names. */
+export interface BeatRole {
+  name: string;
+  instructions: string;
+  skills: ReadonlyArray<{ name: string; content: string }>;
+}
+
 export function beatSystemPrompt(input: {
   bookTitle: string;
   setup: DiscoverSetup;
   rules: string;
+  role: BeatRole | null;
 }): string {
   const { setup } = input;
   return [
@@ -40,11 +48,12 @@ export function beatSystemPrompt(input: {
     '- Open the beat by acknowledging the choice that led here, even in one line.',
     '- Before a choice rejoins an existing beat, make what differs between the paths agree in this beat (who is where, what they hold, what they know), or set a variable the rejoin reads. Never rely on the rejoined beat changing.',
     '- Stay true to the bible and to everything on the path so far. Do not invent major canon (new main characters, new rules of the world) unless the story kernel invites it; when you add a detail, keep it small and consistent.',
-    "- Write in the voice, person, and tense of the book's prose and style sheet.",
+    '- Write in the voice, person, and tense of the book\'s prose and style sheet, as the chapters on the path show it: if they say "she", every line of the beat does too. Never slip into "you" unless the book is written in the second person.',
+    ...roleSection(input.role),
     '',
     '## Writing ink',
     '- Each line of ink is a paragraph. Inline *emphasis* works. A line that is only `# break` is a scene break.',
-    '- Vary prose with what the reader did: `{trust > 1: She meets your eyes.|She looks away.}`, or `{met_mara: …}`. Use only declared variables, and visit counts of existing knots (a chapter id with - as _, e.g. chapter_04).',
+    '- Vary prose with what the reader did: `{trust > 1: He meets her eyes.|He looks away.}`, or `{met_mara: …}`. Use only declared variables, and visit counts of existing knots (a chapter id with - as _, e.g. chapter_04).',
     '- In-scene choices are allowed inside the prose if they gather back (`* [Look] …` then `- ` to gather) before the beat ends. The closing choices are not written in ink: give them in choices.',
     '- Escape what ink would read as markup in prose: \\{ \\} \\| \\# \\[ \\] \\~ and a backslash before // in a web address.',
     '- Never write `=== knot ===` lines, INCLUDE, VAR, or a final divert; worldbookllm adds them.',
@@ -82,6 +91,17 @@ export interface BeatPromptInput {
   /** Beats a choice could rejoin: id, title, and one line on what happens. */
   chapters: ReadonlyArray<{ chapterId: string; title: string; summary: string; state: string }>;
   place: BeatPlace;
+}
+
+function roleSection(role: BeatRole | null): string[] {
+  if (role === null || (role.instructions.trim() === '' && role.skills.length === 0)) return [];
+  return [
+    '',
+    `## Your role: ${role.name}`,
+    'The writer chose this role for the beat writer. Write as it says; the tools, the rules above, and the rules for choices still apply.',
+    ...(role.instructions.trim() === '' ? [] : ['', role.instructions.trim()]),
+    ...role.skills.flatMap((skill) => ['', `### Skill: ${skill.name}`, skill.content.trim()]),
+  ];
 }
 
 function variablesSection(input: BeatPromptInput): string[] {

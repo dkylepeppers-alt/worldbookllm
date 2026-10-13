@@ -28,6 +28,11 @@ export const discoverSetupSchema = z.strictObject({
   kernel: z.string().trim().max(4000),
   /** Tone, length, and anything else about the shape, in the writer's words. */
   shape: z.string().trim().max(8000),
+  /**
+   * The custom agent whose instructions, and the skills it names, guide the
+   * beat writer; null for the default beat writer.
+   */
+  agentId: z.uuid().nullable().default(null),
 });
 
 const variableNameSchema = z
