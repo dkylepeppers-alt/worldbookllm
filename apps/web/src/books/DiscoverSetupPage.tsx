@@ -1,4 +1,5 @@
 import type {
+  CustomAgent,
   DiscoverSetup,
   DiscoverState,
   DiscoverVariable,
@@ -7,9 +8,11 @@ import type {
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
+import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { useDiscover } from './useDiscover.js';
+import { useLoad } from './useLoad.js';
 
 const DEFAULT_SETUP: DiscoverSetup = {
   mode: 'lead',
@@ -20,6 +23,7 @@ const DEFAULT_SETUP: DiscoverSetup = {
   endings: '',
   kernel: '',
   shape: '',
+  agentId: null,
 };
 
 const REJOINS = [
@@ -138,6 +142,15 @@ function SetupForm({
   const writesOpening = !hasChapters && (openingKind === 'agent' || opening.trim() === '');
   const update = (change: Partial<DiscoverSetup>) =>
     setSetup((current) => ({ ...current, ...change }));
+  const pickAgent = (agentId: string | null) => setSetup((current) => ({ ...current, agentId }));
+  const api = useApi();
+  const agents = useLoad((signal) => api.listCustomAgents(signal), 'agents');
+  const agentList = agents.status === 'ready' ? agents.data : null;
+  // A deleted agent cannot be saved; the default beat writer takes its place.
+  const agentId =
+    agentList !== null && !agentList.some((agent) => agent.id === setup.agentId)
+      ? null
+      : setup.agentId;
 
   const values: FormValues = { setup, rules, variables, openingKind, opening };
   const unsaved = JSON.stringify(values) !== JSON.stringify(saved);
@@ -222,7 +235,7 @@ function SetupForm({
     event.preventDefault();
     const ok = await discover.run((api) =>
       api.saveDiscoverSetup(slug, {
-        setup,
+        setup: { ...setup, agentId },
         rules,
         variables: variables.filter((variable) => variable.name.trim() !== ''),
         ...(hasChapters ? {} : { opening: openingKind === 'writer' ? opening : null }),
@@ -383,6 +396,7 @@ function SetupForm({
             Co-write: it drafts a beat only when you ask
           </label>
         </fieldset>
+        <BeatWriterPicker agents={agentList} agentId={setup.agentId} onChange={pickAgent} />
         <details className="discover-more">
           <summary>
             More options <span className="field-hint">{options}</span>
@@ -637,5 +651,59 @@ function SetupForm({
         </div>
       </div>
     </form>
+  );
+}
+
+/**
+ * Which agent writes the beats: the default beat writer, or a custom agent
+ * from the Agents page, whose instructions and the skills it names guide
+ * every beat.
+ */
+function BeatWriterPicker({
+  agents,
+  agentId,
+  onChange,
+}: {
+  /** The custom agents, or null while they load. */
+  agents: CustomAgent[] | null;
+  agentId: string | null;
+  onChange: (agentId: string | null) => void;
+}) {
+  const picked = agents?.find((agent) => agent.id === agentId);
+  const gone = agents !== null && agentId !== null && picked === undefined;
+  return (
+    <label>
+      Beat writer
+      <span className="field-hint">
+        A custom agent&apos;s instructions, and the skills it names, guide every beat.{' '}
+        <Link to="/agents">Make or edit agents</Link>.
+      </span>
+      <select
+        value={gone ? '' : (agentId ?? '')}
+        disabled={agents === null}
+        onChange={(event) => onChange(event.target.value === '' ? null : event.target.value)}
+      >
+        <option value="">Default beat writer</option>
+        {(agents ?? []).map((agent) => (
+          <option key={agent.id} value={agent.id}>
+            {agent.name}
+          </option>
+        ))}
+      </select>
+      {gone ? (
+        <span className="form-error">
+          The agent this book used no longer exists, so saving picks the default beat writer.
+        </span>
+      ) : picked !== undefined ? (
+        <span className="field-hint">
+          {picked.description === '' ? null : `${picked.description} `}
+          {picked.skills === null
+            ? 'It allows every skill, so it brings its instructions only; name skills on the Agents page to include them.'
+            : picked.skills.length === 0
+              ? 'It names no skills.'
+              : `Skills: ${picked.skills.join(', ')}.`}
+        </span>
+      ) : null}
+    </label>
   );
 }

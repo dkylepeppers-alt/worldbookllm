@@ -344,6 +344,73 @@ describe('discovering an interactive book', () => {
     ]);
   }, 30_000);
 
+  it('writes beats as the custom agent the setup picks, with the skills it names', async () => {
+    const { app, slug, requests } = await boot(
+      [() => sse(toolCall('choices', 'write_choices', { choices: THREE })), PASS],
+      ['The keeper waits.'],
+    );
+    const skill = await app.inject({
+      method: 'POST',
+      url: '/api/skills',
+      payload: {
+        name: 'cold-prose',
+        description: 'Spare, cold prose.',
+        content: '# Cold prose\n\nShort sentences. No adverbs.',
+      },
+    });
+    expect(skill.statusCode, skill.body).toBe(201);
+    const agent = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/agents',
+        payload: {
+          name: 'Gothic narrator',
+          instructions: 'Let the sea feel watchful.',
+          skills: ['cold-prose'],
+        },
+      })
+    ).json<{ id: string }>();
+    const save = (agentId: string | null) =>
+      app.inject({
+        method: 'PUT',
+        url: `/api/books/${slug}/discover/setup`,
+        payload: {
+          setup: {
+            mode: 'cowrite',
+            lookahead: 1,
+            choices: 3,
+            beatLength: 'scene',
+            rejoin: 'sometimes',
+            endings: '',
+            kernel: '',
+            shape: '',
+            agentId,
+          },
+          rules: '1. Different intents.',
+          variables: [],
+        },
+      });
+    const saved = await save(agent.id);
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json<DiscoverState>().setup?.agentId).toBe(agent.id);
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/write`,
+      payload: { chapterId: 'chapter-01', position: null },
+    });
+    await settle(app, slug);
+    const system = JSON.stringify(requests[0]);
+    expect(system).toContain('## Your role: Gothic narrator');
+    expect(system).toContain('Let the sea feel watchful.');
+    expect(system).toContain('### Skill: cold-prose');
+    expect(system).toContain('Short sentences. No adverbs.');
+
+    // An agent that no longer exists cannot be picked.
+    await app.inject({ method: 'DELETE', url: `/api/agents/${agent.id}` });
+    expect((await save(agent.id)).statusCode).toBe(400);
+  }, 30_000);
+
   it('follows calls a model prints instead of making, as some do', async () => {
     const { app, slug, requests } = await boot(
       [

@@ -134,6 +134,7 @@ const discovering: DiscoverState = {
     endings: '',
     kernel: 'A keeper and a letter.',
     shape: '',
+    agentId: null,
   },
   rules: '1. Different intents.',
   variables: [{ name: 'trust', initial: '0', meaning: 'How much the keeper trusts you' }],
@@ -390,6 +391,48 @@ describe('Story setup', () => {
       'gull-rock',
       '11111111-1111-4111-8111-111111111111',
     );
+  });
+
+  it('picks a custom agent as the beat writer, and the default when the saved one is gone', async () => {
+    const agent = {
+      id: '55555555-5555-4555-8555-555555555555',
+      name: 'Gothic narrator',
+      description: 'Dread, slowly.',
+      instructions: 'Let the sea feel watchful.',
+      skills: ['cold-prose'],
+      createdAt: book.updatedAt,
+      updatedAt: book.updatedAt,
+    };
+    const saveDiscoverSetup = vi.fn<ApiClient['saveDiscoverSetup']>(() =>
+      Promise.resolve(discovering),
+    );
+    renderAt('/books/gull-rock/branches/discover', {
+      listCustomAgents: () => Promise.resolve([agent]),
+      saveDiscoverSetup,
+    });
+    const user = userEvent.setup();
+    const picker = await screen.findByLabelText(/^Beat writer/u);
+    await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
+    await user.selectOptions(picker, 'Gothic narrator');
+    expect(screen.getByText(/Skills: cold-prose/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Save and go to Play' }));
+    await waitFor(() => expect(saveDiscoverSetup).toHaveBeenCalled());
+    expect(saveDiscoverSetup.mock.calls[0]![1].setup.agentId).toBe(agent.id);
+    cleanup();
+    localStorage.clear();
+
+    // The book's saved agent was deleted since.
+    const gone = vi.fn<ApiClient['saveDiscoverSetup']>(() => Promise.resolve(discovering));
+    renderAt('/books/gull-rock/branches/discover', {
+      getDiscover: () =>
+        Promise.resolve({ ...discovering, setup: { ...discovering.setup!, agentId: agent.id } }),
+      listCustomAgents: () => Promise.resolve([]),
+      saveDiscoverSetup: gone,
+    });
+    expect(await screen.findByText(/no longer exists/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Save and go to Play' }));
+    await waitFor(() => expect(gone).toHaveBeenCalled());
+    expect(gone.mock.calls[0]![1].setup.agentId).toBeNull();
   });
 
   it('says when the provider cannot run the beat writer', async () => {

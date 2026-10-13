@@ -7,6 +7,7 @@ import {
   discoverVariableSchema,
   storyDraftSchema,
   type BeatDraft,
+  type CustomAgent,
   type DiscoverJob,
   type DiscoverSetup,
   type DiscoverState,
@@ -25,6 +26,8 @@ import {
 
 import { ConfigurationError, ConflictError, NotFoundError, ValidationError } from '../../errors.js';
 import type { BookService, DiscoverFiles } from '../../services/books.js';
+import type { SkillService } from '../../services/skills.js';
+import type { CustomAgentService } from '../custom-agents.js';
 import type { ProviderService } from '../../services/providers.js';
 import type { SettingsService } from '../../services/settings.js';
 import { parseFrontmatter } from '../../story/book-index.js';
@@ -69,6 +72,7 @@ import {
   beatTaskPrompt,
   reviewPrompt,
   type BeatPromptInput,
+  type BeatRole,
 } from './beat-prompt.js';
 import {
   checkBeat,
@@ -104,6 +108,8 @@ const BIBLE_KINDS = new Set(['character', 'location', 'system', 'faction', 'arti
 const BIBLE_BUDGET = 20_000;
 const ENTRY_BUDGET = 3_000;
 const KEEP_FINISHED = 20;
+/** Text from the picked agent's skills the beat writer reads. */
+const ROLE_SKILL_BUDGET = 24_000;
 /** Prose from the written scenes a drafted story setup reads. */
 const SCENES_BUDGET = 10_000;
 
@@ -209,8 +215,42 @@ export class DiscoverService {
     private readonly bookService: BookService,
     private readonly settings: SettingsService,
     private readonly providers: ProviderService,
+    private readonly roles: { agents: CustomAgentService; skills: SkillService },
     private readonly logError: (error: unknown) => void = () => undefined,
   ) {}
+
+  /**
+   * The custom agent the setup picks for the beat writer: its instructions,
+   * and the text of each skill it names, within a budget. An agent allowed
+   * every skill names none, so it brings its instructions only. A deleted
+   * agent leaves the default beat writer.
+   */
+  private role(setup: DiscoverSetup): BeatRole | null {
+    if (setup.agentId === null) return null;
+    let agent: CustomAgent;
+    try {
+      agent = this.roles.agents.get(setup.agentId);
+    } catch {
+      return null;
+    }
+    const installed = this.roles.skills.list();
+    const skills: Array<{ name: string; content: string }> = [];
+    let left = ROLE_SKILL_BUDGET;
+    for (const name of agent.skills ?? []) {
+      const meta = installed.find((skill) => skill.name === name);
+      if (meta === undefined || left <= 0) continue;
+      let content: string;
+      try {
+        content = parseFrontmatter(this.roles.skills.get(meta.id).content).body.trim();
+      } catch {
+        continue;
+      }
+      const kept = content.length <= left ? content : `${content.slice(0, left)}…`;
+      left -= kept.length;
+      skills.push({ name, content: kept });
+    }
+    return { name: agent.name, instructions: agent.instructions, skills };
+  }
 
   // ---- State ----------------------------------------------------------------
 
@@ -277,6 +317,13 @@ export class DiscoverService {
    */
   async saveSetup(book: string, input: SaveDiscoverSetupInput): Promise<DiscoverState> {
     const files = await this.bookService.discoverFiles(book);
+    if (input.setup.agentId !== null) {
+      try {
+        this.roles.agents.get(input.setup.agentId);
+      } catch {
+        throw new ValidationError('That agent no longer exists. Pick another, or the default.');
+      }
+    }
     // The beat writer writes a new book's opening from the premise; with a scene already there, it is optional.
     if (
       input.setup.kernel === '' &&
@@ -809,6 +856,7 @@ export class DiscoverService {
       bookTitle: files.title,
       setup,
       rules: readRules(files.rules),
+      role: this.role(setup),
     });
     const notes: string[] = [];
     const review = this.reviewer(model, context, notes);
@@ -912,6 +960,7 @@ export class DiscoverService {
       bookTitle: files.title,
       setup,
       rules: readRules(files.rules),
+      role: this.role(setup),
     });
     const avoid: string[] = [];
     for (let index = 0; index < DRAFT_COUNT; index += 1) {
@@ -1014,6 +1063,7 @@ export class DiscoverService {
       bookTitle: files.title,
       setup,
       rules: readRules(files.rules),
+      role: this.role(setup),
     });
     const handlers = this.readHandlers(book, currentId);
     const notes: string[] = [];

@@ -96,6 +96,7 @@ describe('the story setup', () => {
       endings: 'Three, one "bittersweet"',
       kernel: 'A keeper on a rock gets a letter she cannot read.',
       shape: 'Short and cold. Around twenty beats on any path.',
+      agentId: '0b6f6c1e-3d4a-4c5b-8e9f-1a2b3c4d5e6f',
     };
     const story = withKernel(STORY, setup.kernel);
     expect(parseFrontmatter(story).frontmatter?.['draft-mode']).toBe('discovered');
@@ -118,6 +119,7 @@ describe('the story setup', () => {
       endings: '',
       kernel: 'A keeper.\n\n## Want\n\nThe truth.',
       shape: '# Tone\n\nCold.\n\n## Length\n\nShort.',
+      agentId: null,
     };
     const story = withKernel(STORY, setup.kernel);
     expect(readKernel(story)).toBe('A keeper.\n\n### Want\n\nThe truth.');

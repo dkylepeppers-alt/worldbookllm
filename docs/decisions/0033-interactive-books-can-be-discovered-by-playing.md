@@ -54,6 +54,8 @@ An interactive book can be written by hand in ink, or with the agent's plan-firs
 
    Each written beat is its own checkpoint with the actor `agent`, so it can be undone alone.
 
+   The setup may pick a custom agent (the ones chats use, from the Agents page) as the beat writer, stored as `beat-agent` in setup.md. Its instructions are added to the beat writer's prompt as its role. The text of each skill it names is added too, within a budget, rather than offered through skill tools, because not every model calls extra tools reliably. An agent allowed every skill names none, so it brings only its instructions. The tools, checks and rules for choices stay the same. Saving refuses an agent that no longer exists, and a book whose agent was deleted is written by the default beat writer.
+
 6. **Lead mode writes ahead of the reader.** The Play screen reports where the reader is. The server replays that path and marks the chapters it visits as read; reads are kept in SQLite. It then queues every seed within the look-ahead of the reader's position, nearest first, one book at a time. With the default look-ahead of 1, the beat after every choice the reader can see is always written. A look-ahead of 2 writes the layer after that too.
 
    Lead mode leaves the writer's own chapters alone, such as those of a book converted to ink, because one that ends without choices may be an ending. When the reader reaches the end of such a chapter, Play offers _Write what happens next_. The beat writer then adds the chapter's closing choices, with a seed for each, and keeps the prose as written. From there discovery goes on as usual.

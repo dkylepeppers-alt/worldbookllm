@@ -127,8 +127,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     (error) => app.log.error(error),
   );
   const storySkills = new StorySkillsInstaller(skills, skillsRoot);
-  const discover = new DiscoverService(db, books, settings, providers, (error) =>
-    app.log.error(error),
+  const discover = new DiscoverService(
+    db,
+    books,
+    settings,
+    providers,
+    { agents: customAgents, skills },
+    (error) => app.log.error(error),
   );
   books.attachChatLifecycle({
     assertIdle: (book, action) => {
