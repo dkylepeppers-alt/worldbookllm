@@ -158,7 +158,7 @@ function SetupForm({
           <button
             type="button"
             className="button-secondary"
-            disabled={!state.writerReady || draftingNow}
+            disabled={!state.writerReady || draftingNow || discover.busy}
             onClick={draftStory}
           >
             {draftingNow

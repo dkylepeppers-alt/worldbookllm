@@ -1600,9 +1600,11 @@ export class DiscoverService {
       parsed = undefined;
     }
     const fields = typeof parsed === 'object' && parsed !== null ? parsed : {};
+    // A field the model leaves out or blank keeps what the writer sent.
     const field = (key: 'kernel' | 'shape' | 'endings', max: number) => {
       const value = (fields as Record<string, unknown>)[key];
-      return typeof value === 'string' ? value.trim().slice(0, max).trim() : '';
+      const text = typeof value === 'string' ? value.trim().slice(0, max).trim() : '';
+      return text === '' ? draft[key] : text;
     };
     const story = storyDraftSchema.parse({
       kernel: field('kernel', 4000),

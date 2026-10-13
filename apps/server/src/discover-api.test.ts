@@ -509,7 +509,7 @@ describe('discovering an interactive book', () => {
       () =>
         sse(
           text(
-            '{"kernel": "A keeper finds a letter.", "shape": "Short and cold.", "endings": "Two,\\n one kind"}',
+            '{"kernel": "A keeper finds a letter.", "shape": "", "endings": "Two,\\n one kind"}',
           ),
         ),
     ]);
@@ -523,9 +523,10 @@ describe('discovering an interactive book', () => {
     expect(state.jobs[0]).toMatchObject({
       kind: 'story',
       status: 'done',
+      // A field the model leaves blank keeps what the writer sent.
       story: {
         kernel: 'A keeper finds a letter.',
-        shape: 'Short and cold.',
+        shape: 'Short.',
         endings: 'Two, one kind',
       },
     });
