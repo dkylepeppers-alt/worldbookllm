@@ -1,6 +1,6 @@
 # worldbookllm
 
-A local-first, model-agnostic creative writing and worldbuilding workspace: story-skills books as Markdown on disk, developed with a tool-calling agent on user-chosen providers. See `docs/ARCHITECTURE.md` for the system design and `docs/ROADMAP.md` for milestone scope — check the roadmap before adding features to keep milestones thin.
+A local-first, model-agnostic creative writing and worldbuilding workspace: story-skills books as Markdown on disk, developed with a tool-calling agent on user-chosen providers. See `docs/ARCHITECTURE.md` for the system design and `docs/ROADMAP.md` for milestone scope.
 
 ## Commands
 
