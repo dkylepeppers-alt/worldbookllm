@@ -113,6 +113,8 @@ const ENTRY_BUDGET = 3_000;
 const KEEP_FINISHED = 20;
 /** Prose from the written scenes a drafted story setup reads. */
 const SCENES_BUDGET = 10_000;
+/** Text from the skills an agent names that comes loaded on every beat; the rest are listed to load. */
+const NAMED_SKILLS_BUDGET = 48_000;
 
 type Task =
   | { kind: 'beat'; chapterId: string; position: PlayPosition | null; direction: string | null }
@@ -228,7 +230,8 @@ export class DiscoverService {
    * The custom agent the setup picks for the beat writer: its instructions
    * and its skills, of those the beat writer uses (beat writer skills and the
    * writer's own). The skills it names come loaded, with the text a chat's
-   * activate_skill gives, so every beat follows them; an agent allowed every
+   * activate_skill gives, so every beat follows them (within a budget, past
+   * which the rest are listed to load); an agent allowed every
    * skill gets the list to load from, as in a chat. A deleted agent leaves
    * the default beat writer.
    */
@@ -246,19 +249,26 @@ export class DiscoverService {
       .list()
       .filter((skill) => isBeatWriterSkill(skill) && (named === null || named.has(skill.name)));
     const allowed = new Set(usable.map((skill) => skill.name));
-    return {
-      name: agent.name,
-      instructions: agent.instructions,
-      allowed,
-      skills: usable
-        .map((skill) => ({
-          name: skill.name,
-          description: skill.description,
-          content: named === null ? null : this.loadedSkill(skill.name, allowed),
-        }))
-        // A named skill that cannot be read is left out rather than offered.
-        .filter((skill) => named === null || skill.content !== null),
-    };
+    const skills: BeatRole['skills'][number][] = [];
+    let left = NAMED_SKILLS_BUDGET;
+    for (const skill of usable) {
+      const entry = { name: skill.name, description: skill.description, content: null };
+      if (named === null) {
+        skills.push(entry);
+        continue;
+      }
+      // A named skill that cannot be read is left out rather than offered.
+      const content = this.loadedSkill(skill.name, allowed);
+      if (content === null) continue;
+      // Each loaded skill is whole; past the budget, the rest are listed to load.
+      if (content.length > left) {
+        skills.push(entry);
+        continue;
+      }
+      left -= content.length;
+      skills.push({ ...entry, content });
+    }
+    return { name: agent.name, instructions: agent.instructions, allowed, skills };
   }
 
   /** A named skill's text as activate_skill gives it, under the same limit; null if it cannot be read. */

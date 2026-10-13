@@ -400,7 +400,7 @@ describe('Story setup', () => {
       name: 'Gothic narrator',
       description: 'Dread, slowly.',
       instructions: 'Let the sea feel watchful.',
-      skills: ['cold-prose', 'scene-craft'],
+      skills: ['cold-prose', 'scene-craft', 'deleted-skill'],
       createdAt: book.updatedAt,
       updatedAt: book.updatedAt,
     };
@@ -441,7 +441,7 @@ describe('Story setup', () => {
     await user.selectOptions(picker, 'Gothic narrator');
     expect(
       await screen.findByText(
-        /Skills, followed on every beat: cold-prose\. Not used here, since Story Skills are for chats: scene-craft\./u,
+        /Skills, followed on every beat: cold-prose\. Not used here, since Story Skills are for chats: scene-craft\. Not installed: deleted-skill\./u,
       ),
     ).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Save and go to Play' }));
@@ -464,7 +464,7 @@ describe('Story setup', () => {
     expect(gone.mock.calls[0]![1].setup.agentId).toBeNull();
   });
 
-  it('adds the Beat writer agent with its skills and picks it', async () => {
+  it('adds the Beat writer agent with its skills and picks it, before the agent list reloads', async () => {
     const beatWriter = {
       id: '66666666-6666-4666-8666-666666666666',
       name: 'Beat writer',
@@ -474,19 +474,18 @@ describe('Story setup', () => {
       createdAt: book.updatedAt,
       updatedAt: book.updatedAt,
     };
-    let agents: (typeof beatWriter)[] = [];
-    const installBeatWriter = vi.fn<ApiClient['installBeatWriter']>(() => {
-      agents = [beatWriter];
-      return Promise.resolve({
+    // The list has not caught up with the install yet when the writer saves.
+    const installBeatWriter = vi.fn<ApiClient['installBeatWriter']>(() =>
+      Promise.resolve({
         agent: beatWriter,
         skills: { installed: [], skipped: [], upgraded: [], kept: [] },
-      });
-    });
+      }),
+    );
     const saveDiscoverSetup = vi.fn<ApiClient['saveDiscoverSetup']>(() =>
       Promise.resolve(discovering),
     );
     renderAt('/books/gull-rock/branches/discover', {
-      listCustomAgents: () => Promise.resolve(agents),
+      listCustomAgents: () => Promise.resolve([]),
       installBeatWriter,
       saveDiscoverSetup,
     });

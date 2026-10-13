@@ -372,6 +372,14 @@ describe('discovering an interactive book', () => {
       },
     });
     expect(skill.statusCode, skill.body).toBe(201);
+    // Two more long skills: past the budget for loaded skills, the last is listed to load instead.
+    for (const name of ['grey-dialogue', 'salt-weather']) {
+      app.services.skills.create({
+        name,
+        description: `${name} notes.`,
+        content: `# ${name}\n\n${'Say less. '.repeat(2_200)}End of ${name}.`,
+      });
+    }
     // A Story Skill is written for chats; the beat writer leaves it out even when named.
     app.services.skills.create({
       name: 'scene-craft',
@@ -387,7 +395,7 @@ describe('discovering an interactive book', () => {
         payload: {
           name: 'Gothic narrator',
           instructions: 'Let the sea feel watchful.',
-          skills: ['cold-prose', 'scene-craft'],
+          skills: ['cold-prose', 'grey-dialogue', 'salt-weather', 'scene-craft'],
         },
       })
     ).json<{ id: string }>();
@@ -430,7 +438,10 @@ describe('discovering an interactive book', () => {
     expect(system).toContain('Let the sea feel watchful.');
     expect(system).toContain('#### Skill: cold-prose');
     expect(system).toContain('Short sentences. No adverbs.');
-    expect(system).not.toContain('### Skills you can load');
+    expect(system).toContain('End of grey-dialogue.');
+    expect(system).not.toContain('End of salt-weather.');
+    expect(system).toContain('### Skills you can load');
+    expect(system).toContain('- salt-weather: salt-weather notes.');
     expect(system).not.toContain('scene-craft');
 
     // An agent allowed every skill gets the list, and loads one when it fits, as in a chat.

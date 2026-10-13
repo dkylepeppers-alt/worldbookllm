@@ -147,7 +147,14 @@ function SetupForm({
   const pickAgent = (agentId: string | null) => setSetup((current) => ({ ...current, agentId }));
   const api = useApi();
   const agents = useLoad((signal) => api.listCustomAgents(signal), 'agents');
-  const agentList = agents.status === 'ready' ? agents.data : null;
+  // The agent Add the Beat writer agent made, until the reloaded list has it.
+  const [added, setAdded] = useState<CustomAgent | null>(null);
+  const agentList =
+    agents.status !== 'ready'
+      ? null
+      : added === null || agents.data.some((agent) => agent.id === added.id)
+        ? agents.data
+        : [...agents.data, added];
   const skills = useLoad((signal) => api.listSkills(signal), 'skills');
   // A deleted agent cannot be saved; the default beat writer takes its place.
   const agentId =
@@ -407,9 +414,10 @@ function SetupForm({
         />
         {agentList === null || agentList.some((agent) => agent.name === 'Beat writer') ? null : (
           <AddBeatWriter
-            onAdded={(id) => {
+            onAdded={(agent) => {
+              setAdded(agent);
               agents.reload();
-              pickAgent(id);
+              pickAgent(agent.id);
             }}
           />
         )}
@@ -676,7 +684,7 @@ function SetupForm({
  * every beat.
  */
 /** Installs the beat writer skills and the agent that names them (ADR 0034), and picks it. */
-function AddBeatWriter({ onAdded }: { onAdded: (agentId: string) => void }) {
+function AddBeatWriter({ onAdded }: { onAdded: (agent: CustomAgent) => void }) {
   const api = useApi();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -691,7 +699,7 @@ function AddBeatWriter({ onAdded }: { onAdded: (agentId: string) => void }) {
           setError(null);
           api
             .installBeatWriter()
-            .then((result) => onAdded(result.agent.id))
+            .then((result) => onAdded(result.agent))
             .catch((caught: unknown) => setError(errorMessage(caught)))
             .finally(() => setBusy(false));
         }}
@@ -713,13 +721,18 @@ function skillsHint(named: string[] | null, skills: SkillMetadata[] | null): str
     return 'Skills: the beat writer skills and your own, loaded when one fits. Story Skills are for chats and are not used here.';
   }
   if (named.length === 0) return 'No skills.';
-  const unused =
-    skills === null
-      ? []
-      : named.filter((name) =>
-          skills.some((skill) => skill.name === name && !isBeatWriterSkill(skill)),
-        );
-  const used = named.filter((name) => !unused.includes(name));
+  // Until the skills load, which of them the beat writer uses is not known.
+  if (skills === null) return `Skills: ${named.join(', ')}.`;
+  const installed = (name: string) => skills.find((skill) => skill.name === name);
+  const used = named.filter((name) => {
+    const skill = installed(name);
+    return skill !== undefined && isBeatWriterSkill(skill);
+  });
+  const unused = named.filter((name) => {
+    const skill = installed(name);
+    return skill !== undefined && !isBeatWriterSkill(skill);
+  });
+  const missing = named.filter((name) => installed(name) === undefined);
   return [
     used.length === 0
       ? 'None of its skills are used here.'
@@ -727,6 +740,7 @@ function skillsHint(named: string[] | null, skills: SkillMetadata[] | null): str
     unused.length === 0
       ? ''
       : ` Not used here, since Story Skills are for chats: ${unused.join(', ')}.`,
+    missing.length === 0 ? '' : ` Not installed: ${missing.join(', ')}.`,
   ].join('');
 }
 
