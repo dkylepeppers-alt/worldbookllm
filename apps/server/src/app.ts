@@ -9,6 +9,7 @@ import { AgentService } from './agent/agent-service.js';
 import { AgentChangesetService } from './agent/changesets.js';
 import { CustomAgentService } from './agent/custom-agents.js';
 import { DiscoverService } from './agent/discover/discover-service.js';
+import { BeatWriterSkills } from './agent/discover/beat-skills.js';
 import { StorySkillsInstaller } from './agent/story-skills-installer.js';
 import { AgentToolRegistry } from './agent/tools.js';
 import { openDatabase } from './db/database.js';
@@ -61,6 +62,7 @@ interface AppServices {
   customAgents: CustomAgentService;
   changesets: AgentChangesetService;
   storySkills: StorySkillsInstaller;
+  beatWriter: BeatWriterSkills;
   notebookMigration: NotebookMigrationService;
   skills: SkillService;
   secrets: SecretStore;
@@ -127,6 +129,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     (error) => app.log.error(error),
   );
   const storySkills = new StorySkillsInstaller(skills, skillsRoot);
+  const beatWriter = new BeatWriterSkills(skills, customAgents, skillsRoot);
   const discover = new DiscoverService(
     db,
     books,
@@ -155,6 +158,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     customAgents,
     changesets,
     storySkills,
+    beatWriter,
     notebookMigration,
     skills,
     secrets,
@@ -179,17 +183,23 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   // Installed story-skills follow the bundled package version (ADR 0021):
   // unedited installs move to it, edited ones stay as the writer left them.
+  // The beat writer skills do the same (ADR 0034).
   app.addHook('onReady', async () => {
-    try {
-      const { upgraded, kept } = storySkills.refresh();
-      if (upgraded.length > 0 || kept.length > 0) {
-        app.log.info(
-          { upgraded: upgraded.map((skill) => skill.name), kept },
-          'refreshed story-skills installs',
-        );
+    for (const [label, installer] of [
+      ['story-skills', storySkills],
+      ['beat writer skills', beatWriter],
+    ] as const) {
+      try {
+        const { upgraded, kept } = installer.refresh();
+        if (upgraded.length > 0 || kept.length > 0) {
+          app.log.info(
+            { upgraded: upgraded.map((skill) => skill.name), kept },
+            `refreshed ${label} installs`,
+          );
+        }
+      } catch (error) {
+        app.log.error(error, `${label} refresh failed`);
       }
-    } catch (error) {
-      app.log.error(error, 'story-skills refresh failed');
     }
   });
 

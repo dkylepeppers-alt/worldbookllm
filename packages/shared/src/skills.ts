@@ -34,6 +34,12 @@ export const skillOriginSchema = z.discriminatedUnion('type', [
     package: z.string().regex(/^story-skills@[^\s@]+$/u),
     skillId: skillNameSchema,
   }),
+  // worldbookllm's own skills for the discovery beat writer (ADR 0034).
+  z.strictObject({
+    type: z.literal('beat-skills'),
+    package: z.string().regex(/^beat-skills@[^\s@]+$/u),
+    skillId: skillNameSchema,
+  }),
 ]);
 
 export const skillContentSchema = z.string().max(200_000);

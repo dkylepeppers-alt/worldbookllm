@@ -43,7 +43,7 @@ function originLabel(skill: SkillMetadata): string {
   if (skill.origin.type === 'bundled') {
     return skill.license === null ? 'Starter' : `Starter · ${skill.license}`;
   }
-  if (skill.origin.type === 'story-skills') {
+  if (skill.origin.type === 'story-skills' || skill.origin.type === 'beat-skills') {
     return skill.license === null
       ? skill.origin.package
       : `${skill.origin.package} · ${skill.license}`;

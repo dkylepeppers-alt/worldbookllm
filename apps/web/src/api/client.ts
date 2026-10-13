@@ -50,6 +50,7 @@ import {
   skillMetadataListSchema,
   skillMetadataSchema,
   storyCommandOutcomeSchema,
+  beatWriterInstallResultSchema,
   storySkillsInstallResultSchema,
   seriesSummarySchema,
   seriesHealthSchema,
@@ -121,6 +122,7 @@ import {
   type SkillDetail,
   type SkillMetadata,
   type StoryCommandOutcome,
+  type BeatWriterInstallResult,
   type StorySkillsInstallResult,
   type WriteBookFileInput,
 } from '@worldbookllm/shared';
@@ -314,6 +316,7 @@ export interface ApiClient {
     options: StreamAgentMessageOptions,
   ): Promise<void>;
   installStorySkills(signal?: AbortSignal): Promise<StorySkillsInstallResult>;
+  installBeatWriter(signal?: AbortSignal): Promise<BeatWriterInstallResult>;
   getProviderCatalog(signal?: AbortSignal): Promise<ProviderCatalogEntry[]>;
   listModels(connection: ProviderConnection, signal?: AbortSignal): Promise<ModelListResponse>;
   testConnection(config: ProviderConfig, signal?: AbortSignal): Promise<ConnectionTestResponse>;
@@ -762,6 +765,12 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
       request('/api/skills-story/install', {
         method: 'POST',
         schema: storySkillsInstallResultSchema,
+        signal,
+      }),
+    installBeatWriter: (signal) =>
+      request('/api/beat-writer/install', {
+        method: 'POST',
+        schema: beatWriterInstallResultSchema,
         signal,
       }),
     getProviderCatalog: (signal) =>

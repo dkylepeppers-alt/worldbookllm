@@ -122,4 +122,8 @@ export function registerAgentRoutes(app: FastifyInstance): void {
   app.post('/api/skills-story/install', async (_request, reply) =>
     reply.status(201).send(app.services.storySkills.install()),
   );
+
+  app.post('/api/beat-writer/install', async (_request, reply) =>
+    reply.status(201).send(app.services.beatWriter.install()),
+  );
 }

@@ -12,7 +12,7 @@ import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { useDiscover } from './useDiscover.js';
-import { useLoad } from './useLoad.js';
+import { errorMessage, useLoad } from './useLoad.js';
 
 const DEFAULT_SETUP: DiscoverSetup = {
   mode: 'lead',
@@ -397,6 +397,14 @@ function SetupForm({
           </label>
         </fieldset>
         <BeatWriterPicker agents={agentList} agentId={setup.agentId} onChange={pickAgent} />
+        {agentList === null || agentList.some((agent) => agent.name === 'Beat writer') ? null : (
+          <AddBeatWriter
+            onAdded={(id) => {
+              agents.reload();
+              pickAgent(id);
+            }}
+          />
+        )}
         <details className="discover-more">
           <summary>
             More options <span className="field-hint">{options}</span>
@@ -659,6 +667,38 @@ function SetupForm({
  * from the Agents page, whose instructions and the skills it names guide
  * every beat.
  */
+/** Installs the beat writer skills and the agent that names them (ADR 0034), and picks it. */
+function AddBeatWriter({ onAdded }: { onAdded: (agentId: string) => void }) {
+  const api = useApi();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="branch-actions">
+      <button
+        type="button"
+        className="button-secondary"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          api
+            .installBeatWriter()
+            .then((result) => onAdded(result.agent.id))
+            .catch((caught: unknown) => setError(errorMessage(caught)))
+            .finally(() => setBusy(false));
+        }}
+      >
+        {busy ? 'Adding…' : 'Add the Beat writer agent'}
+      </button>
+      <span className="field-hint">
+        Six skills written for discovery: beat shape, choices, memory, branching, voice, and the
+        reader&apos;s own actions.
+      </span>
+      {error === null ? null : <p className="form-error">{error}</p>}
+    </div>
+  );
+}
+
 function BeatWriterPicker({
   agents,
   agentId,

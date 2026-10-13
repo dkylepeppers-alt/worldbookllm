@@ -257,6 +257,12 @@ export const storySkillsInstallResultSchema = z.strictObject({
   kept: z.array(z.string()),
 });
 
+/** `POST /api/beat-writer/install`: the beat writer skills (ADR 0034) and the agent that names them. */
+export const beatWriterInstallResultSchema = z.strictObject({
+  agent: customAgentSchema,
+  skills: storySkillsInstallResultSchema,
+});
+
 export function encodeAgentSseEvent(event: AgentStreamEvent): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
@@ -276,5 +282,6 @@ export type AgentChangeset = z.infer<typeof agentChangesetSchema>;
 export type AgentChangesetDetail = z.infer<typeof agentChangesetDetailSchema>;
 export type AgentChangesetResolution = z.infer<typeof agentChangesetResolutionSchema>;
 export type StorySkillsInstallResult = z.infer<typeof storySkillsInstallResultSchema>;
+export type BeatWriterInstallResult = z.infer<typeof beatWriterInstallResultSchema>;
 export type AskUserArguments = z.infer<typeof askUserArgumentsSchema>;
 export type AskUserQuestion = AskUserArguments['questions'][number];

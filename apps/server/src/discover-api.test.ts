@@ -2,10 +2,16 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { BookSummary, Checkpoint, DiscoverState } from '@worldbookllm/shared';
+import type {
+  BeatWriterInstallResult,
+  BookSummary,
+  Checkpoint,
+  DiscoverState,
+} from '@worldbookllm/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { BEAT_SKILLS_PACKAGE } from './agent/discover/beat-skills.js';
 import { buildApp } from './app.js';
 import { parseFrontmatter } from './story/book-index.js';
 import { inkSection } from './story/interactive/format.js';
@@ -472,6 +478,68 @@ describe('discovering an interactive book', () => {
     expect(chapter(app, slug, 'chapter-02')).toContain(
       'She carries it up the stairs.\n\n* [Open the letter] -> chapter_03',
     );
+  }, 30_000);
+
+  it('installs the beat writer skills and the agent that names them, which the beat writer then follows', async () => {
+    const { app, slug, requests } = await boot(
+      [() => sse(toolCall('choices', 'write_choices', { choices: THREE })), PASS],
+      ['The keeper waits.'],
+    );
+    const first = await app.inject({ method: 'POST', url: '/api/beat-writer/install' });
+    expect(first.statusCode, first.body).toBe(201);
+    const installed = first.json<BeatWriterInstallResult>();
+    const names = [
+      'beat-shape',
+      'branch-economy',
+      'choice-design',
+      'memory-and-state',
+      'reader-actions',
+      'voice-continuity',
+    ];
+    expect(installed.skills.installed.map((skill) => skill.name)).toEqual(names);
+    expect(installed.skills.installed[0]).toMatchObject({
+      license: 'AGPL-3.0-only',
+      origin: { type: 'beat-skills', package: BEAT_SKILLS_PACKAGE, skillId: 'beat-shape' },
+    });
+    expect(installed.agent).toMatchObject({ name: 'Beat writer', skills: names });
+
+    // Installing again keeps the agent the writer may have edited.
+    const second = (
+      await app.inject({ method: 'POST', url: '/api/beat-writer/install' })
+    ).json<BeatWriterInstallResult>();
+    expect(second.agent.id).toBe(installed.agent.id);
+    expect(second.skills.skipped).toEqual(names);
+
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/discover/setup`,
+      payload: {
+        setup: {
+          mode: 'cowrite',
+          lookahead: 1,
+          choices: 3,
+          beatLength: 'scene',
+          rejoin: 'sometimes',
+          endings: '',
+          kernel: '',
+          shape: '',
+          agentId: installed.agent.id,
+        },
+        rules: '1. Different intents.',
+        variables: [],
+      },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/write`,
+      payload: { chapterId: 'chapter-01', position: null },
+    });
+    await settle(app, slug);
+    // All six fit the beat writer's skill budget, whole.
+    const system = JSON.stringify(requests[0]);
+    for (const name of names) expect(system).toContain(`### Skill: ${name}`);
+    expect(system).toContain('Accept by default');
   }, 30_000);
 
   it('turns the reader’s own action into a real choice, or declines it with a reason the writer can overrule', async () => {

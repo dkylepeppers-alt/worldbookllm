@@ -435,6 +435,43 @@ describe('Story setup', () => {
     expect(gone.mock.calls[0]![1].setup.agentId).toBeNull();
   });
 
+  it('adds the Beat writer agent with its skills and picks it', async () => {
+    const beatWriter = {
+      id: '66666666-6666-4666-8666-666666666666',
+      name: 'Beat writer',
+      description: 'Writes discovery beats with the beat writer skills.',
+      instructions: 'Follow your skills on every beat.',
+      skills: ['beat-shape', 'choice-design'],
+      createdAt: book.updatedAt,
+      updatedAt: book.updatedAt,
+    };
+    let agents: (typeof beatWriter)[] = [];
+    const installBeatWriter = vi.fn<ApiClient['installBeatWriter']>(() => {
+      agents = [beatWriter];
+      return Promise.resolve({
+        agent: beatWriter,
+        skills: { installed: [], skipped: [], upgraded: [], kept: [] },
+      });
+    });
+    const saveDiscoverSetup = vi.fn<ApiClient['saveDiscoverSetup']>(() =>
+      Promise.resolve(discovering),
+    );
+    renderAt('/books/gull-rock/branches/discover', {
+      listCustomAgents: () => Promise.resolve(agents),
+      installBeatWriter,
+      saveDiscoverSetup,
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add the Beat writer agent' }));
+    expect(installBeatWriter).toHaveBeenCalled();
+    const picker = screen.getByLabelText(/^Beat writer/u) as HTMLSelectElement;
+    await waitFor(() => expect(picker.value).toBe(beatWriter.id));
+    expect(screen.queryByRole('button', { name: 'Add the Beat writer agent' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Save and go to Play' }));
+    await waitFor(() => expect(saveDiscoverSetup).toHaveBeenCalled());
+    expect(saveDiscoverSetup.mock.calls[0]![1].setup.agentId).toBe(beatWriter.id);
+  });
+
   it('says when the provider cannot run the beat writer', async () => {
     renderAt('/books/gull-rock/branches/discover', {
       getDiscover: () => Promise.resolve(NO_DISCOVERY),

@@ -17,7 +17,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import matter from 'gray-matter';
 import { z } from 'zod';
 
-import type { SkillMetadata, StorySkillsInstallResult } from '@worldbookllm/shared';
+import type { SkillMetadata, SkillOrigin, StorySkillsInstallResult } from '@worldbookllm/shared';
 
 import { InvalidStoredDataError } from '../errors.js';
 import type { SkillService } from '../services/skills.js';
@@ -100,17 +100,32 @@ function isPlainPath(root: string, path: string): boolean {
   return true;
 }
 
+/**
+ * The bundled skill sets: the story-skills package, and worldbookllm's own
+ * beat writer skills (ADR 0034). A package id's name says which.
+ */
+type BundledKind = 'story-skills' | 'beat-skills';
+
+function kindOf(packageId: string): BundledKind {
+  return packageId.startsWith('beat-skills@') ? 'beat-skills' : 'story-skills';
+}
+
+const LICENSES: Record<BundledKind, string> = {
+  'story-skills': 'MIT',
+  'beat-skills': 'AGPL-3.0-only',
+};
+
 /** `story-skills@1.2.3` → [1, 2, 3]; null for anything else. */
 function parseVersion(packageId: string): number[] | null {
-  const match = /^story-skills@(\d+)\.(\d+)\.(\d+)$/u.exec(packageId);
+  const match = /^(?:story|beat)-skills@(\d+)\.(\d+)\.(\d+)$/u.exec(packageId);
   return match ? match.slice(1).map(Number) : null;
 }
 
-/** True only when `next` is a strictly newer plain semver than `current`. */
+/** True only when `next` is a strictly newer plain semver of the same set than `current`. */
 function isNewer(next: string, current: string): boolean {
   const a = parseVersion(next);
   const b = parseVersion(current);
-  if (!a || !b) return false;
+  if (!a || !b || kindOf(next) !== kindOf(current)) return false;
   for (let index = 0; index < 3; index += 1) {
     if (a[index]! !== b[index]!) return a[index]! > b[index]!;
   }
@@ -126,7 +141,8 @@ interface UpstreamSkill {
 
 /**
  * Installs the bundled story-skills skills into the skills library (ADR 0015
- * decision 6) and keeps them current (ADR 0021). Each SKILL.md is created
+ * decision 6) and keeps them current (ADR 0021). The beat writer skills
+ * install and upgrade the same way, from their own folder (ADR 0034). Each SKILL.md is created
  * through SkillService with its upstream text unchanged, and its references/
  * folder is copied beside it for read_skill_file. A skill the user created
  * is never touched.
@@ -146,6 +162,14 @@ export class StorySkillsInstaller {
     private readonly sourceDir: string = resolveStorySkillsDir(),
     private readonly packageId: string = STORY_SKILLS_PACKAGE,
   ) {}
+
+  private get kind(): BundledKind {
+    return kindOf(this.packageId);
+  }
+
+  private origin(name: string): SkillOrigin {
+    return { type: this.kind, package: this.packageId, skillId: name };
+  }
 
   /** Installs missing skills and refreshes existing installs. */
   install(): StorySkillsInstallResult {
@@ -171,7 +195,7 @@ export class StorySkillsInstaller {
         if (createMissing) result.installed.push(this.create(name));
         continue;
       }
-      if (current.origin.type !== 'story-skills' || current.origin.skillId !== name) {
+      if (current.origin.type !== this.kind || current.origin.skillId !== name) {
         result.skipped.push(name);
         continue;
       }
@@ -219,8 +243,8 @@ export class StorySkillsInstaller {
         name,
         description: upstream.description,
         content: upstream.content,
-        license: 'MIT',
-        origin: { type: 'story-skills', package: this.packageId, skillId: name },
+        license: LICENSES[this.kind],
+        origin: this.origin(name),
       });
       this.copyMissingReferences(name, upstream);
       this.writeBaseline(name, {
@@ -274,7 +298,7 @@ export class StorySkillsInstaller {
 
   /** Moves an unedited install to the bundled version; null when it was edited. */
   private upgrade(skill: SkillMetadata): SkillMetadata | null {
-    if (skill.origin.type !== 'story-skills') return null;
+    if (skill.origin.type !== this.kind) return null;
     const baseline = this.readBaseline(skill.name);
     if (!baseline || baseline.package !== skill.origin.package || baseline.skill === null) {
       return null;
@@ -325,7 +349,7 @@ export class StorySkillsInstaller {
       upgraded = this.skills.replaceInstalled(skill.id, {
         description: upstream.description,
         content: upstream.content,
-        origin: { ...skill.origin, package: this.packageId },
+        origin: this.origin(skill.name),
       });
     } catch (error) {
       rmSync(staging, { recursive: true, force: true });
