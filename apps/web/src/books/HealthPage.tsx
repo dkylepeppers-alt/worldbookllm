@@ -5,6 +5,7 @@ import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
+import { useDiscover } from './useDiscover.js';
 import { useLoad } from './useLoad.js';
 
 interface CheckCounts {
@@ -121,6 +122,7 @@ export function HealthPage() {
         </section>
       )}
 
+      {tree.book.interactive === true ? <DiscoverySection /> : null}
       {story?.compiled === true ? <PathsSection /> : null}
 
       {findings.length > 0 ? (
@@ -139,6 +141,93 @@ export function HealthPage() {
           </ul>
         </>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * Discovery (ADR 0033): branches not written yet, each a link into Play at
+ * the fewest choices that reach it, and beats written from a chapter that
+ * changed since, which the writer read or edited and so reviews.
+ */
+function DiscoverySection() {
+  const { slug, tree } = useBook();
+  const discover = useDiscover();
+  const state = discover.state;
+  if (state === null || state.setup === null) return null;
+  const book = `/books/${encodeURIComponent(slug)}`;
+  const titleOf = (id: string | null) =>
+    id === null ? null : (state.beats.find((beat) => beat.chapterId === id)?.title ?? id);
+  const fileOf = (id: string) =>
+    tree.files.find((file) => file.kind === 'chapter' && file.entityId === id);
+  return (
+    <section className="health-paths" id="discovery" aria-labelledby="health-discovery-heading">
+      <h3 id="health-discovery-heading">Discovery</h3>
+      {state.openThreads.length === 0 && state.needsReview.length === 0 ? (
+        <p>Every branch is written, and nothing waits for review.</p>
+      ) : null}
+      {state.openThreads.length > 0 ? (
+        <>
+          <h4>Open threads</h4>
+          <ul className="entry-list" aria-label="Open threads">
+            {state.openThreads.map((thread) => (
+              <li key={thread.chapterId}>
+                <span>{thread.title}</span>
+                {thread.from === null ? null : (
+                  <span className="coordinate-label">after {titleOf(thread.from)}</span>
+                )}
+                {thread.playPath === null ? (
+                  <span className="coordinate-label">No path played reaches it yet.</span>
+                ) : (
+                  <Link
+                    to={`${book}/branches/play?${new URLSearchParams({
+                      seed: '1',
+                      ...(thread.playPath.length === 0 ? {} : { path: thread.playPath.join('.') }),
+                    }).toString()}`}
+                  >
+                    Write it in Play ({plural(thread.playPath.length, 'choice', 'choices')} in)
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {state.needsReview.length > 0 ? (
+        <>
+          <h4>Needs review</h4>
+          <p className="coordinate-label">
+            The chapter these continue changed after they were written. You read or edited them, so
+            they were not rewritten: check they still follow, then mark them reviewed.
+          </p>
+          <ul className="entry-list" aria-label="Needs review">
+            {state.needsReview.map((beat) => {
+              const file = fileOf(beat.chapterId);
+              return (
+                <li key={beat.chapterId}>
+                  {file === undefined ? (
+                    <span>{beat.title}</span>
+                  ) : (
+                    <Link to={fileHref(slug, file.path)}>{beat.title}</Link>
+                  )}
+                  <span className="coordinate-label">after {titleOf(beat.from)}</span>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={discover.busy}
+                    onClick={() =>
+                      void discover.run((api) => api.markDiscoverReviewed(slug, beat.chapterId))
+                    }
+                  >
+                    Mark reviewed
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
+      {discover.error === null ? null : <p className="form-error">{discover.error}</p>}
     </section>
   );
 }

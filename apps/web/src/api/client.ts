@@ -8,6 +8,15 @@ import {
   chapterEndingDetailSchema,
   inkConversionPreviewSchema,
   interactiveStorySchema,
+  discoverStateSchema,
+  type DiscoverState,
+  type SaveDiscoverSetupInput,
+  type PlayPosition,
+  type DraftBeatInput,
+  type WriteBeatInput,
+  type SomethingElseInput,
+  type ProposeVariablesInput,
+  type ProposalDecision,
   pathReportSchema,
   bookBuildFileSchema,
   bookPlaySchema,
@@ -236,6 +245,26 @@ export interface ApiClient {
   convertToInk(slug: string, input: ConvertToInkInput, signal?: AbortSignal): Promise<BookSummary>;
   /** The story compiled for Play. */
   getPlay(slug: string, signal?: AbortSignal): Promise<BookPlay>;
+  /** Discovery's state for a book: setup, beats, open threads, and the beat writer's jobs (ADR 0033). */
+  getDiscover(slug: string, signal?: AbortSignal): Promise<DiscoverState>;
+  saveDiscoverSetup(slug: string, input: SaveDiscoverSetupInput): Promise<DiscoverState>;
+  /** Asks the beat writer to propose variables; they arrive on a job. */
+  proposeDiscoverVariables(slug: string, input: ProposeVariablesInput): Promise<DiscoverState>;
+  decideDiscoverProposal(
+    slug: string,
+    id: string,
+    decision: ProposalDecision,
+  ): Promise<DiscoverState>;
+  /** Where the reader is in Play; lead mode writes ahead from there. */
+  setDiscoverPosition(slug: string, position: PlayPosition): Promise<DiscoverState>;
+  writeDiscoverBeat(slug: string, input: WriteBeatInput): Promise<DiscoverState>;
+  draftDiscoverBeat(slug: string, input: DraftBeatInput): Promise<DiscoverState>;
+  acceptDiscoverDraft(slug: string, jobId: string, draftId: string): Promise<DiscoverState>;
+  somethingElse(slug: string, input: SomethingElseInput): Promise<DiscoverState>;
+  retryDiscoverJob(slug: string, jobId: string): Promise<DiscoverState>;
+  dismissDiscoverJob(slug: string, jobId: string): Promise<DiscoverState>;
+  markDiscoverReviewed(slug: string, chapterId: string): Promise<DiscoverState>;
+  setSeedNote(slug: string, chapterId: string, note: string): Promise<DiscoverState>;
   pinIfid(slug: string, signal?: AbortSignal): Promise<PinnedIfid>;
   /** Copies a book as a separate interactive edition and returns the new book. */
   createInteractiveEdition(
@@ -554,6 +583,76 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         body: input,
         schema: interactiveStorySchema,
         signal,
+      }),
+    getDiscover: (slug, signal) =>
+      request(`${book(slug)}/discover`, { schema: discoverStateSchema, signal }),
+    saveDiscoverSetup: (slug, input) =>
+      request(`${book(slug)}/discover/setup`, {
+        method: 'PUT',
+        body: input,
+        schema: discoverStateSchema,
+      }),
+    proposeDiscoverVariables: (slug, input) =>
+      request(`${book(slug)}/discover/variables`, {
+        method: 'POST',
+        body: input,
+        schema: discoverStateSchema,
+      }),
+    decideDiscoverProposal: (slug, id, decision) =>
+      request(`${book(slug)}/discover/proposals/${encodeURIComponent(id)}`, {
+        method: 'POST',
+        body: decision,
+        schema: discoverStateSchema,
+      }),
+    setDiscoverPosition: (slug, position) =>
+      request(`${book(slug)}/discover/position`, {
+        method: 'POST',
+        body: { position },
+        schema: discoverStateSchema,
+      }),
+    writeDiscoverBeat: (slug, input) =>
+      request(`${book(slug)}/discover/write`, {
+        method: 'POST',
+        body: input,
+        schema: discoverStateSchema,
+      }),
+    draftDiscoverBeat: (slug, input) =>
+      request(`${book(slug)}/discover/drafts`, {
+        method: 'POST',
+        body: input,
+        schema: discoverStateSchema,
+      }),
+    acceptDiscoverDraft: (slug, jobId, draftId) =>
+      request(
+        `${book(slug)}/discover/jobs/${encodeURIComponent(jobId)}/drafts/${encodeURIComponent(draftId)}`,
+        { method: 'POST', schema: discoverStateSchema },
+      ),
+    somethingElse: (slug, input) =>
+      request(`${book(slug)}/discover/something-else`, {
+        method: 'POST',
+        body: input,
+        schema: discoverStateSchema,
+      }),
+    retryDiscoverJob: (slug, jobId) =>
+      request(`${book(slug)}/discover/jobs/${encodeURIComponent(jobId)}/retry`, {
+        method: 'POST',
+        schema: discoverStateSchema,
+      }),
+    dismissDiscoverJob: (slug, jobId) =>
+      request(`${book(slug)}/discover/jobs/${encodeURIComponent(jobId)}`, {
+        method: 'DELETE',
+        schema: discoverStateSchema,
+      }),
+    markDiscoverReviewed: (slug, chapterId) =>
+      request(`${book(slug)}/discover/chapters/${encodeURIComponent(chapterId)}/reviewed`, {
+        method: 'POST',
+        schema: discoverStateSchema,
+      }),
+    setSeedNote: (slug, chapterId, note) =>
+      request(`${book(slug)}/discover/chapters/${encodeURIComponent(chapterId)}/note`, {
+        method: 'PUT',
+        body: { note },
+        schema: discoverStateSchema,
       }),
     getPathReport: (slug, signal) =>
       request(`${book(slug)}/paths`, { schema: pathReportSchema, signal }),

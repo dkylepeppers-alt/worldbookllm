@@ -1,4 +1,4 @@
-import type { BookPlay, PlayKnot } from '@worldbookllm/shared';
+import type { BookPlay, PlayKnot, PlayPosition } from '@worldbookllm/shared';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -9,6 +9,16 @@ import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
 import { markdownOf } from './play-markdown.js';
+import {
+  DiscoverStatus,
+  EndPanel,
+  PathTrail,
+  Proposals,
+  RewriteBeat,
+  SeedPanel,
+  SomethingElse,
+} from './PlayDiscover.js';
+import { useDiscover, type Discover } from './useDiscover.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 type InkRuntime = typeof import('inkjs');
@@ -25,6 +35,8 @@ interface Turn {
   choices: string[];
   /** The choice that led here, or null at the start. */
   chosen: string | null;
+  /** Every choice taken to get here, in order. */
+  trail: string[];
   /** A choice in the address that the story no longer offers. */
   stale: boolean;
   /** Each global variable's value now. */
@@ -122,10 +134,12 @@ function replay(runtime: InkRuntime, play: BookPlay, start: Start, path: readonl
   // The chapter the reader is in, kept across turns whose lines enter none.
   let current: PlayKnot | null = null;
   let chosen: string | null = null;
+  const trail: string[] = [];
   const turn = (stale: boolean): Turn => ({
     segments,
     choices: story.currentChoices.map((entry) => entry.text),
     chosen,
+    trail: [...trail],
     stale,
     state: play.variables.map(({ name }) => ({
       name,
@@ -136,6 +150,7 @@ function replay(runtime: InkRuntime, play: BookPlay, start: Start, path: readonl
     const choice = story.currentChoices[index];
     if (choice === undefined) return turn(true);
     chosen = choice.text;
+    trail.push(choice.text);
     story.ChooseChoiceIndex(index);
     current = [...segments].reverse().find((segment) => segment.knot !== null)?.knot ?? current;
     segments = runToChoice(story, play.knots, current);
@@ -188,6 +203,8 @@ export function PlayPage() {
     `${slug}:${tree.files.map((file) => file.hash).join()}`,
   );
   const branchesHref = `/books/${encodeURIComponent(slug)}/branches`;
+  const discover = useDiscover();
+  const discovering = discover.state?.setup != null ? discover : null;
 
   return (
     <section className="book-panel play-page" aria-labelledby="play-heading">
@@ -211,12 +228,26 @@ export function PlayPage() {
           </p>
         </>
       ) : null}
-      {story.status === 'ready' ? <InkPlayer slug={slug} play={story.data} /> : null}
+      {discovering === null ? null : (
+        <DiscoverStatus discover={discovering} state={discovering.state!} />
+      )}
+      {story.status === 'ready' ? (
+        <InkPlayer slug={slug} play={story.data} discover={discovering} />
+      ) : null}
     </section>
   );
 }
 
-function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
+function InkPlayer({
+  slug,
+  play,
+  discover,
+}: {
+  slug: string;
+  play: BookPlay;
+  /** Discovery, when the book is set up for it (ADR 0033). */
+  discover: Discover | null;
+}) {
   const [runtime, setRuntime] = useState<InkRuntime | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
@@ -271,6 +302,20 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
     }
   }, [runtime, play, start, path]);
 
+  // Lead mode writes ahead from where the reader is; reading a beat marks it read.
+  const position = useMemo<PlayPosition>(
+    () => ({ from: start.from, set: start.set, seed: start.seed, path: [...path] }),
+    [start, path],
+  );
+  const report = discover === null ? null : discover.run;
+  const positionKey = JSON.stringify(position);
+  useEffect(() => {
+    if (report === null || typeof turn !== 'object' || turn === null || turn.stale) return;
+    void report((api) => api.setDiscoverPosition(slug, position));
+    // Report each place once, not on every state change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positionKey, report === null, typeof turn === 'object' && turn !== null && !turn.stale]);
+
   if (loadError !== null) {
     return <ErrorState title="The ink runtime could not load" message={loadError} />;
   }
@@ -320,14 +365,28 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
           </button>
         </p>
       )}
+      {discover === null ? null : (
+        <PathTrail
+          trail={turn.trail}
+          onBack={(steps) =>
+            setParams({
+              ...startParams(start),
+              ...(steps === 0 ? {} : { path: path.slice(0, steps).join('.') }),
+            })
+          }
+        />
+      )}
       <Passage
         slug={slug}
         turn={turn}
+        discover={discover}
+        position={position}
         step={`${fromParam ?? ''}:${setParam ?? ''}:${seedParam ?? ''}:${path.join('.')}`}
         atStart={path.length === 0}
         onChoose={(index) => setParams({ ...startParams(start), path: [...path, index].join('.') })}
         onRestart={() => setParams(startParams({ ...start, seed: newSeed() }))}
       />
+      {discover === null ? null : <Proposals discover={discover} state={discover.state!} />}
       {turn.state.length > 0 ? (
         <section className="play-state" aria-labelledby="play-state-heading">
           <h3 id="play-state-heading">Story state</h3>
@@ -510,6 +569,8 @@ function Saves({
 function Passage({
   slug,
   turn,
+  discover,
+  position,
   step,
   atStart,
   onChoose,
@@ -517,6 +578,8 @@ function Passage({
 }: {
   slug: string;
   turn: Turn;
+  discover: Discover | null;
+  position: PlayPosition;
   step: string;
   atStart: boolean;
   onChoose: (index: number) => void;
@@ -539,6 +602,8 @@ function Passage({
   const chapter = tree.files.find(
     (file) => file.kind === 'chapter' && file.entityId === last?.chapterId,
   );
+  const state = discover?.state ?? null;
+  const beat = state?.beats.find((entry) => entry.chapterId === last?.chapterId);
 
   return (
     <article ref={passage} tabIndex={-1} className="play-passage" aria-label="Story">
@@ -569,15 +634,45 @@ function Passage({
               </button>
             </li>
           ))}
+          {state === null ? null : (
+            <SomethingElse
+              key={step}
+              discover={discover!}
+              state={state}
+              position={position}
+              offered={turn.choices.length}
+              onChoose={onChoose}
+            />
+          )}
         </ul>
+      ) : state !== null && beat?.state === 'seed' && !turn.stale ? (
+        <SeedPanel
+          key={beat.chapterId}
+          discover={discover!}
+          state={state}
+          beat={beat}
+          position={position}
+        />
       ) : (
         <div className="play-end">
-          {turn.stale ? null : <p>The end.</p>}
+          {turn.stale ? null : beat !== undefined && !beat.ending && state !== null ? (
+            <EndPanel
+              discover={discover!}
+              state={state}
+              chapterId={beat.chapterId}
+              position={position}
+            />
+          ) : (
+            <p>The end.</p>
+          )}
           <button type="button" className="button-primary" onClick={onRestart}>
             {turn.stale ? 'Start over' : 'Play again'}
           </button>
         </div>
       )}
+      {state !== null && beat?.state === 'written' && !turn.stale ? (
+        <RewriteBeat key={beat.chapterId} discover={discover!} beat={beat} position={position} />
+      ) : null}
       <p className="coordinate-label">
         {chapter === undefined ? null : (
           <Link to={fileHref(slug, chapter.path)}>Edit {chapter.title}</Link>

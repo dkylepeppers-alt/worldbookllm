@@ -1,4 +1,4 @@
-import type { InkConversionPreview, InteractiveStory } from '@worldbookllm/shared';
+import type { DiscoverState, InkConversionPreview, InteractiveStory } from '@worldbookllm/shared';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -8,6 +8,7 @@ import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { BranchMap } from './BranchMap.js';
+import { useDiscover } from './useDiscover.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 /**
@@ -52,6 +53,7 @@ function StoryHub() {
 }
 
 function Hub({ slug, story }: { slug: string; story: InteractiveStory }) {
+  const discover = useDiscover();
   const base = `/books/${encodeURIComponent(slug)}`;
   const errors = story.diagnostics.filter((entry) => entry.severity === 'error').length;
   const warnings = story.diagnostics.filter((entry) => entry.severity === 'warning').length;
@@ -95,12 +97,81 @@ function Hub({ slug, story }: { slug: string; story: InteractiveStory }) {
           to edit it. Variables and shared ink live in <code>ink/</code>.
         </p>
       </div>
+      {discover.state === null ? null : <DiscoverCard slug={slug} state={discover.state} />}
       {story.compiled ? (
-        <BranchMap slug={slug} story={story} />
+        <BranchMap
+          slug={slug}
+          story={story}
+          seeds={
+            new Set(
+              (discover.state?.beats ?? [])
+                .filter((beat) => beat.state === 'seed')
+                .map((beat) => beat.chapterId),
+            )
+          }
+        />
       ) : (
         <p className="empty-map">The map appears once the ink compiles.</p>
       )}
     </>
+  );
+}
+
+/**
+ * Discovery (ADR 0033) on the hub: the way in for a book not set up for it,
+ * and for one that is, its mode and what is waiting on the writer.
+ */
+function DiscoverCard({ slug, state }: { slug: string; state: DiscoverState }) {
+  const base = `/books/${encodeURIComponent(slug)}/branches`;
+  if (state.setup === null) {
+    return (
+      <section className="branch-ifid" aria-labelledby="discover-heading">
+        <h3 id="discover-heading">Discover it by playing</h3>
+        <p>
+          No outline needed. Set up the premise, what the story remembers, and the rules for
+          choices; then play. The beat writer writes each scene and its choices, ahead of you or
+          when you ask, and you can always type Something else.
+        </p>
+        <Link className="button-secondary" to={`${base}/discover`}>
+          Set up discovery
+        </Link>
+      </section>
+    );
+  }
+  const threads = state.openThreads.length;
+  const review = state.needsReview.length;
+  const working = state.jobs.filter((job) => job.status === 'queued' || job.status === 'running');
+  return (
+    <section className="branch-ifid" aria-labelledby="discover-heading">
+      <h3 id="discover-heading">Discovery</h3>
+      <p>
+        {state.setup.mode === 'lead'
+          ? `Lead mode: the beat writer stays ${state.setup.lookahead === 1 ? 'one step' : 'two steps'} ahead of you.`
+          : 'Co-write mode: the beat writer drafts when you ask.'}{' '}
+        {threads === 0
+          ? 'Every branch is written.'
+          : `${threads} ${threads === 1 ? 'branch is' : 'branches are'} not written yet.`}
+        {review === 0 ? '' : ` ${review} ${review === 1 ? 'beat needs' : 'beats need'} review.`}
+      </p>
+      {working.length === 0 ? null : (
+        <p className="coordinate-label" role="status">
+          {working[0]!.title}…
+        </p>
+      )}
+      <div className="branch-actions">
+        <Link className="button-primary" to={`${base}/play`}>
+          Play and write
+        </Link>
+        <Link className="button-secondary" to={`${base}/discover`}>
+          Story setup
+        </Link>
+        {threads + review === 0 ? null : (
+          <Link className="text-button" to={`/books/${encodeURIComponent(slug)}/health#discovery`}>
+            Open threads on Health
+          </Link>
+        )}
+      </div>
+    </section>
   );
 }
 

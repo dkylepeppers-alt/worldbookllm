@@ -4,6 +4,20 @@ import type { ApiClient } from '../api/client.js';
 
 const unused = () => Promise.reject(new Error('Unexpected API call'));
 
+/** A book that discovery has not been set up for (ADR 0033). */
+export const NO_DISCOVERY = {
+  setup: null,
+  rules: '',
+  variables: [],
+  proposals: [],
+  beats: [],
+  openThreads: [],
+  needsReview: [],
+  jobs: [],
+  writerReady: false,
+  writerProblem: 'Configure a provider in Settings to write with the beat writer.',
+};
+
 export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     listBookConflicts: async () => [],
@@ -42,6 +56,19 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     getInkConversion: unused,
     convertToInk: unused,
     getPlay: unused,
+    getDiscover: () => Promise.resolve(NO_DISCOVERY),
+    saveDiscoverSetup: unused,
+    proposeDiscoverVariables: unused,
+    decideDiscoverProposal: unused,
+    setDiscoverPosition: () => Promise.resolve(NO_DISCOVERY),
+    writeDiscoverBeat: unused,
+    draftDiscoverBeat: unused,
+    acceptDiscoverDraft: unused,
+    somethingElse: unused,
+    retryDiscoverJob: unused,
+    dismissDiscoverJob: unused,
+    markDiscoverReviewed: unused,
+    setSeedNote: unused,
     pinIfid: unused,
     createInteractiveEdition: unused,
     listBuilds: () => Promise.resolve([]),
