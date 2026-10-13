@@ -2891,6 +2891,91 @@ ol.inspector-sections {
   font-family: var(--font-mono);
 }
 
+/* Help text in the discovery setup: muted and quiet, so the fields carry the weight. */
+.field-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.discover-draft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.discover-draft .field-hint {
+  flex: 1 1 16rem;
+}
+
+.discover-more,
+.discover-rules {
+  min-width: 0;
+}
+
+.discover-more > summary,
+.discover-rules > summary {
+  display: flex;
+  flex-wrap: wrap;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  cursor: pointer;
+  font-weight: 550;
+}
+
+.discover-rules > summary {
+  font-weight: 620;
+}
+
+.discover-more-body {
+  display: grid;
+  gap: 1rem;
+  padding-top: 0.5rem;
+}
+
+.discover-form > details.branch-card[open] {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.discover-suggestions {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.discover-suggestions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+/* On wider screens the save button stays in reach on a long form; on a phone it ends the form. */
+.discover-save-bar {
+  display: grid;
+  gap: 0.5rem;
+}
+
+@media (min-width: 800px) {
+  .discover-save-bar {
+    position: sticky;
+    z-index: 10;
+    bottom: 0;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    padding: 0.75rem 0;
+  }
+}
+
 .discover-proposed {
   display: grid;
   gap: 0.5rem;

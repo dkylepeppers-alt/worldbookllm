@@ -584,7 +584,11 @@ describe('discovering an interactive book', () => {
     expect(state.jobs[0]).toMatchObject({
       kind: 'variables',
       status: 'done',
-      variables: [{ name: 'courage', initial: '0', meaning: 'How brave' }],
+      // A name ink cannot use is made into one it can, not dropped.
+      variables: [
+        { name: 'courage', initial: '0', meaning: 'How brave' },
+        { name: 'bad_name', initial: '0', meaning: 'x' },
+      ],
     });
   }, 30_000);
 

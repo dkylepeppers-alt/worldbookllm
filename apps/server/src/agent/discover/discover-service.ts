@@ -35,6 +35,7 @@ import {
   choicesFiles,
   discoverBeats,
   leadFrontier,
+  looseVariable,
   markReviewed,
   nextChapterNumber,
   readRules,
@@ -86,6 +87,7 @@ import {
   type HandlerOutcome,
   type ModelAccess,
 } from './beat-writer.js';
+import { readJsonReply } from './model-json.js';
 
 /**
  * Discovery (ADR 0033): the story setup, the beat writer's jobs, and lead
@@ -1248,11 +1250,10 @@ export class DiscoverService {
               .join('\n');
       },
       propose: (variable) => {
-        const parsed = discoverVariableSchema.safeParse({
-          name: variable.name,
-          initial: variable.initial,
-          meaning: variable.meaning,
-        });
+        const loose = looseVariable(variable);
+        const parsed = discoverVariableSchema.safeParse(
+          loose ?? { name: variable.name, initial: variable.initial, meaning: variable.meaning },
+        );
         if (!parsed.success) {
           return `Not recorded: ${parsed.error.issues.map((issue) => issue.message).join('; ')}`;
         }
@@ -1557,22 +1558,25 @@ export class DiscoverService {
       { ...model.controls, thinking: false },
     );
     const { text } = await streamStep(model.providers, model.config, request, model.signal);
-    const json = /\{[\s\S]*\}/u.exec(text)?.[0];
-    if (json === undefined) throw new BeatWriterError('The model did not propose any variables.');
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(json);
-    } catch {
-      throw new BeatWriterError('The model did not propose any variables.');
+    const parsed = readJsonReply(text);
+    const list = Array.isArray(parsed)
+      ? parsed
+      : (parsed as { variables?: unknown } | undefined)?.variables;
+    const variables = new Map<string, DiscoverVariable>();
+    for (const entry of Array.isArray(list) ? list : []) {
+      const variable = looseVariable(entry);
+      if (variable !== null && !variables.has(variable.name)) {
+        variables.set(variable.name, variable);
+      }
     }
-    const list = (parsed as { variables?: unknown }).variables;
-    const variables = (Array.isArray(list) ? list : []).flatMap((entry) => {
-      const result = discoverVariableSchema.safeParse(entry);
-      return result.success ? [result.data] : [];
-    });
-    if (variables.length === 0)
-      throw new BeatWriterError('The model did not propose any usable variables.');
-    return variables;
+    if (variables.size === 0) {
+      throw new BeatWriterError(
+        parsed === undefined
+          ? 'The model did not answer with a list of variables. Try again, or add them yourself.'
+          : 'The model proposed no variables that ink can use. Try again, or add them yourself.',
+      );
+    }
+    return [...variables.values()];
   }
 
   private async suggestStory(
@@ -1610,13 +1614,7 @@ export class DiscoverService {
       { ...model.controls, thinking: false },
     );
     const { text } = await streamStep(model.providers, model.config, request, model.signal);
-    const json = /\{[\s\S]*\}/u.exec(text)?.[0];
-    let parsed: unknown;
-    try {
-      parsed = json === undefined ? undefined : JSON.parse(json);
-    } catch {
-      parsed = undefined;
-    }
+    const parsed = readJsonReply(text);
     const fields = typeof parsed === 'object' && parsed !== null ? parsed : {};
     // A field the model leaves out or blank keeps what the writer sent.
     const field = (key: keyof StoryDraft, max: number) => {
