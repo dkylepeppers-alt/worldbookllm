@@ -7,7 +7,7 @@ import type {
   DiscoverJob,
   DiscoverState,
 } from '@worldbookllm/shared';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Compiler, CompilerOptions } from 'inkjs/full';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -204,7 +204,7 @@ describe('Story setup', () => {
     const save = await screen.findByRole('button', { name: 'Save and start playing' });
     // The book has chapters, so the premise is optional: the scenes tell the beat writer the story.
     expect((save as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.getByText(/Optional: the scenes already written/u)).toBeTruthy();
+    expect(screen.getByText(/Optional: your chapters tell the story so far/u)).toBeTruthy();
     // A new setup asks the beat writer for a draft straight away.
     await waitFor(() =>
       expect(proposeDiscoverStory).toHaveBeenCalledWith('gull-rock', {
@@ -324,6 +324,71 @@ describe('Story setup', () => {
     await user.type(screen.getByLabelText(/^Premise/u), ' Then a storm.');
     expect((screen.getByLabelText(/^Premise/u) as HTMLTextAreaElement).value).toBe(
       'A keeper finds a letter. Then a storm.',
+    );
+  });
+
+  it('keeps unsaved changes when the writer leaves and comes back, until they discard them', async () => {
+    const fresh: DiscoverState = {
+      ...NO_DISCOVERY,
+      rules: '1. Default rule.',
+      writerReady: true,
+      writerProblem: null,
+    };
+    const proposeDiscoverStory = vi.fn<ApiClient['proposeDiscoverStory']>(() =>
+      Promise.resolve(fresh),
+    );
+    const overrides = { getDiscover: () => Promise.resolve(fresh), proposeDiscoverStory };
+    renderAt('/books/gull-rock/branches/discover', overrides);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText('Endings'), 'Just one');
+    expect(screen.getByText(/Not saved yet/u)).toBeTruthy();
+    cleanup();
+
+    renderAt('/books/gull-rock/branches/discover', overrides);
+    const endings = await screen.findByLabelText('Endings');
+    expect((endings as HTMLInputElement).value).toBe('Just one');
+    // The writer has started, so opening the form again does not ask for a new draft.
+    expect(proposeDiscoverStory).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    expect((endings as HTMLInputElement).value).toBe('');
+    expect(screen.queryByText(/Not saved yet/u)).toBeNull();
+  });
+
+  it('adds the variables the beat writer suggests one at a time or all together', async () => {
+    const suggested: DiscoverState = {
+      ...discovering,
+      variables: [],
+      jobs: [
+        job({
+          kind: 'variables',
+          variables: [
+            { name: 'trust', initial: '0', meaning: 'How much she trusts you' },
+            { name: 'knows', initial: 'false', meaning: 'Whether you read it' },
+          ],
+        }),
+      ],
+    };
+    const dismissDiscoverJob = vi.fn<ApiClient['dismissDiscoverJob']>(() =>
+      Promise.resolve({ ...suggested, jobs: [] }),
+    );
+    renderAt('/books/gull-rock/branches/discover', {
+      getDiscover: () => Promise.resolve(suggested),
+      dismissDiscoverJob,
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add knows' }));
+    const list = screen.getByRole('list', { name: 'Variables' });
+    expect(
+      within(list)
+        .getAllByLabelText('Name')
+        .map((input) => (input as HTMLInputElement).value),
+    ).toEqual(['knows']);
+    expect(dismissDiscoverJob).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Add trust' }));
+    expect(dismissDiscoverJob).toHaveBeenCalledWith(
+      'gull-rock',
+      '11111111-1111-4111-8111-111111111111',
     );
   });
 
@@ -518,6 +583,48 @@ describe('Play while discovering', () => {
     expect(screen.getByTestId('location').textContent).toBe(
       '/books/gull-rock/branches/play?seed=1',
     );
+  });
+
+  it('offers to go on from the end of a chapter the writer wrote', async () => {
+    // A converted book: discovery manages none of its chapters, so each one is the writer's.
+    const converted: DiscoverState = { ...discovering, beats: [], openThreads: [] };
+    const writeDiscoverBeat = vi.fn<ApiClient['writeDiscoverBeat']>(() =>
+      Promise.resolve(converted),
+    );
+    renderAt('/books/gull-rock/branches/play?seed=1&path=1', {
+      getDiscover: () => Promise.resolve(converted),
+      setDiscoverPosition: () => Promise.resolve(converted),
+      writeDiscoverBeat,
+    });
+    const user = userEvent.setup();
+    expect(await screen.findByText('It curls in the flame.')).toBeTruthy();
+    expect(screen.queryByText('The end.')).toBeNull();
+    expect(screen.getByText(/Your chapter ends here/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Write what happens next' }));
+    expect(writeDiscoverBeat).toHaveBeenCalledWith('gull-rock', {
+      chapterId: 'chapter-03',
+      position: { from: null, set: {}, seed: 1, path: [1] },
+    });
+  });
+
+  it('offers no way on from a chapter whose choices this path cannot take', async () => {
+    // Its choices are all conditional and closed here: they are still its choices.
+    const closed: DiscoverState = {
+      ...discovering,
+      beats: [],
+      openThreads: [],
+      closingChoices: {
+        ...discovering.closingChoices,
+        'chapter-03': ['Read the ashes'],
+      },
+    };
+    renderAt('/books/gull-rock/branches/play?seed=1&path=1', {
+      getDiscover: () => Promise.resolve(closed),
+      setDiscoverPosition: () => Promise.resolve(closed),
+    });
+    expect(await screen.findByText('It curls in the flame.')).toBeTruthy();
+    expect(await screen.findByText('The end.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Write what happens next' })).toBeNull();
   });
 
   it('lists the variables the beat writer asks for, to add or decline', async () => {

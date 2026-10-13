@@ -261,16 +261,23 @@ function Drafts({ discover, job }: { discover: Discover; job: DiscoverJob }) {
   );
 }
 
-/** At a written beat that leads nowhere yet: the way on. */
+/**
+ * At a chapter that leads nowhere yet: the way on. The beat writer adds
+ * choices to the end of it and writes the beats they lead to; a chapter the
+ * writer wrote keeps its prose.
+ */
 export function EndPanel({
   discover,
   state,
   chapterId,
+  yours,
   position,
 }: {
   discover: Discover;
   state: DiscoverState;
   chapterId: string;
+  /** A chapter the writer wrote, not the beat writer. */
+  yours: boolean;
   position: PlayPosition;
 }) {
   const { slug } = useBook();
@@ -283,19 +290,27 @@ export function EndPanel({
       </p>
     );
   }
-  if (!state.writerReady) return null;
+  if (!state.writerReady) return yours ? <p>The end.</p> : null;
   return (
-    <div className="branch-actions">
-      <button
-        type="button"
-        className="button-primary"
-        disabled={discover.busy}
-        onClick={() =>
-          void discover.run((api) => api.writeDiscoverBeat(slug, { chapterId, position }))
-        }
-      >
-        Write what happens next
-      </button>
+    <div className="discover-end">
+      {yours ? (
+        <p className="coordinate-label">
+          Your chapter ends here. The beat writer can add the choices it ends with and write where
+          they lead; your prose stays as you wrote it.
+        </p>
+      ) : null}
+      <div className="branch-actions">
+        <button
+          type="button"
+          className="button-primary"
+          disabled={discover.busy}
+          onClick={() =>
+            void discover.run((api) => api.writeDiscoverBeat(slug, { chapterId, position }))
+          }
+        >
+          Write what happens next
+        </button>
+      </div>
     </div>
   );
 }

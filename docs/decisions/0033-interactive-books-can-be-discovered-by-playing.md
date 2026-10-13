@@ -55,6 +55,9 @@ An interactive book can be written by hand in ink, or with the agent's plan-firs
    Each written beat is its own checkpoint with the actor `agent`, so it can be undone alone.
 
 6. **Lead mode writes ahead of the reader.** The Play screen reports where the reader is. The server replays that path and marks the chapters it visits as read; reads are kept in SQLite. It then queues every seed within the look-ahead of the reader's position, nearest first, one book at a time. With the default look-ahead of 1, the beat after every choice the reader can see is always written. A look-ahead of 2 writes the layer after that too.
+
+   Lead mode leaves the writer's own chapters alone, such as those of a book converted to ink, because one that ends without choices may be an ending. When the reader reaches the end of such a chapter, Play offers _Write what happens next_. The beat writer then adds the chapter's closing choices, with a seed for each, and keeps the prose as written. From there discovery goes on as usual.
+
 7. **Edits upstream invalidate beats below them.** When a chapter's ink changes, the beats written from it are stale:
    - A stale beat that is unread and unedited is rewritten.
    - Any other stale beat is listed on Health under _Needs review_ until the writer marks it reviewed, which records the new parent hash. It is never rewritten.

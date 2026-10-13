@@ -58,9 +58,9 @@ test('discover an interactive book by playing it', async ({ page, request }) => 
     await page
       .getByLabel(/^Premise/u)
       .fill('A lighthouse keeper receives a letter she cannot read.');
-    await page.getByRole('button', { name: 'Propose from the premise and bible' }).click();
+    await page.getByRole('button', { name: 'Suggest variables' }).click();
     await expect(page.getByText(STUB_VARIABLE.meaning)).toBeVisible();
-    await page.getByRole('button', { name: 'Add it' }).click();
+    await page.getByRole('button', { name: `Add ${STUB_VARIABLE.name}` }).click();
     const variables = page.getByRole('list', { name: 'Variables' });
     await expect(variables.getByLabel('Name')).toHaveValue(STUB_VARIABLE.name);
     // Lead mode, one step ahead, three choices, and the beat writer writes the opening.

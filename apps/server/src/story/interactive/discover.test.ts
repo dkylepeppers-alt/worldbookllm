@@ -7,6 +7,7 @@ import {
   discoverBeats,
   inkHash,
   leadFrontier,
+  looseVariable,
   markReviewed,
   nextChapterNumber,
   readKernel,
@@ -107,6 +108,24 @@ describe('the story setup', () => {
     expect(readKernel(again)).toBe('Another kernel.');
   });
 
+  it('keeps the whole of a shape or kernel that has headings of its own', () => {
+    const setup = {
+      mode: 'lead' as const,
+      lookahead: 1 as const,
+      choices: 3,
+      beatLength: 'scene' as const,
+      rejoin: 'often' as const,
+      endings: '',
+      kernel: 'A keeper.\n\n## Want\n\nThe truth.',
+      shape: '# Tone\n\nCold.\n\n## Length\n\nShort.',
+    };
+    const story = withKernel(STORY, setup.kernel);
+    expect(readKernel(story)).toBe('A keeper.\n\n### Want\n\nThe truth.');
+    expect(readSetup(setupFile(setup), story)?.shape).toBe(
+      '### Tone\n\nCold.\n\n### Length\n\nShort.',
+    );
+  });
+
   it('reads no setup when the book has none, and the default rules when it has no rules file', () => {
     expect(readSetup(null, STORY)).toBeNull();
     expect(readRules(null)).toBe(DEFAULT_CHOICE_RULES);
@@ -115,6 +134,31 @@ describe('the story setup', () => {
 });
 
 describe('story variables', () => {
+  it('makes a variable a model described loosely into one ink can declare', () => {
+    expect(looseVariable({ name: 'trust-Mara', initial: 0, meaning: 'Trust\nin you' })).toEqual({
+      name: 'trust_Mara',
+      initial: '0',
+      meaning: 'Trust in you',
+    });
+    expect(looseVariable({ name: 'knows', value: true, description: 'What she knows' })).toEqual({
+      name: 'knows',
+      initial: 'true',
+      meaning: 'What she knows',
+    });
+    expect(looseVariable({ name: '2nd chance', initial: 'none', meaning: '' })).toEqual({
+      name: 'v_2nd_chance',
+      initial: '"none"',
+      meaning: '',
+    });
+    expect(looseVariable({ name: 'not', initial: 'FALSE' })).toEqual({
+      name: 'not_',
+      initial: 'false',
+      meaning: '',
+    });
+    expect(looseVariable({ name: '!!!', initial: '1' })).toBeNull();
+    expect(looseVariable('trust')).toBeNull();
+  });
+
   it('reads each VAR with the comment above it as its meaning', () => {
     const text =
       '---\ntitle: Story variables\n---\nCONST MAX = 3\n// How much Mara trusts you\nVAR trust = 0\nVAR met = false\n';

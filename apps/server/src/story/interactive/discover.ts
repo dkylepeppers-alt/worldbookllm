@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 
-import type {
-  ClosingChoice,
-  DiscoverBeat,
-  DiscoverSetup,
-  DiscoverVariable,
-  StoryNode,
+import {
+  discoverVariableSchema,
+  type ClosingChoice,
+  type DiscoverBeat,
+  type DiscoverSetup,
+  type DiscoverVariable,
+  type StoryNode,
 } from '@worldbookllm/shared';
 
 import { parseFrontmatter } from '../book-index.js';
@@ -36,6 +37,44 @@ export const DEFAULT_CHOICE_RULES = [
   "8. **The book's voice.** Short, parallel in length, in the person and tense of the prose.",
 ].join('\n');
 
+const INK_RESERVED = new Set(['true', 'false', 'not', 'and', 'or', 'temp', 'return']);
+
+/**
+ * A variable as a model described it, made into one ink can declare, or
+ * null when there is nothing to make one from. Names lose what ink cannot
+ * use (`trust-mara` becomes `trust_mara`), starting values may be numbers or
+ * booleans, a bare word is quoted, and the meaning is put on one line.
+ */
+export function looseVariable(raw: unknown): DiscoverVariable | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const entry = raw as Record<string, unknown>;
+  const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  let name = text(entry.name)
+    .replace(/[^A-Za-z0-9_]+/gu, '_')
+    .replace(/_+/gu, '_')
+    .replace(/^_|_$/gu, '');
+  if (name === '') return null;
+  if (/^\d/u.test(name)) name = `v_${name}`;
+  if (INK_RESERVED.has(name)) name = `${name}_`;
+  const start = entry.initial ?? entry.value ?? entry.default ?? entry.start;
+  let initial: string;
+  if (typeof start === 'number' && Number.isFinite(start)) initial = String(start);
+  else if (typeof start === 'boolean') initial = String(start);
+  else if (typeof start === 'string' && start.trim() !== '') {
+    const value = start.trim();
+    if (/^(?:true|false)$/iu.test(value)) initial = value.toLowerCase();
+    else if (/^-?\d+(?:\.\d+)?$/u.test(value) || /^"(?:[^"\\\r\n]|\\.)*"$/u.test(value)) {
+      initial = value;
+    } else initial = JSON.stringify(value.replace(/^"|"$/gu, '').replace(/\s+/gu, ' '));
+  } else initial = '0';
+  const meaning = text(entry.meaning || entry.description)
+    .replace(/\s+/gu, ' ')
+    .slice(0, 300)
+    .trim();
+  const parsed = discoverVariableSchema.safeParse({ name, initial, meaning });
+  return parsed.success ? parsed.data : null;
+}
+
 /** A short hash of ink, ignoring trailing whitespace on lines and at the end. */
 export function inkHash(ink: string): string {
   const normalized = ink
@@ -64,11 +103,20 @@ function section(body: string, heading: string): string | null {
     .trim();
 }
 
+/**
+ * The writer's text made safe to keep in a `## Heading` section: its own
+ * `#` and `##` headings become `###`, so reading the section back does not
+ * stop at them.
+ */
+function sectionText(text: string): string {
+  return text.trim().replace(/^#{1,2}(?=\s)/gmu, '###');
+}
+
 /** The body with a `## Heading` section's text replaced, or the section added at the end. */
 function withSection(text: string, heading: string, content: string): string {
   const lines = text.replace(/\r\n?/gu, '\n').split('\n');
   const at = lines.findIndex((line) => new RegExp(`^##\\s+${heading}\\s*$`, 'iu').test(line));
-  const block = [`## ${heading}`, '', ...(content.trim() === '' ? [] : [content.trim(), ''])];
+  const block = [`## ${heading}`, '', ...(content.trim() === '' ? [] : [sectionText(content), ''])];
   if (at === -1) {
     return `${text.trimEnd()}\n\n${block.join('\n').trimEnd()}\n`;
   }
@@ -123,7 +171,7 @@ export function setupFile(setup: DiscoverSetup): string {
     '',
     '## Shape',
     '',
-    ...(setup.shape.trim() === '' ? [] : [setup.shape.trim(), '']),
+    ...(setup.shape.trim() === '' ? [] : [sectionText(setup.shape), '']),
   ].join('\n');
 }
 

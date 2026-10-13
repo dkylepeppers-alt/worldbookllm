@@ -51,12 +51,13 @@ export const declineActionArgs = z.object({
   suggestion: line(300).default(''),
 });
 
+// Loose on purpose: the handler makes a near miss (`trust-mara`, a number for `initial`) into a variable ink can declare.
 export const proposeVariableArgs = z.object({
-  name: z
-    .string()
-    .trim()
-    .regex(/^[A-Za-z_]\w*$/u),
-  initial: z.string().trim().max(200),
+  name: z.string().trim().min(1).max(100),
+  initial: z
+    .union([z.string(), z.number(), z.boolean()])
+    .transform((value) => String(value).trim())
+    .pipe(z.string().max(200)),
   meaning: line(300).pipe(z.string().min(1)),
   reason: line(500).default(''),
 });

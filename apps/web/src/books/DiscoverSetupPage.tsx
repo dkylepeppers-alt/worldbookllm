@@ -22,6 +22,50 @@ const DEFAULT_SETUP: DiscoverSetup = {
   shape: '',
 };
 
+const REJOINS = [
+  ['often', 'Often: fewer beats, more state'],
+  ['sometimes', 'When the story allows'],
+  ['rarely', 'Rarely: paths stay apart'],
+] as const;
+
+/** Everything the form holds; unsaved, it is kept in this browser so leaving the page loses nothing. */
+interface FormValues {
+  setup: DiscoverSetup;
+  rules: string;
+  variables: DiscoverVariable[];
+  openingKind: 'agent' | 'writer';
+  opening: string;
+}
+
+const draftKey = (slug: string) => `worldbookllm:discover-setup:${slug}`;
+
+function readDraft(slug: string): FormValues | null {
+  try {
+    const text = localStorage.getItem(draftKey(slug));
+    if (text === null) return null;
+    const value = JSON.parse(text) as Partial<FormValues>;
+    if (typeof value.setup !== 'object' || value.setup === null) return null;
+    return {
+      setup: { ...DEFAULT_SETUP, ...value.setup },
+      rules: typeof value.rules === 'string' ? value.rules : '',
+      variables: Array.isArray(value.variables) ? value.variables : [],
+      openingKind: value.openingKind === 'writer' ? 'writer' : 'agent',
+      opening: typeof value.opening === 'string' ? value.opening : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(slug: string, values: FormValues | null): void {
+  try {
+    if (values === null) localStorage.removeItem(draftKey(slug));
+    else localStorage.setItem(draftKey(slug), JSON.stringify(values));
+  } catch {
+    // Storage may be full or blocked; the form still works, it just is not kept.
+  }
+}
+
 /**
  * Branches → Story setup (ADR 0033): how the book is discovered by playing
  * it. The premise, the shape, the variables the story tracks and what each
@@ -29,9 +73,11 @@ const DEFAULT_SETUP: DiscoverSetup = {
  * writer does on its own. For a book with no chapters, the opening too.
  * The beat writer drafts the premise, shape and tone, and endings from the
  * bible when the book is first set up; the writer edits them from there.
+ * Unsaved changes are kept in the browser until saved or discarded.
  */
 export function DiscoverSetupPage() {
-  const { slug } = useBook();
+  const { slug, tree } = useBook();
+  const hasChapters = tree.files.some((file) => file.kind === 'chapter');
   const discover = useDiscover();
   const branches = `/books/${encodeURIComponent(slug)}/branches`;
   return (
@@ -41,9 +87,11 @@ export function DiscoverSetupPage() {
       </p>
       <h2 id="discover-setup-heading">Story setup</h2>
       <p>
-        Discover the story by playing it. The beat writer writes each scene and the choices it ends
-        with, following your bible, your premise, the variables below, and the rules for choices.
-        Everything it writes is an ordinary chapter you can read, edit, or undo.
+        Discover the story by playing it: the beat writer writes each scene and the choices it ends
+        with, and everything it writes is an ordinary chapter you can read, edit, or undo.
+        {hasChapters
+          ? ' The story starts from the chapters you already have, which stay as you wrote them; at the end of one in Play, choose Write what happens next.'
+          : null}
       </p>
       {discover.state === null ? (
         discover.error === null ? (
@@ -71,16 +119,42 @@ function SetupForm({
 }) {
   const { slug, tree } = useBook();
   const navigate = useNavigate();
-  const [setup, setSetup] = useState<DiscoverSetup>(state.setup ?? DEFAULT_SETUP);
-  const [rules, setRules] = useState(state.rules);
-  const [variables, setVariables] = useState<DiscoverVariable[]>(state.variables);
+  const saved: FormValues = {
+    setup: state.setup ?? DEFAULT_SETUP,
+    rules: state.rules,
+    variables: state.variables,
+    openingKind: 'agent',
+    opening: '',
+  };
+  const [kept] = useState(() => readDraft(slug));
+  const start = kept ?? saved;
+  const [setup, setSetup] = useState<DiscoverSetup>(start.setup);
+  const [rules, setRules] = useState(start.rules || state.rules);
+  const [variables, setVariables] = useState<DiscoverVariable[]>(start.variables);
+  const [openingKind, setOpeningKind] = useState(start.openingKind);
+  const [opening, setOpening] = useState(start.opening);
   const hasChapters = tree.files.some((file) => file.kind === 'chapter');
-  const [openingKind, setOpeningKind] = useState<'agent' | 'writer'>('agent');
-  const [opening, setOpening] = useState('');
   // The beat writer writes a new book's opening from the premise; a scene already there tells it the story.
   const writesOpening = !hasChapters && (openingKind === 'agent' || opening.trim() === '');
   const update = (change: Partial<DiscoverSetup>) =>
     setSetup((current) => ({ ...current, ...change }));
+
+  const values: FormValues = { setup, rules, variables, openingKind, opening };
+  const unsaved = JSON.stringify(values) !== JSON.stringify(saved);
+  const valuesKey = JSON.stringify(values);
+  const savedKey = JSON.stringify(saved);
+  useEffect(() => {
+    writeDraft(slug, valuesKey === savedKey ? null : (JSON.parse(valuesKey) as FormValues));
+  }, [slug, valuesKey, savedKey]);
+
+  function discard() {
+    writeDraft(slug, null);
+    setSetup(saved.setup);
+    setRules(saved.rules);
+    setVariables(saved.variables);
+    setOpeningKind(saved.openingKind);
+    setOpening(saved.opening);
+  }
 
   // The story fields the writer changed since the last draft was asked for, which it leaves alone.
   const touched = useRef(new Set<keyof StoryDraft>());
@@ -103,12 +177,13 @@ function SetupForm({
     );
   };
 
-  // A new book's story is drafted as soon as the form opens.
+  // A new book's story is drafted as soon as the form opens, unless the writer has started on it.
   const started = useRef(false);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    if (state.setup === null && state.writerReady && drafting === undefined) draftStory();
+    const blank = [setup.kernel, setup.shape, setup.endings].every((text) => text.trim() === '');
+    if (state.setup === null && state.writerReady && drafting === undefined && blank) draftStory();
   });
 
   // A finished draft fills the fields the writer has not changed meanwhile, then is cleared.
@@ -130,14 +205,22 @@ function SetupForm({
   }, [drafting, discover, slug]);
 
   const proposing = state.jobs.find((job) => job.kind === 'variables');
+  const proposingNow = proposing?.status === 'queued' || proposing?.status === 'running';
   const proposed = proposing?.status === 'done' ? proposing.variables : [];
   const fresh = proposed.filter(
     (entry) => !variables.some((variable) => variable.name === entry.name),
   );
+  const dismissProposal = () => {
+    if (proposing) void discover.run((api) => api.dismissDiscoverJob(slug, proposing.id));
+  };
+  const addProposed = (added: DiscoverVariable[]) => {
+    setVariables([...variables, ...added]);
+    if (added.length === fresh.length) dismissProposal();
+  };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const saved = await discover.run((api) =>
+    const ok = await discover.run((api) =>
       api.saveDiscoverSetup(slug, {
         setup,
         rules,
@@ -145,8 +228,26 @@ function SetupForm({
         ...(hasChapters ? {} : { opening: openingKind === 'writer' ? opening : null }),
       }),
     );
-    if (saved) navigate(`/books/${encodeURIComponent(slug)}/branches/play`);
+    if (ok) {
+      writeDraft(slug, null);
+      navigate(`/books/${encodeURIComponent(slug)}/branches/play`);
+    }
   }
+
+  const needsPremise = writesOpening && setup.kernel.trim() === '';
+  const ruleCount = rules.split('\n').filter((line) => /^\s*\d+[.)]\s/u.test(line)).length;
+  const options = [
+    setup.mode === 'lead'
+      ? setup.lookahead === 1
+        ? 'writes one step ahead'
+        : 'writes two steps ahead'
+      : null,
+    `${setup.choices} choices`,
+    setup.beatLength === 'scene' ? 'scenes' : 'short chapters',
+    `rejoin ${setup.rejoin === 'sometimes' ? 'when the story allows' : setup.rejoin}`,
+  ]
+    .filter((part) => part !== null)
+    .join(' · ');
 
   return (
     <form className="discover-form" onSubmit={(event) => void submit(event)}>
@@ -158,7 +259,13 @@ function SetupForm({
 
       <fieldset className="branch-card">
         <legend>The story</legend>
-        <div className="branch-actions">
+        <div className="discover-draft">
+          <p className="field-hint" role="status">
+            {draftingNow ? <span className="discover-dot" aria-hidden="true" /> : null}
+            {draftingNow
+              ? `Drafting from ${source}. Anything you type meanwhile is kept.`
+              : `The beat writer drafts these from ${source}. Edit them freely.`}
+          </p>
           <button
             type="button"
             className="button-secondary"
@@ -171,21 +278,15 @@ function SetupForm({
                 ? 'Draft with the beat writer'
                 : 'Redraft with the beat writer'}
           </button>
-          <span className="coordinate-label" role="status">
-            {draftingNow
-              ? `The beat writer is drafting the premise, shape, and endings from ${source}. Anything you type meanwhile is kept.`
-              : `The beat writer drafts these from ${source} and keeps what you have written. Edit them freely.`}
-          </span>
         </div>
         {drafting?.status === 'failed' ? <p className="form-error">{drafting.message}</p> : null}
         <label>
           Premise
-          <span className="coordinate-label">
-            One paragraph: a character in a situation, what they want, what stands in the way, and
-            the tone. It is saved as the story kernel in story.md.{' '}
+          <span className="field-hint">
+            A character in a situation, what they want, and what stands in the way.{' '}
             {writesOpening
               ? 'The beat writer writes the opening from it.'
-              : 'Optional: the scenes already written tell the beat writer the story, and this says where it is going.'}
+              : 'Optional: your chapters tell the story so far; this says where it is going.'}
           </span>
           <textarea
             className="prose-input"
@@ -197,10 +298,7 @@ function SetupForm({
         </label>
         <label>
           Shape and tone
-          <span className="coordinate-label">
-            Length, mood, what kind of choices you want, anything the beat writer should keep in
-            mind. Your words, as long as you like.
-          </span>
+          <span className="field-hint">Length, mood, the kind of choices you want.</span>
           <textarea
             className="prose-input"
             rows={4}
@@ -218,247 +316,6 @@ function SetupForm({
             onChange={(event) => editStory({ endings: event.target.value })}
           />
         </label>
-        <fieldset className="discover-options">
-          <legend>Branches rejoin</legend>
-          {(
-            [
-              ['often', 'Often: fewer beats, more state'],
-              ['sometimes', 'When the story allows'],
-              ['rarely', 'Rarely: paths stay apart'],
-            ] as const
-          ).map(([value, label]) => (
-            <label key={value} className="checkbox-label">
-              <input
-                type="radio"
-                name="rejoin"
-                checked={setup.rejoin === value}
-                onChange={() => update({ rejoin: value })}
-              />
-              {label}
-            </label>
-          ))}
-        </fieldset>
-      </fieldset>
-
-      <fieldset className="branch-card">
-        <legend>How you write</legend>
-        <fieldset className="discover-options">
-          <legend>Mode</legend>
-          <label className="checkbox-label">
-            <input
-              type="radio"
-              name="mode"
-              checked={setup.mode === 'lead'}
-              onChange={() => update({ mode: 'lead' })}
-            />
-            Lead: the beat writer writes ahead while you play
-          </label>
-          <label className="checkbox-label">
-            <input
-              type="radio"
-              name="mode"
-              checked={setup.mode === 'cowrite'}
-              onChange={() => update({ mode: 'cowrite' })}
-            />
-            Co-write: it drafts a beat only when you ask
-          </label>
-        </fieldset>
-        {setup.mode === 'lead' ? (
-          <fieldset className="discover-options">
-            <legend>Write ahead</legend>
-            <label className="checkbox-label">
-              <input
-                type="radio"
-                name="lookahead"
-                checked={setup.lookahead === 1}
-                onChange={() => update({ lookahead: 1 })}
-              />
-              One step: the beat after every choice you can see
-            </label>
-            <label className="checkbox-label">
-              <input
-                type="radio"
-                name="lookahead"
-                checked={setup.lookahead === 2}
-                onChange={() => update({ lookahead: 2 })}
-              />
-              Two steps: about three times as many model calls
-            </label>
-          </fieldset>
-        ) : null}
-        <div className="discover-pair">
-          <label>
-            Choices per beat
-            <select
-              value={setup.choices}
-              onChange={(event) => update({ choices: Number(event.target.value) })}
-            >
-              {[2, 3, 4].map((count) => (
-                <option key={count} value={count}>
-                  {count}, plus Something else
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Each beat is
-            <select
-              value={setup.beatLength}
-              onChange={(event) =>
-                update({ beatLength: event.target.value as DiscoverSetup['beatLength'] })
-              }
-            >
-              <option value="scene">A scene (250–600 words)</option>
-              <option value="chapter">A short chapter (900–1,800 words)</option>
-            </select>
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset className="branch-card">
-        <legend>What the story remembers</legend>
-        <p className="coordinate-label">
-          Variables that choices set and later beats read. Say what each one means; the beat writer
-          reads it. It can propose more while it writes, and you approve each one.
-        </p>
-        <ul className="discover-variables" aria-label="Variables">
-          {variables.map((variable, index) => (
-            <li key={index} className="choice-row">
-              <label>
-                Name
-                <input
-                  className="mono-input"
-                  value={variable.name}
-                  spellCheck={false}
-                  onChange={(event) =>
-                    setVariables(
-                      variables.map((entry, at) =>
-                        at === index ? { ...entry, name: event.target.value } : entry,
-                      ),
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Starts as
-                <input
-                  className="mono-input"
-                  value={variable.initial}
-                  spellCheck={false}
-                  placeholder='0, false, or "text"'
-                  onChange={(event) =>
-                    setVariables(
-                      variables.map((entry, at) =>
-                        at === index ? { ...entry, initial: event.target.value } : entry,
-                      ),
-                    )
-                  }
-                />
-              </label>
-              <label className="discover-meaning">
-                What it means
-                <input
-                  value={variable.meaning}
-                  maxLength={300}
-                  onChange={(event) =>
-                    setVariables(
-                      variables.map((entry, at) =>
-                        at === index ? { ...entry, meaning: event.target.value } : entry,
-                      ),
-                    )
-                  }
-                />
-              </label>
-              <button
-                type="button"
-                className="button-secondary"
-                aria-label={`Remove ${variable.name || 'this variable'}`}
-                onClick={() => setVariables(variables.filter((_entry, at) => at !== index))}
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="branch-actions">
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={() => setVariables([...variables, { name: '', initial: '0', meaning: '' }])}
-          >
-            Add a variable
-          </button>
-          <button
-            type="button"
-            className="button-secondary"
-            disabled={
-              !state.writerReady ||
-              proposing?.status === 'queued' ||
-              proposing?.status === 'running'
-            }
-            onClick={() =>
-              void discover.run((api) =>
-                api.proposeDiscoverVariables(slug, { kernel: setup.kernel, shape: setup.shape }),
-              )
-            }
-          >
-            {proposing?.status === 'queued' || proposing?.status === 'running'
-              ? 'Proposing…'
-              : 'Propose from the premise and bible'}
-          </button>
-        </div>
-        {proposing?.status === 'failed' ? <p className="form-error">{proposing.message}</p> : null}
-        {fresh.length > 0 ? (
-          <div className="discover-proposed" role="status">
-            <p>The beat writer proposes:</p>
-            <ul>
-              {fresh.map((variable) => (
-                <li key={variable.name}>
-                  <code>{variable.name}</code> = <code>{variable.initial}</code>: {variable.meaning}
-                </li>
-              ))}
-            </ul>
-            <div className="branch-actions">
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={() => {
-                  setVariables([...variables, ...fresh]);
-                  if (proposing)
-                    void discover.run((api) => api.dismissDiscoverJob(slug, proposing.id));
-                }}
-              >
-                Add {fresh.length === 1 ? 'it' : 'all'}
-              </button>
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => {
-                  if (proposing)
-                    void discover.run((api) => api.dismissDiscoverJob(slug, proposing.id));
-                }}
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </fieldset>
-
-      <fieldset className="branch-card">
-        <legend>Rules for choices</legend>
-        <p className="coordinate-label">
-          Every set of choices is checked against these before it is written, and sent back when it
-          breaks one. Edit them, or add your own. They are saved in{' '}
-          <code>adaptations/interactive/choice-rules.md</code>.
-        </p>
-        <textarea
-          aria-label="Rules for choices"
-          rows={12}
-          value={rules}
-          maxLength={20000}
-          onChange={(event) => setRules(event.target.value)}
-        />
       </fieldset>
 
       {hasChapters ? null : (
@@ -488,7 +345,7 @@ function SetupForm({
           {openingKind === 'writer' ? (
             <label>
               First scene
-              <span className="coordinate-label">
+              <span className="field-hint">
                 Plain prose; a first line starting with # is its title. The beat writer adds the
                 choices it ends with and never rewrites it.
               </span>
@@ -503,20 +360,281 @@ function SetupForm({
         </fieldset>
       )}
 
-      {discover.error === null ? null : <p className="form-error">{discover.error}</p>}
-      <div className="branch-actions">
-        <button
-          type="submit"
-          className="button-primary"
-          disabled={
-            discover.busy || (writesOpening && setup.kernel.trim() === '') || rules.trim() === ''
-          }
-        >
-          {state.setup === null ? 'Save and start playing' : 'Save and go to Play'}
-        </button>
-        {writesOpening && setup.kernel.trim() === '' ? (
-          <span className="coordinate-label">Write the premise, or the opening scene, first.</span>
+      <fieldset className="branch-card">
+        <legend>How you play</legend>
+        <fieldset className="discover-options">
+          <legend>Mode</legend>
+          <label className="checkbox-label">
+            <input
+              type="radio"
+              name="mode"
+              checked={setup.mode === 'lead'}
+              onChange={() => update({ mode: 'lead' })}
+            />
+            Lead: the beat writer writes ahead while you play
+          </label>
+          <label className="checkbox-label">
+            <input
+              type="radio"
+              name="mode"
+              checked={setup.mode === 'cowrite'}
+              onChange={() => update({ mode: 'cowrite' })}
+            />
+            Co-write: it drafts a beat only when you ask
+          </label>
+        </fieldset>
+        <details className="discover-more">
+          <summary>
+            More options <span className="field-hint">{options}</span>
+          </summary>
+          <div className="discover-more-body">
+            {setup.mode === 'lead' ? (
+              <fieldset className="discover-options">
+                <legend>Write ahead</legend>
+                <label className="checkbox-label">
+                  <input
+                    type="radio"
+                    name="lookahead"
+                    checked={setup.lookahead === 1}
+                    onChange={() => update({ lookahead: 1 })}
+                  />
+                  One step: the beat after every choice you can see
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="radio"
+                    name="lookahead"
+                    checked={setup.lookahead === 2}
+                    onChange={() => update({ lookahead: 2 })}
+                  />
+                  Two steps: about three times as many model calls
+                </label>
+              </fieldset>
+            ) : null}
+            <div className="discover-pair">
+              <label>
+                Choices per beat
+                <select
+                  value={setup.choices}
+                  onChange={(event) => update({ choices: Number(event.target.value) })}
+                >
+                  {[2, 3, 4].map((count) => (
+                    <option key={count} value={count}>
+                      {count}, plus Something else
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Each beat is
+                <select
+                  value={setup.beatLength}
+                  onChange={(event) =>
+                    update({ beatLength: event.target.value as DiscoverSetup['beatLength'] })
+                  }
+                >
+                  <option value="scene">A scene (250–600 words)</option>
+                  <option value="chapter">A short chapter (900–1,800 words)</option>
+                </select>
+              </label>
+            </div>
+            <fieldset className="discover-options">
+              <legend>Branches rejoin</legend>
+              {REJOINS.map(([value, label]) => (
+                <label key={value} className="checkbox-label">
+                  <input
+                    type="radio"
+                    name="rejoin"
+                    checked={setup.rejoin === value}
+                    onChange={() => update({ rejoin: value })}
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          </div>
+        </details>
+      </fieldset>
+
+      <fieldset className="branch-card">
+        <legend>What the story remembers</legend>
+        <p className="field-hint">
+          Variables that choices set and later beats read, like trust or what the hero knows. The
+          beat writer can suggest more while it writes; you approve each one.
+        </p>
+        {variables.length === 0 ? (
+          <p className="field-hint">No variables yet. You can start without any.</p>
+        ) : (
+          <ul className="discover-variables" aria-label="Variables">
+            {variables.map((variable, index) => (
+              <li key={index} className="choice-row">
+                <label>
+                  Name
+                  <input
+                    className="mono-input"
+                    value={variable.name}
+                    spellCheck={false}
+                    onChange={(event) =>
+                      setVariables(
+                        variables.map((entry, at) =>
+                          at === index ? { ...entry, name: event.target.value } : entry,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Starts as
+                  <input
+                    className="mono-input"
+                    value={variable.initial}
+                    spellCheck={false}
+                    placeholder='0, false, or "text"'
+                    onChange={(event) =>
+                      setVariables(
+                        variables.map((entry, at) =>
+                          at === index ? { ...entry, initial: event.target.value } : entry,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label className="discover-meaning">
+                  What it means
+                  <input
+                    value={variable.meaning}
+                    maxLength={300}
+                    onChange={(event) =>
+                      setVariables(
+                        variables.map((entry, at) =>
+                          at === index ? { ...entry, meaning: event.target.value } : entry,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  aria-label={`Remove ${variable.name || 'this variable'}`}
+                  onClick={() => setVariables(variables.filter((_entry, at) => at !== index))}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="branch-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={!state.writerReady || proposingNow}
+            onClick={() =>
+              void discover.run((api) =>
+                api.proposeDiscoverVariables(slug, { kernel: setup.kernel, shape: setup.shape }),
+              )
+            }
+          >
+            {proposingNow ? 'Suggesting…' : 'Suggest variables'}
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => setVariables([...variables, { name: '', initial: '0', meaning: '' }])}
+          >
+            Add a variable
+          </button>
+        </div>
+        {proposing?.status === 'failed' ? (
+          <p className="form-error">{proposing.message}</p>
+        ) : proposing?.status === 'done' && fresh.length === 0 && proposed.length > 0 ? (
+          <p className="field-hint" role="status">
+            You already have every variable the beat writer suggested.{' '}
+            <button type="button" className="text-button" onClick={dismissProposal}>
+              OK
+            </button>
+          </p>
         ) : null}
+        {fresh.length > 0 ? (
+          <div className="discover-proposed" role="status">
+            <p>The beat writer suggests:</p>
+            <ul className="discover-suggestions">
+              {fresh.map((variable) => (
+                <li key={variable.name}>
+                  <span>
+                    <code>{variable.name}</code> = <code>{variable.initial}</code>
+                    {variable.meaning === '' ? null : `: ${variable.meaning}`}
+                  </span>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => addProposed([variable])}
+                  >
+                    Add {variable.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="branch-actions">
+              {fresh.length > 1 ? (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={() => addProposed(fresh)}
+                >
+                  Add all
+                </button>
+              ) : null}
+              <button type="button" className="text-button" onClick={dismissProposal}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </fieldset>
+
+      <details className="branch-card discover-rules">
+        <summary>
+          Rules for choices{' '}
+          <span className="field-hint">
+            {ruleCount > 0 ? `${ruleCount} rules, ` : ''}checked before any choices are written
+          </span>
+        </summary>
+        <p className="field-hint">
+          A set of choices that breaks one is sent back to the beat writer. Edit them, or add your
+          own. They are saved in <code>adaptations/interactive/choice-rules.md</code>.
+        </p>
+        <textarea
+          aria-label="Rules for choices"
+          rows={12}
+          value={rules}
+          maxLength={20000}
+          onChange={(event) => setRules(event.target.value)}
+        />
+      </details>
+
+      <div className="discover-save-bar">
+        {discover.error === null ? null : <p className="form-error">{discover.error}</p>}
+        <div className="branch-actions">
+          <button
+            type="submit"
+            className="button-primary"
+            disabled={discover.busy || needsPremise || rules.trim() === ''}
+          >
+            {state.setup === null ? 'Save and start playing' : 'Save and go to Play'}
+          </button>
+          {needsPremise ? (
+            <span className="field-hint">Write the premise, or the opening scene, first.</span>
+          ) : unsaved ? (
+            <span className="field-hint">
+              Not saved yet; kept in this browser until you save.{' '}
+              <button type="button" className="text-button" onClick={discard}>
+                Discard changes
+              </button>
+            </span>
+          ) : null}
+        </div>
       </div>
     </form>
   );
