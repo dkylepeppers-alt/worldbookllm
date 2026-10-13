@@ -3,14 +3,7 @@ import { rmSync } from 'node:fs';
 
 import type Database from 'better-sqlite3';
 
-import {
-  ProviderError,
-  ToolCallAccumulator,
-  normalizeStreamChunk,
-  parseSseStream,
-  supportsTools,
-  type ChatMessage,
-} from '@worldbookllm/providers';
+import { ProviderError, supportsTools, type ChatMessage } from '@worldbookllm/providers';
 import type {
   AgentChat,
   AgentChatDetail,
@@ -35,6 +28,7 @@ import type { StagedBook } from '../story/staging.js';
 import type { AgentChangesetService } from './changesets.js';
 import { fitEarlierTurns, supersedeRepeatedReads } from './context.js';
 import type { CustomAgentService } from './custom-agents.js';
+import { googleModelWithoutTools, providerToolArguments, streamStep } from './provider-step.js';
 import type { AgentToolRegistry, ToolContext } from './tools.js';
 import { LiveWorkspace, type AgentWorkspace } from './workspace.js';
 
@@ -128,21 +122,6 @@ export function truncateResult(result: string): string {
   return `${buf.subarray(0, kept).toString('utf8')}${notice}`;
 }
 
-/**
- * Arguments sent back to the provider. A malformed JSON string would make
- * Claude's next request fail to build (`JSON.parse` in convertClaudeMessages),
- * so the provider sees an empty object and the tool result carries the error.
- * The recorded step keeps the raw string.
- */
-function providerToolArguments(raw: string): string {
-  try {
-    JSON.parse(raw);
-    return raw;
-  } catch {
-    return '{}';
-  }
-}
-
 /** Rebuilds the provider conversation, including tool calls stored on each step. */
 /** A user message as the model receives it: the app's note (if any), then the writer's words. */
 function userText(content: string, note: string | null): string {
@@ -214,13 +193,6 @@ function pendingAskCallId(messages: readonly AgentMessage[]): string | null {
     .at(-1)
     ?.toolCalls.findLast((recorded) => recorded.name === ASK_USER_TOOL && recorded.ok);
   return call?.id ?? null;
-}
-
-/** Gemma 3 on Google sources is sent no tools (see buildGoogleRequest). */
-function googleModelWithoutTools(config: ProviderConfig): boolean {
-  return (
-    (config.source === 'makersuite' || config.source === 'vertexai') && /gemma-3/.test(config.model)
-  );
 }
 
 function summarize(result: string): string {
@@ -749,41 +721,13 @@ export class AgentService {
         steps.push(step);
         texts.push('');
 
-        const accumulator = new ToolCallAccumulator();
-        let sawCompletion = false;
-        const stream = await this.providers.openChatStream(config.source, request, signal);
-        for await (const event of parseSseStream(stream)) {
-          if (event.data === '[DONE]') break;
-          let payload: unknown;
-          try {
-            payload = JSON.parse(event.data);
-          } catch {
-            throw new ProviderError('Provider stream contained invalid JSON.', config.source);
-          }
-          accumulator.push(payload);
-          const delta = normalizeStreamChunk(config.source, payload);
-          if (!delta) continue;
-          sawCompletion = true;
+        const { calls } = await streamStep(this.providers, config, request, signal, (delta) => {
           step.text += delta.text;
           texts[texts.length - 1] = step.text;
           reasoning += delta.reasoning ?? '';
-          emit({
-            type: 'delta',
-            text: delta.text,
-            ...(delta.reasoning ? { reasoning: delta.reasoning } : {}),
-          });
-        }
-
-        const calls = accumulator.toolCalls();
-        if (calls.length === 0) {
-          // The ordinary generation path treats a stream with no completion
-          // data as a provider error. A tool call counts as data; a blank
-          // step does not.
-          if (!sawCompletion) {
-            throw new ProviderError('Provider stream contained no completion data.', config.source);
-          }
-          break;
-        }
+          emit({ type: 'delta', ...delta });
+        });
+        if (calls.length === 0) break;
         messages.push({
           role: 'assistant',
           content: step.text === '' ? null : step.text,

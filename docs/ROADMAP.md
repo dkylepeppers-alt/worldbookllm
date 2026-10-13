@@ -166,6 +166,13 @@ Builds and project zips (ADR 0020): the Project tab builds `story build`'s singl
   - a CodeMirror ink editor with live errors
   - Health → Paths, which plays every path it can within a 3,000-state, 2-second budget and says when its result is partial
   - the agent's `ink_check`, `ink_play`, and `ink_paths` tools
+- **Interactive books can be discovered by playing** (ADR 0033):
+  - a Story setup (premise as the story kernel, shape, endings, rejoin preference, agreed variables with their meanings, editable choice rules)
+  - seed chapters for every choice not written yet, so the story always compiles and plays
+  - a beat writer whose choices pass structural checks and a review against the rules before they are written
+  - lead mode, writing one or two steps ahead of the reader; co-write mode, with three drafts to pick from
+  - Something else at every choice point in Play, which becomes a real choice or is declined with a reason
+  - stale beats rewritten when unread and unedited, otherwise listed on Health for review; open threads on Health and the map
 
 **Scope (in build order):**
 

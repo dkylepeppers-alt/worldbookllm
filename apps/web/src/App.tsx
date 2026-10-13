@@ -14,6 +14,7 @@ import { BookLayout } from './books/BookLayout.js';
 import { BookLibraryPage } from './books/BookLibraryPage.js';
 import { BranchesHubPage } from './books/BranchesHubPage.js';
 import { BranchesPage } from './books/BranchesPage.js';
+import { DiscoverSetupPage } from './books/DiscoverSetupPage.js';
 import { HealthPage } from './books/HealthPage.js';
 import { PlayPage } from './books/PlayPage.js';
 import { ProjectPage } from './books/ProjectPage.js';
@@ -46,6 +47,7 @@ export function AppRoutes() {
           <Route path="branches" element={<BranchesHubPage />} />
           <Route path="branches/edit" element={<BranchesPage />} />
           <Route path="branches/play" element={<PlayPage />} />
+          <Route path="branches/discover" element={<DiscoverSetupPage />} />
           <Route path="write/branches" element={<MovedTo path="branches/edit" />} />
           <Route path="write/play" element={<MovedTo path="branches/play" />} />
           <Route path="bible" element={<BiblePage />} />

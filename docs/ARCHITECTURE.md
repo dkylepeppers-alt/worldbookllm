@@ -119,6 +119,10 @@ An interactive book is a story-skills book whose `story.md` says `interactive: t
 - **Conversion.** "Make it interactive" and interactive editions turn a book's chapters into ink chapters through a reviewed preview and one undoable checkpoint.
 - **Exports.** `.ink` for Inky, compiled JSON, and a web page with inkjs inlined that plays on its own.
 
+- **Discovery** (ADR 0033). `discover.ts` reads and writes the story setup (`adaptations/interactive/setup.md`, the kernel in story.md), the choice rules (`adaptations/interactive/choice-rules.md`), each variable's meaning (the `//` line above its `VAR`), seed chapters (`discover: "seed"`, a `TODO:` line and `-> END`), and written beats (`discover-from`, `discover-parent`, `discover-ink` hashes, so edits and stale beats are read from the files). `replay.ts` replays a reader's place in Play on the server. `leadFrontier` finds what lead mode writes from where the reader is. `BooksService.writeDiscover` writes each change as one checkpoint after compiling it.
+
+The beat writer (`apps/server/src/agent/discover/`) is not the chat agent. `DiscoverService` runs its jobs one at a time per book, in memory: a beat, the choices for a written beat, a rewrite, three drafts, the reader's own action, or proposed variables. Each job is a bounded tool-calling conversation (`write_beat`, `write_choices`, `accept_action`, `decline_action`, `propose_variable`, `read_file`, `search`). The prompt carries the path the reader played, the variable values there, the other beats that lead to it, the bible, and the setup. Its choices pass structural checks (`beat-rules.ts`: count, distinct intents, no false choices, declared variables, real rejoin targets) and a review pass against the rules before anything is written. Reads (which chapters a reader reached) and pending variable proposals are in SQLite (`discover_reads`, `discover_proposals`); losing them only makes unedited beats look unread. The routes are under `/api/books/:book/discover`.
+
 The web app's Branches tab shows a summary, a map built from the structure, a form for each chapter's closing choices, and Play, which runs the compiled story with inkjs from the start or any knot, with variables preset and the random seed in the address. Interactive chapters and `ink/` files open in a CodeMirror editor (ADR 0031) that compiles the unsaved text as the writer types (`POST /api/books/:book/ink-check`, which writes nothing) and marks errors on their lines.
 
 ## Production serving and installability (PWA)
@@ -169,3 +173,4 @@ Recorded as ADRs in [`docs/decisions/`](decisions/):
 - [0030 — Interactive books are written in ink](decisions/0030-interactive-books-are-written-in-ink.md)
 - [0031 — The ink editor uses CodeMirror 6](decisions/0031-the-ink-editor-uses-codemirror.md)
 - [0032 — Paths are checked by playing the story](decisions/0032-paths-are-checked-by-playing-the-story.md)
+- [0033 — Interactive books can be discovered by playing](decisions/0033-interactive-books-can-be-discovered-by-playing.md)

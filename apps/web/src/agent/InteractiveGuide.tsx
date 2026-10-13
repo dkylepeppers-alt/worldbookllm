@@ -1,5 +1,6 @@
 import type { BookFile, InteractiveStory } from '@worldbookllm/shared';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { useApi } from '../api/useApi.js';
 import { useBook } from '../books/book-context.js';
@@ -64,6 +65,7 @@ function stepsFor(files: readonly BookFile[], story: InteractiveStory | null): S
       prompt: [
         'Plan this book as an interactive story with the interactive-fiction skill',
         '(and the adaptation skill, if these chapters began as a linear book).',
+        'If the book was discovered by playing (chapters with discover in their frontmatter), map the branches it already has instead of planning new ones, and list the seeds still to write.',
         'Ask me with ask_user which structure to use (branch and bottleneck, gauntlet, time cave, sorting hat, or hub),',
         'then find the decision points in the chapters and propose the choices, where each leads, the rejoins, and the endings.',
         `Write the plan to ${BRANCH_MAP} with a mermaid flowchart and a table of the state each choice sets and reads.`,
@@ -186,6 +188,13 @@ export function InteractiveGuide({ onAsk }: InteractiveGuideProps) {
         Build the branches with the agent: plan them, add the choices in ink, draft what each branch
         adds, remember choices with variables, and check every path. Each step puts a request in the
         message box for you to edit and send, and each turn can be undone.
+      </p>
+      <p>
+        Rather not plan first?{' '}
+        <Link to={`/books/${encodeURIComponent(slug)}/branches/discover`}>
+          Discover it by playing
+        </Link>
+        : the beat writer writes each scene and its choices as you play.
       </p>
       <ol className="bible-guide-steps">
         {steps.map((step) => (

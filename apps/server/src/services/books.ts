@@ -88,6 +88,12 @@ import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { classifyBookPath } from '../story/book-paths.js';
 import { exportManuscript } from '../story/book-manuscript.js';
 import { convertToInk, type ConvertedFile } from '../story/interactive/convert.js';
+import {
+  RULES_FILE,
+  SETUP_FILE,
+  discoverBeats,
+  type DiscoverChapter,
+} from '../story/interactive/discover.js';
 import { readEnding, writeEnding } from '../story/interactive/ending.js';
 import { describeDiagnostic, storyFindings } from '../story/interactive/findings.js';
 import { INK_VARIABLES_FILE, inkSection, isIfid, isInkFile } from '../story/interactive/format.js';
@@ -139,6 +145,19 @@ function conversionToken(files: readonly ConvertedFile[]): string {
   return hash.digest('hex');
 }
 
+/** What discovery reads from a book (ADR 0033). */
+export interface DiscoverFiles {
+  title: string;
+  story: string;
+  setup: string | null;
+  rules: string | null;
+  variables: string | null;
+  chapters: DiscoverChapter[];
+  reading: InkReading;
+  /** Every indexed file's hash, by path. */
+  hashes: ReadonlyMap<string, string>;
+}
+
 export interface BookChatLifecycle {
   /** Refuses while one of the book's chats has a turn running; `action` ends the message. */
   assertIdle(book: string, action?: string): void;
@@ -182,6 +201,7 @@ export class BookService {
   private readonly inkCache = new Map<string, { key: string; reading: InkReading }>();
   /** Path reports by the reading they explored, so an unchanged book is not replayed. */
   private readonly pathCache = new WeakMap<InkReading, PathReport>();
+  private readonly reachedCache = new WeakMap<InkReading, ReadonlyMap<string, number[]>>();
   /** The latest ink check started for each book; older ones stop before compiling. */
   private readonly inkCheckGeneration = new Map<string, number>();
   private chatLifecycle: BookChatLifecycle | null = null;
@@ -1416,6 +1436,129 @@ export class BookService {
     };
   }
 
+  /**
+   * What discovery reads (ADR 0033), under the book lock so it never catches
+   * a write halfway: the setup, the choice rules, story.md, the variables,
+   * every chapter, the compiled story, and each file's hash.
+   */
+  discoverFiles(slug: string): Promise<DiscoverFiles> {
+    return this.locks.run(slug, () => {
+      this.assertInteractive(slug);
+      const text = (path: string) => this.files.readBytes(slug, path)?.toString('utf8') ?? null;
+      const reading = this.readInk(slug);
+      const indexed = this.index.list(slug);
+      return {
+        title: this.summary(slug).title,
+        story: text('story.md') ?? '',
+        setup: text(SETUP_FILE),
+        rules: text(RULES_FILE),
+        variables: text(INK_VARIABLES_FILE),
+        chapters: indexed
+          .filter((file) => file.kind === 'chapter' && file.entityId !== null)
+          .map((file) => {
+            const content = text(file.path) ?? '';
+            return {
+              id: file.entityId!,
+              path: file.path,
+              title: file.title,
+              number: parseFrontmatter(content).frontmatter?.number,
+              text: content,
+            };
+          }),
+        reading,
+        hashes: new Map(indexed.map((file) => [file.path, file.hash])),
+      };
+    });
+  }
+
+  /**
+   * The fewest choices from the start that reach each knot and stitch, from
+   * playing every path (ADR 0032), for opening a seed in Play. Cached per
+   * state of the book, like the path report.
+   */
+  discoverPaths(slug: string): Promise<ReadonlyMap<string, number[]>> {
+    return this.locks.run(slug, () => {
+      this.assertInteractive(slug);
+      const reading = this.readInk(slug);
+      const cached = this.reachedCache.get(reading);
+      if (cached !== undefined) return cached;
+      const reached = new Map<string, number[]>();
+      if (reading.compiled.json !== null && reading.structure !== null) {
+        explorePaths(reading.compiled.json, reading.structure, reached);
+      }
+      this.reachedCache.set(reading, reached);
+      return reached;
+    });
+  }
+
+  /**
+   * Writes a discovery change as one checkpoint (ADR 0033): every file must
+   * still be as it was read (`expected` holds its hash, or null for a file
+   * that must not exist yet), the story is compiled with the change first and
+   * a change that adds compile errors is refused with them, and the book is
+   * reindexed so new chapters join the registries. A failed write or reindex
+   * puts every file back.
+   */
+  async writeDiscover(
+    slug: string,
+    input: {
+      label: string;
+      actor: CheckpointActor;
+      files: ReadonlyMap<string, string>;
+      expected: ReadonlyMap<string, string | null>;
+    },
+  ): Promise<Checkpoint | null> {
+    for (const path of input.files.keys()) assertWritablePath(path);
+    return this.locks.run(slug, async () => {
+      this.assertInteractive(slug);
+      for (const [path, hash] of input.expected) {
+        const current = this.files.readBytes(slug, path);
+        const currentHash = current === null ? null : sha256(current);
+        if (currentHash !== hash) {
+          throw new ConflictError(
+            'file_changed',
+            current === null
+              ? `${path} does not exist anymore.`
+              : hash === null
+                ? `${path} already exists.`
+                : `${path} changed since it was read.`,
+          );
+        }
+      }
+      if ([...input.files.keys()].some((path) => feedsInk(path))) {
+        const before = this.readInk(slug);
+        const after = this.inkReading(slug, input.files);
+        const known = new Set(before.compiled.diagnostics.map(describeDiagnostic));
+        const added = after.compiled.diagnostics.filter(
+          (entry) => entry.severity === 'error' && !known.has(describeDiagnostic(entry)),
+        );
+        if (added.length > 0) {
+          throw new ValidationError(
+            `The change does not compile:\n${added.map(describeDiagnostic).join('\n')}`,
+          );
+        }
+      }
+      const { checkpoint } = await this.checkpoints.record(
+        slug,
+        input.label,
+        input.actor,
+        'book',
+        async () => {
+          const before = this.files.snapshot(slug);
+          try {
+            for (const [path, content] of input.files) this.files.write(slug, path, content);
+            await this.cli.runOrThrow({ command: 'reindex', root: this.files.root(slug) });
+          } catch (error) {
+            this.restoreSnapshot(slug, before);
+            throw error;
+          }
+        },
+      );
+      this.index.reconcile(slug);
+      return checkpoint;
+    });
+  }
+
   /** A chapter's ending as the choices screen edits it. */
   chapterEnding(slug: string, chapterId: string): Promise<ChapterEndingDetail> {
     return this.locks.run(slug, () => {
@@ -1624,7 +1767,32 @@ export class BookService {
                 ];
         writeBuildFile(root, name, content);
         const file = listBuildFiles(root).find((entry) => entry.name === name)!;
-        const notes = play.warnings.length === 0 ? '' : `\n${play.warnings.join('\n')}`;
+        // Seeds end the story where a branch is not written yet (ADR 0033).
+        // A seed written over by hand counts as written, as discovery reads it.
+        const seeds = discoverBeats(
+          this.index
+            .list(slug)
+            .filter((entry) => entry.kind === 'chapter' && entry.entityId !== null)
+            .map((entry) => {
+              const text = this.files.readBytes(slug, entry.path)?.toString('utf8') ?? '';
+              return {
+                id: entry.entityId!,
+                path: entry.path,
+                title: entry.title,
+                number: parseFrontmatter(text).frontmatter?.number,
+                text,
+              };
+            }),
+          new Set(),
+        ).filter((beat) => beat.state === 'seed');
+        const unwritten =
+          seeds.length === 0
+            ? []
+            : [
+                `${seeds.length} ${seeds.length === 1 ? 'branch is' : 'branches are'} not written yet, so ${seeds.length === 1 ? 'it ends' : 'they end'} the story: ${seeds.map((entry) => entry.title).join(', ')}.`,
+              ];
+        const warnings = [...unwritten, ...play.warnings];
+        const notes = warnings.length === 0 ? '' : `\n${warnings.join('\n')}`;
         return { file, output: `Wrote dist/${name}.${notes}` };
       }
       const options: StoryOptions = { format: input.format };

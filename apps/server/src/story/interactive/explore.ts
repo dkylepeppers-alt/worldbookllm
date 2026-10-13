@@ -104,22 +104,36 @@ function stateKey(story: InkStory, visitCap: number): string {
   return JSON.stringify([state.variablesState, visits, flows, random]);
 }
 
-/** Every knot and stitch visited so far: those with a visit count. */
-function visited(story: InkStory, names: readonly string[], into: Set<string>): void {
+/** Every knot and stitch visited so far: those with a visit count, with the path that first reached each. */
+function visited(
+  story: InkStory,
+  names: readonly string[],
+  into: Set<string>,
+  path: readonly number[],
+  reachedBy: Map<string, number[]> | undefined,
+): void {
   for (const name of names) {
     if (into.has(name)) continue;
     try {
-      if ((story.state.VisitCountAtPathString(name) ?? 0) > 0) into.add(name);
+      if ((story.state.VisitCountAtPathString(name) ?? 0) > 0) {
+        into.add(name);
+        reachedBy?.set(name, [...path]);
+      }
     } catch {
       // A name the runtime does not know; nothing to count.
     }
   }
 }
 
-/** Explores the story and reports what playing it shows. */
+/**
+ * Explores the story and reports what playing it shows. `reachedBy`, when
+ * given, receives the fewest choices from the start that reach each knot
+ * and stitch reached.
+ */
 export function explorePaths(
   json: string,
   structure: Pick<StoryStructure, 'nodes' | 'choiceSources'>,
+  reachedBy?: Map<string, number[]>,
 ): PathReport {
   const deadline = Date.now() + TIME_BUDGET_MS;
   const { nodes, choiceSources } = structure;
@@ -159,7 +173,7 @@ export function explorePaths(
       if (error instanceof OutOfTime) throw error;
       failure ??= error instanceof Error ? error.message : String(error);
     }
-    visited(story, names, reached);
+    visited(story, names, reached, path, reachedBy);
     if (failure !== null) {
       if (!errors.has(failure)) errors.set(failure, path);
       return false;

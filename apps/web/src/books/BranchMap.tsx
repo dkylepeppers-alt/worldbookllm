@@ -56,7 +56,8 @@ function edgeLabel(edge: MapEdge, from: MapNode, to: MapNode): string {
   return `${from.place.title}: “${edge.text}” leads to ${to.place.title}${condition}`;
 }
 
-function status(node: MapNode): string {
+function status(node: MapNode, seeds: ReadonlySet<string>): string {
+  if (node.place.chapterId !== null && seeds.has(node.place.chapterId)) return 'not written';
   if (node.depth === null) return 'not reachable';
   if (node.place.start) return 'start';
   return node.place.ends ? 'ending' : '';
@@ -68,7 +69,16 @@ function status(node: MapNode): string {
  * the chapter's choices; the same map follows as a list for screen readers
  * and anyone who prefers it.
  */
-export function BranchMap({ slug, story }: { slug: string; story: InteractiveStory }) {
+export function BranchMap({
+  slug,
+  story,
+  seeds = new Set(),
+}: {
+  slug: string;
+  story: InteractiveStory;
+  /** Chapters discovery has not written yet (ADR 0033), drawn as open nodes. */
+  seeds?: ReadonlySet<string>;
+}) {
   const layout = layoutBranchMap(story);
   const nodes = new Map(layout.nodes.map((node) => [node.place.name, node]));
   // A chapter opens its choices; a knot from ink/ opens its file.
@@ -133,7 +143,7 @@ export function BranchMap({ slug, story }: { slug: string; story: InteractiveSto
             );
           })}
           {layout.nodes.map((node) => {
-            const label = status(node);
+            const label = status(node, seeds);
             return (
               <Link key={node.place.name} to={editHref(node)} className="branch-map-node-link">
                 <g
@@ -165,7 +175,7 @@ export function BranchMap({ slug, story }: { slug: string; story: InteractiveSto
         <ol>
           {layout.nodes.map((node) => {
             const out = layout.edges.filter((edge) => edge.from === node.place.name);
-            const label = status(node);
+            const label = status(node, seeds);
             return (
               <li key={node.place.name}>
                 <Link to={editHref(node)}>{node.place.title}</Link>

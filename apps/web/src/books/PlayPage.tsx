@@ -1,4 +1,4 @@
-import type { BookPlay, PlayKnot } from '@worldbookllm/shared';
+import type { BookPlay, PlayKnot, PlayPosition } from '@worldbookllm/shared';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -9,6 +9,17 @@ import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { fileHref } from './book-sections.js';
 import { markdownOf } from './play-markdown.js';
+import {
+  DiscoverStatus,
+  EndPanel,
+  PathTrail,
+  Proposals,
+  RewriteBeat,
+  SeedPanel,
+  SomethingElse,
+} from './PlayDiscover.js';
+import { useSomethingElseOutcome } from './useSomethingElseOutcome.js';
+import { useDiscover, type Discover } from './useDiscover.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 type InkRuntime = typeof import('inkjs');
@@ -25,6 +36,8 @@ interface Turn {
   choices: string[];
   /** The choice that led here, or null at the start. */
   chosen: string | null;
+  /** Every choice taken to get here, in order. */
+  trail: string[];
   /** A choice in the address that the story no longer offers. */
   stale: boolean;
   /** Each global variable's value now. */
@@ -122,10 +135,12 @@ function replay(runtime: InkRuntime, play: BookPlay, start: Start, path: readonl
   // The chapter the reader is in, kept across turns whose lines enter none.
   let current: PlayKnot | null = null;
   let chosen: string | null = null;
+  const trail: string[] = [];
   const turn = (stale: boolean): Turn => ({
     segments,
     choices: story.currentChoices.map((entry) => entry.text),
     chosen,
+    trail: [...trail],
     stale,
     state: play.variables.map(({ name }) => ({
       name,
@@ -136,6 +151,7 @@ function replay(runtime: InkRuntime, play: BookPlay, start: Start, path: readonl
     const choice = story.currentChoices[index];
     if (choice === undefined) return turn(true);
     chosen = choice.text;
+    trail.push(choice.text);
     story.ChooseChoiceIndex(index);
     current = [...segments].reverse().find((segment) => segment.knot !== null)?.knot ?? current;
     segments = runToChoice(story, play.knots, current);
@@ -188,6 +204,8 @@ export function PlayPage() {
     `${slug}:${tree.files.map((file) => file.hash).join()}`,
   );
   const branchesHref = `/books/${encodeURIComponent(slug)}/branches`;
+  const discover = useDiscover();
+  const discovering = discover.state?.setup != null ? discover : null;
 
   return (
     <section className="book-panel play-page" aria-labelledby="play-heading">
@@ -211,12 +229,26 @@ export function PlayPage() {
           </p>
         </>
       ) : null}
-      {story.status === 'ready' ? <InkPlayer slug={slug} play={story.data} /> : null}
+      {discovering === null ? null : (
+        <DiscoverStatus discover={discovering} state={discovering.state!} />
+      )}
+      {story.status === 'ready' ? (
+        <InkPlayer slug={slug} play={story.data} discover={discovering} />
+      ) : null}
     </section>
   );
 }
 
-function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
+function InkPlayer({
+  slug,
+  play,
+  discover,
+}: {
+  slug: string;
+  play: BookPlay;
+  /** Discovery, when the book is set up for it (ADR 0033). */
+  discover: Discover | null;
+}) {
   const [runtime, setRuntime] = useState<InkRuntime | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
@@ -271,6 +303,35 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
     }
   }, [runtime, play, start, path]);
 
+  // Lead mode writes ahead from where the reader is; reading a beat marks it read.
+  const position = useMemo<PlayPosition>(
+    () => ({ from: start.from, set: start.set, seed: start.seed, path: [...path] }),
+    [start, path],
+  );
+  // `position` is memoized on the address and `run` is stable, so each place
+  // in each book is reported once.
+  const report = discover === null ? null : discover.run;
+  const playable = typeof turn === 'object' && turn !== null && !turn.stale;
+  useEffect(() => {
+    if (report === null || !playable) return;
+    void report((api) => api.setDiscoverPosition(slug, position));
+  }, [slug, position, report, playable]);
+
+  // The reader's own action, asked at one place: kept here so the answer is
+  // played even if the form remounts while the story reloads.
+  const step = `${fromParam ?? ''}:${setParam ?? ''}:${seedParam ?? ''}:${path.join('.')}`;
+  const [asked, setAsked] = useState<{ step: string; known: string[] } | null>(null);
+  const askedHere = asked?.step === step ? asked.known : null;
+  useSomethingElseOutcome({
+    discover,
+    asked: askedHere,
+    offered: typeof turn === 'object' && turn !== null && !turn.stale ? turn.choices.length : 0,
+    onChoose: (index) => {
+      setAsked(null);
+      setParams({ ...startParams(start), path: [...path, index].join('.') });
+    },
+  });
+
   if (loadError !== null) {
     return <ErrorState title="The ink runtime could not load" message={loadError} />;
   }
@@ -286,6 +347,11 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
     );
   }
 
+  // While discovering, a seed's TODO is an open thread, which Health lists; it is not a note.
+  const warnings =
+    discover === null
+      ? play.warnings
+      : play.warnings.filter((warning) => !/TODO: Write what happens after "/u.test(warning));
   const fromKnot = start.from?.split('.')[0];
   const fromTitle =
     fromKnot === undefined
@@ -295,11 +361,11 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
 
   return (
     <>
-      {play.warnings.length > 0 ? (
+      {warnings.length > 0 ? (
         <details className="reader-notes">
-          <summary>Notes from the compiler ({play.warnings.length})</summary>
+          <summary>Notes from the compiler ({warnings.length})</summary>
           <ul>
-            {play.warnings.map((warning) => (
+            {warnings.map((warning) => (
               <li key={warning}>{warning}</li>
             ))}
           </ul>
@@ -320,14 +386,30 @@ function InkPlayer({ slug, play }: { slug: string; play: BookPlay }) {
           </button>
         </p>
       )}
+      {discover === null ? null : (
+        <PathTrail
+          trail={turn.trail}
+          onBack={(steps) =>
+            setParams({
+              ...startParams(start),
+              ...(steps === 0 ? {} : { path: path.slice(0, steps).join('.') }),
+            })
+          }
+        />
+      )}
       <Passage
         slug={slug}
         turn={turn}
-        step={`${fromParam ?? ''}:${setParam ?? ''}:${seedParam ?? ''}:${path.join('.')}`}
+        discover={discover}
+        position={position}
+        step={step}
+        asked={askedHere}
+        onAsk={(known) => setAsked(known === null ? null : { step, known })}
         atStart={path.length === 0}
         onChoose={(index) => setParams({ ...startParams(start), path: [...path, index].join('.') })}
         onRestart={() => setParams(startParams({ ...start, seed: newSeed() }))}
       />
+      {discover === null ? null : <Proposals discover={discover} state={discover.state!} />}
       {turn.state.length > 0 ? (
         <section className="play-state" aria-labelledby="play-state-heading">
           <h3 id="play-state-heading">Story state</h3>
@@ -510,14 +592,23 @@ function Saves({
 function Passage({
   slug,
   turn,
+  discover,
+  position,
   step,
+  asked,
+  onAsk,
   atStart,
   onChoose,
   onRestart,
 }: {
   slug: string;
   turn: Turn;
+  discover: Discover | null;
+  position: PlayPosition;
   step: string;
+  /** The jobs that existed when the reader asked for something else here. */
+  asked: readonly string[] | null;
+  onAsk: (known: string[] | null) => void;
   atStart: boolean;
   onChoose: (index: number) => void;
   onRestart: () => void;
@@ -539,6 +630,12 @@ function Passage({
   const chapter = tree.files.find(
     (file) => file.kind === 'chapter' && file.entityId === last?.chapterId,
   );
+  const state = discover?.state ?? null;
+  const beat = state?.beats.find((entry) => entry.chapterId === last?.chapterId);
+  // The reader's own action is added to a beat's closing choices, so it is offered there, not inside a scene.
+  const closing = last == null ? undefined : state?.closingChoices[last.chapterId];
+  const atClosingChoices =
+    closing !== undefined && turn.choices.every((text) => closing.includes(text.trim()));
 
   return (
     <article ref={passage} tabIndex={-1} className="play-passage" aria-label="Story">
@@ -569,15 +666,45 @@ function Passage({
               </button>
             </li>
           ))}
+          {state === null || !atClosingChoices ? null : (
+            <SomethingElse
+              key={step}
+              discover={discover!}
+              state={state}
+              position={position}
+              asked={asked}
+              onAsk={onAsk}
+            />
+          )}
         </ul>
+      ) : state !== null && beat?.state === 'seed' && !turn.stale ? (
+        <SeedPanel
+          key={beat.chapterId}
+          discover={discover!}
+          state={state}
+          beat={beat}
+          position={position}
+        />
       ) : (
         <div className="play-end">
-          {turn.stale ? null : <p>The end.</p>}
+          {turn.stale ? null : beat !== undefined && !beat.ending && state !== null ? (
+            <EndPanel
+              discover={discover!}
+              state={state}
+              chapterId={beat.chapterId}
+              position={position}
+            />
+          ) : (
+            <p>The end.</p>
+          )}
           <button type="button" className="button-primary" onClick={onRestart}>
             {turn.stale ? 'Start over' : 'Play again'}
           </button>
         </div>
       )}
+      {state !== null && beat?.state === 'written' && !turn.stale ? (
+        <RewriteBeat key={beat.chapterId} discover={discover!} beat={beat} position={position} />
+      ) : null}
       <p className="coordinate-label">
         {chapter === undefined ? null : (
           <Link to={fileHref(slug, chapter.path)}>Edit {chapter.title}</Link>
