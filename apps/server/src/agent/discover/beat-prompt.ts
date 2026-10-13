@@ -20,11 +20,18 @@ const REJOIN = {
 } as const;
 
 /** The beat writer's standing instructions. */
-/** The custom agent the writer picked for the beat writer: its instructions and the skills it names. */
+/** The custom agent the writer picked for the beat writer: its instructions and the skills it may load. */
 export interface BeatRole {
   name: string;
   instructions: string;
-  skills: ReadonlyArray<{ name: string; content: string }>;
+  /** The skills it may load; null allows every installed skill. */
+  allowed: ReadonlySet<string> | null;
+  /**
+   * Its skills. A skill the agent names comes loaded, with the text
+   * activate_skill gives; with every skill allowed, each is listed (content
+   * null) for the beat writer to load when it fits.
+   */
+  skills: ReadonlyArray<{ name: string; description: string; content: string | null }>;
 }
 
 export function beatSystemPrompt(input: {
@@ -100,7 +107,30 @@ function roleSection(role: BeatRole | null): string[] {
     `## Your role: ${role.name}`,
     'The writer chose this role for the beat writer. Write as it says; the tools, the rules above, and the rules for choices still apply.',
     ...(role.instructions.trim() === '' ? [] : ['', role.instructions.trim()]),
-    ...role.skills.flatMap((skill) => ['', `### Skill: ${skill.name}`, skill.content.trim()]),
+    ...skillsSection(role),
+  ];
+}
+
+function skillsSection(role: BeatRole): string[] {
+  const loaded = role.skills.filter((skill) => skill.content !== null);
+  const listed = role.skills.filter((skill) => skill.content === null);
+  return [
+    ...(loaded.length === 0
+      ? []
+      : [
+          '',
+          '### Skills',
+          'The writer gave this role these skills. They are loaded below: follow them on every beat, and load their reference files with read_skill_file when they say to.',
+          ...loaded.flatMap((skill) => ['', `#### Skill: ${skill.name}`, skill.content!.trim()]),
+        ]),
+    ...(listed.length === 0
+      ? []
+      : [
+          '',
+          '### Skills you can load',
+          'When a skill below fits the beat, load it with activate_skill and follow it; load its references with read_skill_file when it says to.',
+          ...listed.map((skill) => `- ${skill.name}: ${skill.description}`),
+        ]),
   ];
 }
 

@@ -28,6 +28,8 @@ import { ConfigurationError, ConflictError, NotFoundError, ValidationError } fro
 import type { BookService, DiscoverFiles } from '../../services/books.js';
 import type { SkillService } from '../../services/skills.js';
 import type { CustomAgentService } from '../custom-agents.js';
+import { truncateResult } from '../agent-service.js';
+import type { AgentToolRegistry } from '../tools.js';
 import type { ProviderService } from '../../services/providers.js';
 import type { SettingsService } from '../../services/settings.js';
 import { parseFrontmatter } from '../../story/book-index.js';
@@ -108,8 +110,6 @@ const BIBLE_KINDS = new Set(['character', 'location', 'system', 'faction', 'arti
 const BIBLE_BUDGET = 20_000;
 const ENTRY_BUDGET = 3_000;
 const KEEP_FINISHED = 20;
-/** Text from the picked agent's skills the beat writer reads. */
-const ROLE_SKILL_BUDGET = 24_000;
 /** Prose from the written scenes a drafted story setup reads. */
 const SCENES_BUDGET = 10_000;
 
@@ -215,15 +215,20 @@ export class DiscoverService {
     private readonly bookService: BookService,
     private readonly settings: SettingsService,
     private readonly providers: ProviderService,
-    private readonly roles: { agents: CustomAgentService; skills: SkillService },
+    private readonly roles: {
+      agents: CustomAgentService;
+      skills: SkillService;
+      tools: AgentToolRegistry;
+    },
     private readonly logError: (error: unknown) => void = () => undefined,
   ) {}
 
   /**
-   * The custom agent the setup picks for the beat writer: its instructions,
-   * and the text of each skill it names, within a budget. An agent allowed
-   * every skill names none, so it brings its instructions only. A deleted
-   * agent leaves the default beat writer.
+   * The custom agent the setup picks for the beat writer: its instructions
+   * and its skills. The skills it names come loaded, with the text a chat's
+   * activate_skill gives, so every beat follows them; an agent allowed every
+   * skill gets the list to load from, as in a chat. A deleted agent leaves
+   * the default beat writer.
    */
   private role(setup: DiscoverSetup): BeatRole | null {
     if (setup.agentId === null) return null;
@@ -233,23 +238,31 @@ export class DiscoverService {
     } catch {
       return null;
     }
-    const installed = this.roles.skills.list();
-    const skills: Array<{ name: string; content: string }> = [];
-    let left = ROLE_SKILL_BUDGET;
-    for (const name of agent.skills ?? []) {
-      const meta = installed.find((skill) => skill.name === name);
-      if (meta === undefined || left <= 0) continue;
-      let content: string;
-      try {
-        content = parseFrontmatter(this.roles.skills.get(meta.id).content).body.trim();
-      } catch {
-        continue;
-      }
-      const kept = content.length <= left ? content : `${content.slice(0, left)}…`;
-      left -= kept.length;
-      skills.push({ name, content: kept });
+    const allowed = agent.skills === null ? null : new Set(agent.skills);
+    return {
+      name: agent.name,
+      instructions: agent.instructions,
+      allowed,
+      skills: this.roles.skills
+        .list()
+        .filter((skill) => allowed === null || allowed.has(skill.name))
+        .map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          content: allowed === null ? null : this.loadedSkill(skill.name, allowed),
+        }))
+        // A named skill that cannot be read is left out rather than offered.
+        .filter((skill) => allowed === null || skill.content !== null),
+    };
+  }
+
+  /** A named skill's text as activate_skill gives it, under the same limit; null if it cannot be read. */
+  private loadedSkill(name: string, allowed: ReadonlySet<string>): string | null {
+    try {
+      return truncateResult(this.roles.tools.activateSkill(name, allowed));
+    } catch {
+      return null;
     }
-    return { name: agent.name, instructions: agent.instructions, skills };
   }
 
   // ---- State ----------------------------------------------------------------
@@ -865,7 +878,7 @@ export class DiscoverService {
     });
     const notes: string[] = [];
     const review = this.reviewer(model, context, notes);
-    const handlers = this.readHandlers(book, task.chapterId);
+    const handlers = this.readHandlers(book, task.chapterId, setup);
     let tools: BeatToolName[];
     let prompt: string;
     if (task.kind === 'choices') {
@@ -970,7 +983,7 @@ export class DiscoverService {
     const avoid: string[] = [];
     for (let index = 0; index < DRAFT_COUNT; index += 1) {
       let reviews = REVIEW_ROUNDS;
-      const handlers = this.readHandlers(book, task.chapterId);
+      const handlers = this.readHandlers(book, task.chapterId, setup);
       handlers.write_beat = async (args) => {
         const proposal = proposalFromArgs(args);
         const fresh = await this.bookService.discoverFiles(book);
@@ -1070,7 +1083,7 @@ export class DiscoverService {
       rules: readRules(files.rules),
       role: this.role(setup),
     });
-    const handlers = this.readHandlers(book, currentId);
+    const handlers = this.readHandlers(book, currentId, setup);
     const notes: string[] = [];
     const review = this.reviewer(model, context, notes);
     // When the writer overrules a decline, declining is not offered.
@@ -1295,8 +1308,17 @@ export class DiscoverService {
 
   // ---- Context --------------------------------------------------------------
 
-  private readHandlers(book: string, chapterId: string): BeatHandlers {
+  private readHandlers(book: string, chapterId: string, setup: DiscoverSetup): BeatHandlers {
+    const role = this.role(setup);
     return {
+      // The picked agent's skills, loaded the way a chat loads them.
+      ...(role === null || role.skills.length === 0
+        ? {}
+        : {
+            skill: (name: string) => this.roles.tools.activateSkill(name, role.allowed),
+            skillFile: (name: string, path: string) =>
+              this.roles.tools.readSkillFile(name, path, role.allowed),
+          }),
       read: (path) => {
         // A chapter asked for by id or knot ("chapter-04", "chapter_04.txt") is the chapter's file.
         const chapterId = /^(?:chapters\/)?chapter[-_](\d+)(?:\.\w+)?$/u.exec(path.trim())?.[1];

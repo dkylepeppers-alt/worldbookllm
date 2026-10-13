@@ -4,12 +4,15 @@ import type { z } from 'zod';
 
 import { ConflictError, NotFoundError } from '../../errors.js';
 import type { ProviderService } from '../../services/providers.js';
+import { truncateResult } from '../agent-service.js';
 import { providerToolArguments, streamStep } from '../provider-step.js';
 import { lastJsonObject } from './model-json.js';
 import {
   BEAT_TOOLS,
   WRITING_EXAMPLES,
   acceptActionArgs,
+  activateSkillArgs,
+  readSkillFileArgs,
   declineActionArgs,
   proposeVariableArgs,
   readFileArgs,
@@ -36,6 +39,9 @@ export interface BeatHandlers {
   read(path: string): string;
   search(query: string): string;
   propose(variable: z.infer<typeof proposeVariableArgs>): string;
+  /** The picked agent's skills, when it may use any. */
+  skill?(name: string): string;
+  skillFile?(name: string, path: string): string;
   write_beat?(args: z.infer<typeof writeBeatArgs>): Promise<HandlerOutcome>;
   write_choices?(args: z.infer<typeof writeChoicesArgs>): Promise<HandlerOutcome>;
   accept_action?(args: z.infer<typeof acceptActionArgs>): Promise<HandlerOutcome>;
@@ -103,7 +109,13 @@ export async function runBeatWriter(
   model: ModelAccess,
   input: { system: string; task: string; tools: readonly BeatToolName[]; handlers: BeatHandlers },
 ): Promise<string | undefined> {
-  const tools = [...input.tools, 'read_file', 'search', 'propose_variable'] as BeatToolName[];
+  const tools = [
+    ...input.tools,
+    'read_file',
+    'search',
+    'propose_variable',
+    ...(input.handlers.skill === undefined ? [] : ['activate_skill', 'read_skill_file']),
+  ] as BeatToolName[];
   const messages: ChatMessage[] = [
     { role: 'system', content: input.system },
     { role: 'user', content: input.task },
@@ -148,8 +160,9 @@ export async function runBeatWriter(
     });
     let finished: string | undefined | null = null;
     for (const call of calls) {
-      const reply = (content: string) =>
-        messages.push({ role: 'tool', tool_call_id: call.id, content: capped(content) });
+      // Skills come back as whole as in a chat; everything else keeps the beat writer's cap.
+      const reply = (content: string, cap: (text: string) => string = capped) =>
+        messages.push({ role: 'tool', tool_call_id: call.id, content: cap(content) });
       if (finished !== null) {
         reply('Not run: the beat was already written by an earlier call in this step.');
         continue;
@@ -163,6 +176,24 @@ export async function runBeatWriter(
         if (name === 'read_file') {
           const args = parse(readFileArgs, call.arguments);
           reply(args.ok ? input.handlers.read(args.value.path) : `Error: ${args.error}`);
+          continue;
+        }
+        if (name === 'activate_skill' && input.handlers.skill) {
+          const args = parse(activateSkillArgs, call.arguments);
+          reply(
+            args.ok ? input.handlers.skill(args.value.name) : `Error: ${args.error}`,
+            truncateResult,
+          );
+          continue;
+        }
+        if (name === 'read_skill_file' && input.handlers.skillFile) {
+          const args = parse(readSkillFileArgs, call.arguments);
+          reply(
+            args.ok
+              ? input.handlers.skillFile(args.value.name, args.value.path)
+              : `Error: ${args.error}`,
+            truncateResult,
+          );
           continue;
         }
         if (name === 'search') {
@@ -208,7 +239,9 @@ const TOOL_SHAPES: ReadonlyArray<[BeatToolName, readonly string[]]> = [
   ['write_choices', ['choices']],
   ['decline_action', ['reason']],
   ['propose_variable', ['name', 'meaning']],
+  ['read_skill_file', ['name', 'path']],
   ['read_file', ['path']],
+  ['activate_skill', ['name']],
   ['search', ['query']],
 ];
 

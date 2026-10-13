@@ -75,6 +75,11 @@ export const proposeVariableArgs = z.object({
 
 export const readFileArgs = z.object({ path: z.string().trim().min(1).max(1024) });
 export const searchArgs = z.object({ query: z.string().trim().min(1).max(200) });
+export const activateSkillArgs = z.object({ name: z.string().trim().min(1) });
+export const readSkillFileArgs = z.object({
+  name: z.string().trim().min(1),
+  path: z.string().trim().min(1),
+});
 
 type ChoiceArgs = z.infer<typeof choiceArgs>;
 
@@ -228,6 +233,18 @@ export const BEAT_TOOLS = {
   search: {
     description: "Search the book's files for a word or phrase.",
     parameters: { required: ['query'], properties: { query: { type: 'string' } } },
+  },
+  // Offered when the picked agent may use skills, as in a chat.
+  activate_skill: {
+    description: 'Load the full instructions of an installed skill before doing work it covers.',
+    parameters: { required: ['name'], properties: { name: { type: 'string' } } },
+  },
+  read_skill_file: {
+    description: "Read one of a skill's reference files, listed when the skill is activated.",
+    parameters: {
+      required: ['name', 'path'],
+      properties: { name: { type: 'string' }, path: { type: 'string' } },
+    },
   },
 } as const;
 

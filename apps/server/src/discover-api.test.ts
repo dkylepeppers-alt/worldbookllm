@@ -350,10 +350,16 @@ describe('discovering an interactive book', () => {
     ]);
   }, 30_000);
 
-  it('writes beats as the custom agent the setup picks, with the skills it names', async () => {
+  it('writes beats as the custom agent the setup picks, with the skills it names loaded and the rest to load', async () => {
     const { app, slug, requests } = await boot(
-      [() => sse(toolCall('choices', 'write_choices', { choices: THREE })), PASS],
-      ['The keeper waits.'],
+      [
+        () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
+        PASS,
+        () => sse(toolCall('skill', 'activate_skill', { name: 'cold-prose' })),
+        () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
+        PASS,
+      ],
+      ['The keeper waits.', 'The sea waits.'],
     );
     const skill = await app.inject({
       method: 'POST',
@@ -361,7 +367,8 @@ describe('discovering an interactive book', () => {
       payload: {
         name: 'cold-prose',
         description: 'Spare, cold prose.',
-        content: '# Cold prose\n\nShort sentences. No adverbs.',
+        // Longer than the beat writer's 16,000-character cap on other tool results, as skills can be.
+        content: `# Cold prose\n\n${'Keep it spare. '.repeat(1_200)}Short sentences. No adverbs.`,
       },
     });
     expect(skill.statusCode, skill.body).toBe(201);
@@ -396,21 +403,38 @@ describe('discovering an interactive book', () => {
           variables: [],
         },
       });
+    const write = async (chapterId: string) => {
+      await app.inject({
+        method: 'POST',
+        url: `/api/books/${slug}/discover/write`,
+        payload: { chapterId, position: null },
+      });
+      return settle(app, slug);
+    };
     const saved = await save(agent.id);
     expect(saved.statusCode, saved.body).toBe(200);
     expect(saved.json<DiscoverState>().setup?.agentId).toBe(agent.id);
 
-    await app.inject({
-      method: 'POST',
-      url: `/api/books/${slug}/discover/write`,
-      payload: { chapterId: 'chapter-01', position: null },
-    });
-    await settle(app, slug);
+    // A skill the agent names comes loaded, whole, so every beat follows it.
+    await write('chapter-01');
     const system = JSON.stringify(requests[0]);
     expect(system).toContain('## Your role: Gothic narrator');
     expect(system).toContain('Let the sea feel watchful.');
-    expect(system).toContain('### Skill: cold-prose');
+    expect(system).toContain('#### Skill: cold-prose');
     expect(system).toContain('Short sentences. No adverbs.');
+    expect(system).not.toContain('### Skills you can load');
+
+    // An agent allowed every skill gets the list, and loads one when it fits, as in a chat.
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/agents/${agent.id}`,
+      payload: { skills: null },
+    });
+    await write('chapter-02');
+    const listed = JSON.stringify(requests[2]);
+    expect(listed).toContain('- cold-prose: Spare, cold prose.');
+    expect(listed).not.toContain('Short sentences. No adverbs.');
+    expect(JSON.stringify(requests[3])).toContain('Short sentences. No adverbs.');
 
     // An agent that no longer exists cannot be picked.
     await app.inject({ method: 'DELETE', url: `/api/agents/${agent.id}` });
@@ -538,7 +562,7 @@ describe('discovering an interactive book', () => {
     await settle(app, slug);
     // All six fit the beat writer's skill budget, whole.
     const system = JSON.stringify(requests[0]);
-    for (const name of names) expect(system).toContain(`### Skill: ${name}`);
+    for (const name of names) expect(system).toContain(`#### Skill: ${name}`);
     expect(system).toContain('Accept by default');
   }, 30_000);
 

@@ -715,8 +715,8 @@ function BeatWriterPicker({
     <label>
       Beat writer
       <span className="field-hint">
-        A custom agent&apos;s instructions, and the skills it names, guide every beat.{' '}
-        <Link to="/agents">Make or edit agents</Link>.
+        A custom agent writes with its own instructions and follows the skills it names on every
+        beat. <Link to="/agents">Make or edit agents</Link>.
       </span>
       <select
         value={gone ? '' : (agentId ?? '')}
@@ -738,10 +738,10 @@ function BeatWriterPicker({
         <span className="field-hint">
           {picked.description === '' ? null : `${picked.description} `}
           {picked.skills === null
-            ? 'It allows every skill, so it brings its instructions only; name skills on the Agents page to include them.'
+            ? 'Skills: every installed skill, loaded when one fits.'
             : picked.skills.length === 0
-              ? 'It names no skills.'
-              : `Skills: ${picked.skills.join(', ')}.`}
+              ? 'No skills.'
+              : `Skills, followed on every beat: ${picked.skills.join(', ')}.`}
         </span>
       ) : null}
     </label>

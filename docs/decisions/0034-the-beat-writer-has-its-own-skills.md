@@ -10,7 +10,7 @@ What the beat writer needs is craft judgment for the calls it makes on every bea
 
 ## Decision
 
-1. **worldbookllm ships six beat writer skills**, in `apps/server/beat-skills/`: `beat-shape`, `choice-design`, `memory-and-state`, `branch-economy`, `voice-continuity`, and `reader-actions`. They use only the beat writer's tools and terms, say when to use them in the beat writer's terms, leave out what its standing prompt already says, and stay under 3,000 characters each so the beat writer reads them whole.
+1. **worldbookllm ships six beat writer skills**, in `apps/server/beat-skills/`: `beat-shape`, `choice-design`, `memory-and-state`, `branch-economy`, `voice-continuity`, and `reader-actions`. They use only the beat writer's tools and terms, say when to use them in the beat writer's terms, leave out what its standing prompt already says, and stay under 3,000 characters each, small enough to load on every beat.
 2. **They install and upgrade like Story Skills** (ADR 0021), through the same installer. Their origin is `{ type: "beat-skills", package: "beat-skills@x.y.z", skillId }` and their licence is the repository's, AGPL-3.0-only. Unedited installs move to a new version at startup; edited ones are kept. A test fails when a file changes without a version bump.
 3. **One action installs them and makes a "Beat writer" agent** that names all six: _Add the Beat writer agent_ on the story setup, `POST /api/beat-writer/install`. It picks the agent for the book. An agent already named "Beat writer" is left as the writer has it.
 4. **They are ordinary skills once installed.** The writer can read, edit, or delete them on the Skills page, name them in their own agents, and change the agent. The default beat writer is unchanged.
@@ -24,4 +24,4 @@ Rewriting Story Skills for discovery upstream would put worldbookllm's tools and
 - The beat writer has craft guidance that fits it, and a writer gets it with one button.
 - Changing a beat writer skill means bumping `BEAT_SKILLS_PACKAGE` and recording the new hash in its test.
 - A data directory with beat writer skills cannot be read by a build from before this ADR, since its skill origin is new.
-- Whether named skills are pasted into the beat writer's prompt or loaded on demand is ADR 0033's to decide; these skills are sized to work either way.
+- The Beat writer agent names its skills, so they come loaded on every beat (ADR 0033 decision 5); at 11.8K characters together they cost little prompt.

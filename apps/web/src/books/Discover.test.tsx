@@ -414,7 +414,7 @@ describe('Story setup', () => {
     const picker = await screen.findByLabelText(/^Beat writer/u);
     await waitFor(() => expect((picker as HTMLSelectElement).disabled).toBe(false));
     await user.selectOptions(picker, 'Gothic narrator');
-    expect(screen.getByText(/Skills: cold-prose/u)).toBeTruthy();
+    expect(screen.getByText(/Skills, followed on every beat: cold-prose/u)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Save and go to Play' }));
     await waitFor(() => expect(saveDiscoverSetup).toHaveBeenCalled());
     expect(saveDiscoverSetup.mock.calls[0]![1].setup.agentId).toBe(agent.id);

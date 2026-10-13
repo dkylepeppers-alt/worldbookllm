@@ -115,6 +115,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const skills = new SkillService(db, new SkillFileStore(dataDir));
   const skillsRoot = join(dataDir, 'skills');
   const customAgents = new CustomAgentService(db, skills);
+  const agentTools = new AgentToolRegistry(skills, skillsRoot);
   const changesets = new AgentChangesetService(db, books);
   const agent = new AgentService(
     db,
@@ -122,7 +123,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     skills,
     settings,
     providers,
-    new AgentToolRegistry(skills, skillsRoot),
+    agentTools,
     changesets,
     customAgents,
     join(dataDir, 'staging'),
@@ -135,7 +136,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     books,
     settings,
     providers,
-    { agents: customAgents, skills },
+    { agents: customAgents, skills, tools: agentTools },
     (error) => app.log.error(error),
   );
   books.attachChatLifecycle({
