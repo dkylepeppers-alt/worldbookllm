@@ -185,7 +185,7 @@ export class AgentToolRegistry {
         'Load the full instructions of an installed skill before doing work it covers.',
         { properties: { name: { type: 'string' } }, required: ['name'] },
         z.object({ name: z.string() }),
-        ({ name }, context) => this.activateSkill(name, context),
+        ({ name }, context) => this.activateSkill(name, context.skills),
       ),
       tool(
         'read_skill_file',
@@ -195,7 +195,7 @@ export class AgentToolRegistry {
           required: ['name', 'path'],
         },
         z.object({ name: z.string(), path: z.string() }),
-        ({ name, path }, context) => this.readSkillFile(name, path, context),
+        ({ name, path }, context) => this.readSkillFile(name, path, context.skills),
       ),
       tool(
         'list_files',
@@ -457,17 +457,18 @@ export class AgentToolRegistry {
     }
   }
 
-  private skillByName(name: string, context: ToolContext) {
+  private skillByName(name: string, allowed: ReadonlySet<string> | null) {
     const skill = this.skills.list().find((entry) => entry.name === name);
     if (!skill) throw new Error(`No installed skill is named ${name}.`);
-    if (context.skills !== null && !context.skills.has(name)) {
+    if (allowed !== null && !allowed.has(name)) {
       throw new Error(`The skill ${name} is not available to this agent.`);
     }
     return skill;
   }
 
-  private activateSkill(name: string, context: ToolContext): string {
-    const skill = this.skills.get(this.skillByName(name, context).id);
+  /** A skill's instructions and the reference files it has; also the beat writer's (ADR 0033). */
+  activateSkill(name: string, allowed: ReadonlySet<string> | null): string {
+    const skill = this.skills.get(this.skillByName(name, allowed).id);
     const referencesDir = join(this.skillsRoot, skill.name, 'references');
     let references: string[];
     try {
@@ -486,8 +487,8 @@ export class AgentToolRegistry {
     ].join('');
   }
 
-  private readSkillFile(name: string, path: string, context: ToolContext): string {
-    const skill = this.skillByName(name, context);
+  readSkillFile(name: string, path: string, allowed: ReadonlySet<string> | null): string {
+    const skill = this.skillByName(name, allowed);
     const absolute = confine(join(this.skillsRoot, skill.name), path);
     if (!absolute.endsWith('.md')) throw new Error('Only Markdown skill files can be read.');
     if (statSync(absolute).size > SKILL_FILE_MAX_BYTES) {

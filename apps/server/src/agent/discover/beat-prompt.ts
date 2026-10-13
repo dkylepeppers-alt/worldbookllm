@@ -20,11 +20,13 @@ const REJOIN = {
 } as const;
 
 /** The beat writer's standing instructions. */
-/** The custom agent the writer picked for the beat writer: its instructions and the skills it names. */
+/** The custom agent the writer picked for the beat writer: its instructions and the skills it may load. */
 export interface BeatRole {
   name: string;
   instructions: string;
-  skills: ReadonlyArray<{ name: string; content: string }>;
+  /** The skills it may load; null allows every installed skill. */
+  allowed: ReadonlySet<string> | null;
+  skills: ReadonlyArray<{ name: string; description: string }>;
 }
 
 export function beatSystemPrompt(input: {
@@ -100,7 +102,14 @@ function roleSection(role: BeatRole | null): string[] {
     `## Your role: ${role.name}`,
     'The writer chose this role for the beat writer. Write as it says; the tools, the rules above, and the rules for choices still apply.',
     ...(role.instructions.trim() === '' ? [] : ['', role.instructions.trim()]),
-    ...role.skills.flatMap((skill) => ['', `### Skill: ${skill.name}`, skill.content.trim()]),
+    ...(role.skills.length === 0
+      ? []
+      : [
+          '',
+          '### Skills',
+          'When a skill below fits the beat, load it with activate_skill and follow it; load its references with read_skill_file when it says to.',
+          ...role.skills.map((skill) => `- ${skill.name}: ${skill.description}`),
+        ]),
   ];
 }
 
