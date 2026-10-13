@@ -148,7 +148,10 @@ export const discoverJobKindSchema = z.enum([
   'story',
 ]);
 
-/** The story half of the setup as the beat writer drafts it, for the writer to edit. */
+/**
+ * The story half of the setup as the beat writer drafts it, for the writer to
+ * edit; also what the writer has so far, when asking for a draft.
+ */
 export const storyDraftSchema = z.strictObject({
   kernel: z.string().trim().max(4000),
   shape: z.string().trim().max(8000),
@@ -239,12 +242,6 @@ export const proposeVariablesInputSchema = z.strictObject({
   shape: z.string().trim().max(8000),
 });
 
-/**
- * Asks the beat writer to draft the premise, shape and tone, and endings
- * from the bible and story.md, building on whatever the writer has so far.
- */
-export const proposeStoryInputSchema = storyDraftSchema;
-
 export const proposalDecisionSchema = z.strictObject({
   approve: z.boolean(),
   /** The variable as the writer edited it, when approving. */
@@ -269,5 +266,4 @@ export type WriteBeatInput = z.infer<typeof writeBeatInputSchema>;
 export type SomethingElseInput = z.infer<typeof somethingElseInputSchema>;
 export type ProposeVariablesInput = z.infer<typeof proposeVariablesInputSchema>;
 export type StoryDraft = z.infer<typeof storyDraftSchema>;
-export type ProposeStoryInput = z.infer<typeof proposeStoryInputSchema>;
 export type ProposalDecision = z.infer<typeof proposalDecisionSchema>;

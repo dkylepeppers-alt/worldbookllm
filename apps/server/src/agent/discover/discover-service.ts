@@ -14,7 +14,6 @@ import {
   type DraftBeatInput,
   type PlayPosition,
   type ProposalDecision,
-  type ProposeStoryInput,
   type ProposeVariablesInput,
   type SaveDiscoverSetupInput,
   type SomethingElseInput,
@@ -311,7 +310,7 @@ export class DiscoverService {
    * from the bible and story.md, for the setup form, where the writer edits
    * them before saving.
    */
-  proposeStory(book: string, input: ProposeStoryInput): Promise<DiscoverState> {
+  proposeStory(book: string, input: StoryDraft): Promise<DiscoverState> {
     const jobs = this.jobs(book);
     jobs.records = jobs.records.filter(
       (record) => record.task.kind !== 'story' || record.job.status === 'running',
