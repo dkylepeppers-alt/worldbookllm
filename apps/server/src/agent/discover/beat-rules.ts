@@ -142,9 +142,9 @@ const CHOICE_EXAMPLE =
 
 /** What a writing tool's arguments look like, for its description and for reminding a model that answered in prose. */
 export const WRITING_EXAMPLES = {
-  write_beat: `{"title": "The Knock", "summary": "Someone knocks at night.", "ink": "The knock came twice.\\nShe did not move.", "ending": false, "choices": [${CHOICE_EXAMPLE}, …]}`,
-  write_choices: `{"choices": [${CHOICE_EXAMPLE}, …]}`,
-  accept_action: `{"choice": {"text": "Read the letter aloud", "intent": "honesty", "consequence": "he hears it too"}, "beat": {"title": "…", "summary": "…", "ink": "…", "ending": false, "choices": [${CHOICE_EXAMPLE}, …]}}`,
+  write_beat: `{"title": "The Knock", "summary": "Someone knocks at night.", "ink": "The knock came twice.\\nShe did not move.", "ending": false, "choices": [${CHOICE_EXAMPLE}]}`,
+  write_choices: `{"choices": [${CHOICE_EXAMPLE}]}`,
+  accept_action: `{"choice": {"text": "Read the letter aloud", "intent": "honesty", "consequence": "he hears it too"}, "beat": {"title": "Aloud", "summary": "She reads it to him.", "ink": "She read it aloud.", "ending": false, "choices": [${CHOICE_EXAMPLE}]}}`,
   decline_action:
     '{"reason": "There is no boat on the rock.", "suggestion": "Signal the passing ship"}',
 } as const;
