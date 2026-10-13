@@ -687,11 +687,13 @@ function Passage({
         />
       ) : (
         <div className="play-end">
-          {turn.stale ? null : beat !== undefined && !beat.ending && state !== null ? (
+          {turn.stale ? null : state?.setup != null && last != null && beat?.ending !== true ? (
+            // Any chapter that ends without choices goes on from here, the writer's own included.
             <EndPanel
               discover={discover!}
               state={state}
-              chapterId={beat.chapterId}
+              chapterId={last.chapterId}
+              yours={beat === undefined}
               position={position}
             />
           ) : (

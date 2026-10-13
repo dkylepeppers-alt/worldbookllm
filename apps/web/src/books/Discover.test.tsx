@@ -520,6 +520,28 @@ describe('Play while discovering', () => {
     );
   });
 
+  it('offers to go on from the end of a chapter the writer wrote', async () => {
+    // A converted book: discovery manages none of its chapters, so each one is the writer's.
+    const converted: DiscoverState = { ...discovering, beats: [], openThreads: [] };
+    const writeDiscoverBeat = vi.fn<ApiClient['writeDiscoverBeat']>(() =>
+      Promise.resolve(converted),
+    );
+    renderAt('/books/gull-rock/branches/play?seed=1&path=1', {
+      getDiscover: () => Promise.resolve(converted),
+      setDiscoverPosition: () => Promise.resolve(converted),
+      writeDiscoverBeat,
+    });
+    const user = userEvent.setup();
+    expect(await screen.findByText('It curls in the flame.')).toBeTruthy();
+    expect(screen.queryByText('The end.')).toBeNull();
+    expect(screen.getByText(/Your chapter ends here/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Write what happens next' }));
+    expect(writeDiscoverBeat).toHaveBeenCalledWith('gull-rock', {
+      chapterId: 'chapter-03',
+      position: { from: null, set: {}, seed: 1, path: [1] },
+    });
+  });
+
   it('lists the variables the beat writer asks for, to add or decline', async () => {
     const decideDiscoverProposal = vi.fn<ApiClient['decideDiscoverProposal']>(() =>
       Promise.resolve(discovering),

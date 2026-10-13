@@ -31,7 +31,8 @@ const DEFAULT_SETUP: DiscoverSetup = {
  * bible when the book is first set up; the writer edits them from there.
  */
 export function DiscoverSetupPage() {
-  const { slug } = useBook();
+  const { slug, tree } = useBook();
+  const hasChapters = tree.files.some((file) => file.kind === 'chapter');
   const discover = useDiscover();
   const branches = `/books/${encodeURIComponent(slug)}/branches`;
   return (
@@ -45,6 +46,13 @@ export function DiscoverSetupPage() {
         with, following your bible, your premise, the variables below, and the rules for choices.
         Everything it writes is an ordinary chapter you can read, edit, or undo.
       </p>
+      {hasChapters ? (
+        <p>
+          The story starts from the chapters you already have, and they stay as you wrote them. When
+          you reach the end of one in Play, choose <strong>Write what happens next</strong>: the
+          beat writer adds the choices it ends with and writes where they lead.
+        </p>
+      ) : null}
       {discover.state === null ? (
         discover.error === null ? (
           <LoadingState>Reading the setup…</LoadingState>

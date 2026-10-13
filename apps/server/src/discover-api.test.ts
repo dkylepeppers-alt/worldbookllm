@@ -56,8 +56,11 @@ const THREE = [
   choice('Hand it back to the keeper', 'deference'),
 ];
 
-/** Boots the app with a scripted model and an empty interactive book. */
-async function boot(script: Array<() => Response | Promise<Response>>) {
+/** Boots the app with a scripted model and an interactive book, converted from these chapters' prose. */
+async function boot(
+  script: Array<() => Response | Promise<Response>>,
+  chapters: readonly string[] = [],
+) {
   dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-discover-'));
   const requests: Array<Record<string, unknown>> = [];
   let turn = 0;
@@ -81,6 +84,19 @@ async function boot(script: Array<() => Response | Promise<Response>>) {
   const book = (
     await app.inject({ method: 'POST', url: '/api/books', payload: { title: 'Gull Rock' } })
   ).json<BookSummary>();
+  for (const [index, prose] of chapters.entries()) {
+    await app.services.books.addEntity(book.slug, {
+      kind: 'chapter',
+      name: `Chapter ${index + 1}`,
+      options: {},
+    });
+    const path = `chapters/chapter-${String(index + 1).padStart(2, '0')}.md`;
+    const file = app.services.books.readFile(book.slug, path);
+    await app.services.books.writeFile(book.slug, path, {
+      content: `${file.content}\n${prose}\n`,
+      expectedHash: file.hash,
+    });
+  }
   const { token } = await app.services.books.inkConversion(book.slug);
   await app.services.books.convertToInk(book.slug, { token });
   return { app, slug: book.slug, requests };
@@ -280,6 +296,52 @@ describe('discovering an interactive book', () => {
       ['chapter-04', 'written', true, false],
     ]);
     expect(state.openThreads).toEqual([]);
+  }, 30_000);
+
+  it('goes on from the end of a chapter the writer wrote before converting the book', async () => {
+    const { app, slug } = await boot(
+      [() => sse(toolCall('choices', 'write_choices', { choices: THREE })), PASS],
+      ['The keeper finds a letter on the step.'],
+    );
+    const setup = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/discover/setup`,
+      payload: {
+        setup: {
+          mode: 'cowrite',
+          lookahead: 1,
+          choices: 3,
+          beatLength: 'scene',
+          rejoin: 'sometimes',
+          endings: '',
+          kernel: '',
+          shape: '',
+        },
+        rules: '1. Different intents.',
+        variables: [],
+      },
+    });
+    expect(setup.statusCode, setup.body).toBe(200);
+    // Discovery does not manage the writer's chapter, so it is no beat of its own.
+    expect(setup.json<DiscoverState>().beats).toEqual([]);
+
+    const write = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/write`,
+      payload: { chapterId: 'chapter-01', position: { from: null, set: {}, seed: 1, path: [] } },
+    });
+    expect(write.statusCode, write.body).toBe(200);
+    const state = await settle(app, slug);
+    const opening = chapter(app, slug, 'chapter-01');
+    // The prose stays as written; the choices go on from it, each to a beat not written yet.
+    expect(opening).toContain(
+      'The keeper finds a letter on the step.\n\n* [Open the letter] -> chapter_02',
+    );
+    expect(state.openThreads.map((thread) => thread.chapterId)).toEqual([
+      'chapter-02',
+      'chapter-03',
+      'chapter-04',
+    ]);
   }, 30_000);
 
   it('turns the reader’s own action into a real choice, or declines it with a reason', async () => {

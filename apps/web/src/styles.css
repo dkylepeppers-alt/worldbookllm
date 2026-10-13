@@ -2543,6 +2543,11 @@ ol.inspector-sections {
   font-weight: 620;
 }
 
+.discover-end {
+  display: grid;
+  gap: 0.5rem;
+}
+
 .play-segment {
   display: grid;
   gap: 0.75rem;
