@@ -687,7 +687,11 @@ function Passage({
         />
       ) : (
         <div className="play-end">
-          {turn.stale ? null : state?.setup != null && last != null && beat?.ending !== true ? (
+          {turn.stale ? null : state?.setup != null &&
+            last != null &&
+            beat?.ending !== true &&
+            // Choices it has that this path cannot take are still its choices.
+            (state.closingChoices[last.chapterId] ?? []).length === 0 ? (
             // Any chapter that ends without choices goes on from here, the writer's own included.
             <EndPanel
               discover={discover!}

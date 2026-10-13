@@ -795,7 +795,14 @@ export class DiscoverService {
     ) {
       return undefined;
     }
-    const context = await this.promptInput(book, files, task.chapterId, task.position);
+    // Choices go on from the chapter itself, so the path is the one that reaches it, the writer's own chapters included.
+    const context = await this.promptInput(
+      book,
+      files,
+      task.chapterId,
+      task.position,
+      task.kind === 'choices',
+    );
     const system = beatSystemPrompt({
       bookTitle: files.title,
       setup,
@@ -1344,7 +1351,8 @@ export class DiscoverService {
    * path to the choice that leads there: the reader's own when they stand at
    * it (or at the seed), the reader's path and the beats between when it is
    * further ahead, else the shortest path that reaches the beat before it.
-   * `here` is for the reader's own action, where the reader's place is the beat.
+   * `here` is for the reader's own action and for choices added to a
+   * chapter, where the reader's place is the chapter itself.
    */
   private async pathTo(
     book: string,

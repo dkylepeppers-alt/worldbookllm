@@ -344,6 +344,28 @@ describe('discovering an interactive book', () => {
     ]);
   }, 30_000);
 
+  it('gives the beat writer the path that reaches the writer’s own chapter', async () => {
+    const { app, slug, requests } = await boot(
+      [() => sse(toolCall('choices', 'write_choices', { choices: THREE })), PASS],
+      ['The keeper finds a letter on the step.', 'She carries it up the stairs.'],
+    );
+    await setUp(app, slug, { mode: 'cowrite', opening: null });
+    const write = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/write`,
+      // The first chapter goes on into the second, so the reader is at the second.
+      payload: { chapterId: 'chapter-02', position: { from: null, set: {}, seed: 1, path: [] } },
+    });
+    expect(write.statusCode, write.body).toBe(200);
+    await settle(app, slug);
+    const prompt = JSON.stringify(requests[0]);
+    const path = prompt.slice(prompt.indexOf('## What the reader has read on this path'));
+    expect(path).toContain('The keeper finds a letter on the step.');
+    expect(chapter(app, slug, 'chapter-02')).toContain(
+      'She carries it up the stairs.\n\n* [Open the letter] -> chapter_03',
+    );
+  }, 30_000);
+
   it('turns the reader’s own action into a real choice, or declines it with a reason', async () => {
     const { app, slug } = await boot([
       () =>

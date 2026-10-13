@@ -542,6 +542,26 @@ describe('Play while discovering', () => {
     });
   });
 
+  it('offers no way on from a chapter whose choices this path cannot take', async () => {
+    // Its choices are all conditional and closed here: they are still its choices.
+    const closed: DiscoverState = {
+      ...discovering,
+      beats: [],
+      openThreads: [],
+      closingChoices: {
+        ...discovering.closingChoices,
+        'chapter-03': ['Read the ashes'],
+      },
+    };
+    renderAt('/books/gull-rock/branches/play?seed=1&path=1', {
+      getDiscover: () => Promise.resolve(closed),
+      setDiscoverPosition: () => Promise.resolve(closed),
+    });
+    expect(await screen.findByText('It curls in the flame.')).toBeTruthy();
+    expect(await screen.findByText('The end.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Write what happens next' })).toBeNull();
+  });
+
   it('lists the variables the beat writer asks for, to add or decline', async () => {
     const decideDiscoverProposal = vi.fn<ApiClient['decideDiscoverProposal']>(() =>
       Promise.resolve(discovering),
