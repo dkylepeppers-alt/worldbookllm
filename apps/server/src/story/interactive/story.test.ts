@@ -55,6 +55,17 @@ describe('assembling and compiling an ink book', () => {
     });
   });
 
+  it('reports an error when inkjs throws before it has a parse tree', () => {
+    // `<-` parses as `< -true`, and inkjs throws on negating a boolean
+    // instead of reporting it.
+    const { compiled } = build([chapter('chapter-01', 1, '~ trust <- true\n-> END\n')]);
+    expect(compiled.json).toBeNull();
+    expect(compiled.parsed).toBeNull();
+    expect(compiled.diagnostics).toEqual([
+      { severity: 'error', message: 'Unexpected operation or number type', path: null, line: null },
+    ]);
+  });
+
   it('reads choices, conditions, writes, stitches, and reachability', () => {
     const { story, compiled } = build([
       chapter(

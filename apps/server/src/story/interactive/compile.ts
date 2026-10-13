@@ -77,7 +77,9 @@ export function compileStory(story: AssembledStory): CompiledStory {
       diagnostics.push(diagnosticOf(story, message, 'error'));
     }
   }
-  const parsed = (compiler.parsedStory as unknown as ParsedNode | null) ?? null;
+  // The `parsedStory` getter throws when parsing threw before it finished,
+  // so read its backing field, which is null then.
+  const parsed = (compiler as unknown as { _parsedStory: ParsedNode | null })._parsedStory ?? null;
   return { json, parsed, diagnostics: dedupe(diagnostics) };
 }
 
