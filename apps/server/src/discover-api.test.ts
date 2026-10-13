@@ -359,7 +359,8 @@ describe('discovering an interactive book', () => {
       payload: {
         name: 'cold-prose',
         description: 'Spare, cold prose.',
-        content: '# Cold prose\n\nShort sentences. No adverbs.',
+        // Longer than the beat writer's 16,000-character cap on other tool results, as skills can be.
+        content: `# Cold prose\n\n${'Keep it spare. '.repeat(1_200)}Short sentences. No adverbs.`,
       },
     });
     expect(skill.statusCode, skill.body).toBe(201);

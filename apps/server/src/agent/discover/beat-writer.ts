@@ -4,6 +4,7 @@ import type { z } from 'zod';
 
 import { ConflictError, NotFoundError } from '../../errors.js';
 import type { ProviderService } from '../../services/providers.js';
+import { truncateResult } from '../agent-service.js';
 import { providerToolArguments, streamStep } from '../provider-step.js';
 import { lastJsonObject } from './model-json.js';
 import {
@@ -159,8 +160,9 @@ export async function runBeatWriter(
     });
     let finished: string | undefined | null = null;
     for (const call of calls) {
-      const reply = (content: string) =>
-        messages.push({ role: 'tool', tool_call_id: call.id, content: capped(content) });
+      // Skills come back as whole as in a chat; everything else keeps the beat writer's cap.
+      const reply = (content: string, cap: (text: string) => string = capped) =>
+        messages.push({ role: 'tool', tool_call_id: call.id, content: cap(content) });
       if (finished !== null) {
         reply('Not run: the beat was already written by an earlier call in this step.');
         continue;
@@ -178,7 +180,10 @@ export async function runBeatWriter(
         }
         if (name === 'activate_skill' && input.handlers.skill) {
           const args = parse(activateSkillArgs, call.arguments);
-          reply(args.ok ? input.handlers.skill(args.value.name) : `Error: ${args.error}`);
+          reply(
+            args.ok ? input.handlers.skill(args.value.name) : `Error: ${args.error}`,
+            truncateResult,
+          );
           continue;
         }
         if (name === 'read_skill_file' && input.handlers.skillFile) {
@@ -187,6 +192,7 @@ export async function runBeatWriter(
             args.ok
               ? input.handlers.skillFile(args.value.name, args.value.path)
               : `Error: ${args.error}`,
+            truncateResult,
           );
           continue;
         }
