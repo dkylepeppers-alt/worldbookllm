@@ -77,6 +77,8 @@ function SetupForm({
   const hasChapters = tree.files.some((file) => file.kind === 'chapter');
   const [openingKind, setOpeningKind] = useState<'agent' | 'writer'>('agent');
   const [opening, setOpening] = useState('');
+  // The beat writer writes a new book's opening from the premise; a scene already there tells it the story.
+  const writesOpening = !hasChapters && (openingKind === 'agent' || opening.trim() === '');
   const update = (change: Partial<DiscoverSetup>) =>
     setSetup((current) => ({ ...current, ...change }));
 
@@ -87,6 +89,7 @@ function SetupForm({
     update(change);
   };
   const drafting = state.jobs.find((job) => job.kind === 'story');
+  const source = hasChapters ? 'the story so far and your bible' : 'your bible';
   const draftingNow = drafting?.status === 'queued' || drafting?.status === 'running';
   const draftStory = () => {
     touched.current.clear();
@@ -95,6 +98,7 @@ function SetupForm({
         kernel: setup.kernel,
         shape: setup.shape,
         endings: setup.endings,
+        ...(!hasChapters && openingKind === 'writer' ? { opening } : {}),
       }),
     );
   };
@@ -164,13 +168,13 @@ function SetupForm({
             {draftingNow
               ? 'Drafting…'
               : setup.kernel.trim() === ''
-                ? 'Draft from the bible'
-                : 'Redraft from the bible'}
+                ? 'Draft with the beat writer'
+                : 'Redraft with the beat writer'}
           </button>
           <span className="coordinate-label" role="status">
             {draftingNow
-              ? 'The beat writer is drafting the premise, shape, and endings from your bible. Anything you type meanwhile is kept.'
-              : 'The beat writer drafts these from your bible and keeps what you have written. Edit them freely.'}
+              ? `The beat writer is drafting the premise, shape, and endings from ${source}. Anything you type meanwhile is kept.`
+              : `The beat writer drafts these from ${source} and keeps what you have written. Edit them freely.`}
           </span>
         </div>
         {drafting?.status === 'failed' ? <p className="form-error">{drafting.message}</p> : null}
@@ -178,7 +182,10 @@ function SetupForm({
           Premise
           <span className="coordinate-label">
             One paragraph: a character in a situation, what they want, what stands in the way, and
-            the tone. It is saved as the story kernel in story.md.
+            the tone. It is saved as the story kernel in story.md.{' '}
+            {writesOpening
+              ? 'The beat writer writes the opening from it.'
+              : 'Optional: the scenes already written tell the beat writer the story, and this says where it is going.'}
           </span>
           <textarea
             className="prose-input"
@@ -501,12 +508,14 @@ function SetupForm({
         <button
           type="submit"
           className="button-primary"
-          disabled={discover.busy || setup.kernel.trim() === '' || rules.trim() === ''}
+          disabled={
+            discover.busy || (writesOpening && setup.kernel.trim() === '') || rules.trim() === ''
+          }
         >
           {state.setup === null ? 'Save and start playing' : 'Save and go to Play'}
         </button>
-        {setup.kernel.trim() === '' ? (
-          <span className="coordinate-label">Write the premise first.</span>
+        {writesOpening && setup.kernel.trim() === '' ? (
+          <span className="coordinate-label">Write the premise, or the opening scene, first.</span>
         ) : null}
       </div>
     </form>

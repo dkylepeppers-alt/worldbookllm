@@ -14,6 +14,7 @@ import {
   type DraftBeatInput,
   type PlayPosition,
   type ProposalDecision,
+  type ProposeStoryInput,
   type ProposeVariablesInput,
   type SaveDiscoverSetupInput,
   type SomethingElseInput,
@@ -101,6 +102,8 @@ const BIBLE_KINDS = new Set(['character', 'location', 'system', 'faction', 'arti
 const BIBLE_BUDGET = 20_000;
 const ENTRY_BUDGET = 3_000;
 const KEEP_FINISHED = 20;
+/** Prose from the written scenes a drafted story setup reads. */
+const SCENES_BUDGET = 10_000;
 
 type Task =
   | { kind: 'beat'; chapterId: string; position: PlayPosition | null; direction: string | null }
@@ -116,7 +119,7 @@ type Task =
   | { kind: 'drafts'; chapterId: string; position: PlayPosition | null; direction: string | null }
   | { kind: 'something-else'; position: PlayPosition; action: string }
   | { kind: 'variables'; kernel: string; shape: string }
-  | { kind: 'story'; draft: StoryDraft };
+  | { kind: 'story'; draft: ProposeStoryInput };
 
 interface JobRecord {
   job: DiscoverJob;
@@ -272,6 +275,14 @@ export class DiscoverService {
    */
   async saveSetup(book: string, input: SaveDiscoverSetupInput): Promise<DiscoverState> {
     const files = await this.bookService.discoverFiles(book);
+    // The beat writer writes a new book's opening from the premise; with a scene already there, it is optional.
+    if (
+      input.setup.kernel === '' &&
+      files.chapters.length === 0 &&
+      (input.opening ?? '').trim() === ''
+    ) {
+      throw new ValidationError('Write the premise, or the opening scene, first.');
+    }
     const writes = new Map<string, string>([
       [SETUP_FILE, setupFile(input.setup)],
       [RULES_FILE, rulesFile(input.rules)],
@@ -310,7 +321,7 @@ export class DiscoverService {
    * from the bible and story.md, for the setup form, where the writer edits
    * them before saving.
    */
-  proposeStory(book: string, input: StoryDraft): Promise<DiscoverState> {
+  proposeStory(book: string, input: ProposeStoryInput): Promise<DiscoverState> {
     const jobs = this.jobs(book);
     jobs.records = jobs.records.filter(
       (record) => record.task.kind !== 'story' || record.job.status === 'running',
@@ -1559,30 +1570,29 @@ export class DiscoverService {
   private async suggestStory(
     book: string,
     model: ModelAccess,
-    draft: StoryDraft,
+    draft: ProposeStoryInput,
   ): Promise<StoryDraft> {
     const files = await this.bookService.discoverFiles(book);
-    const title = parseFrontmatter(files.story)
-      .body.match(/^\s*#\s+([^\n]+)/u)?.[1]
-      ?.trim();
     const notes = storyNotes(files.story);
+    const scenes = this.writtenScenes(files, draft.opening ?? '');
     const given = (label: string, text: string) =>
       text.trim() === '' ? [] : ['', `## ${label} (the writer's, so far)`, text.trim()];
     const prompt = [
-      "You help a writer set up an interactive book written in ink, discovered by playing it: a beat writer writes each scene and the choices it ends with. Draft the story setup from the book's bible and notes. Where the writer has written a field already, keep their ideas and their words, and only fill out what is missing. Ground everything in the bible and notes; where they say little, propose something specific rather than generic.",
+      "You help a writer set up an interactive book written in ink, discovered by playing it: a beat writer writes each scene and the choices it ends with. Draft the story setup from the book's bible and notes. Where the writer has written a field already, keep their ideas and their words, and only fill out what is missing. When scenes are already written, the setup describes that story: its protagonist, situation, and tone, and where it can go from there. Ground everything in the scenes, bible, and notes; where they say little, propose something specific rather than generic.",
       '',
       '- kernel: the premise, one paragraph: a character in a situation, what they want, what stands in the way, and the tone.',
       '- shape: shape and tone, a few sentences: length, mood, what kind of choices the reader faces, anything the beat writer should keep in mind.',
       '- endings: the endings wanted, one short line ("Three, one of them bittersweet").',
       '',
-      `## Book: ${title ?? book}`,
+      `## Book: ${files.title}`,
       ...given('Premise', draft.kernel),
       ...given('Shape and tone', draft.shape),
       ...given('Endings', draft.endings),
+      ...(scenes === '' ? [] : ['', '## Written so far', scenes]),
       ...(notes === '' ? [] : ['', '## Notes from story.md', notes]),
       '',
       '## Bible',
-      this.bible(book, draft.kernel).slice(0, 12_000) || '(no entries yet)',
+      this.bible(book, `${draft.kernel}\n${scenes}`).slice(0, 12_000) || '(no entries yet)',
       '',
       'Reply with JSON only: {"kernel": "…", "shape": "…", "endings": "…"}',
     ].join('\n');
@@ -1601,7 +1611,7 @@ export class DiscoverService {
     }
     const fields = typeof parsed === 'object' && parsed !== null ? parsed : {};
     // A field the model leaves out or blank keeps what the writer sent.
-    const field = (key: 'kernel' | 'shape' | 'endings', max: number) => {
+    const field = (key: keyof StoryDraft, max: number) => {
       const value = (fields as Record<string, unknown>)[key];
       const text = typeof value === 'string' ? value.trim().slice(0, max).trim() : '';
       return text === '' ? draft[key] : text;
@@ -1613,6 +1623,27 @@ export class DiscoverService {
     });
     if (story.kernel === '') throw new BeatWriterError('The model did not draft a premise.');
     return story;
+  }
+
+  /** The story's written scenes, the opening first, within a budget: what a drafted setup describes. */
+  private writtenScenes(files: DiscoverFiles, opening: string): string {
+    if (files.chapters.length === 0) {
+      const scene = opening.trim();
+      return scene.length <= SCENES_BUDGET ? scene : `${scene.slice(0, SCENES_BUDGET)}…`;
+    }
+    const written = discoverBeats(files.chapters, new Set())
+      .filter((beat) => beat.state === 'written')
+      .sort((left, right) => Number(left.from !== null) - Number(right.from !== null));
+    const parts: string[] = [];
+    let used = 0;
+    for (const beat of written) {
+      const prose = proseOf(chapterOf(files, beat.chapterId)).trim();
+      if (prose === '') continue;
+      if (used + prose.length > SCENES_BUDGET) break;
+      used += prose.length;
+      parts.push(`### ${beat.title}\n${prose}`);
+    }
+    return parts.join('\n\n');
   }
 
   // ---- Stored state ---------------------------------------------------------

@@ -202,8 +202,9 @@ describe('Story setup', () => {
     });
     const user = userEvent.setup();
     const save = await screen.findByRole('button', { name: 'Save and start playing' });
-    expect((save as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText('Write the premise first.')).toBeTruthy();
+    // The book has chapters, so the premise is optional: the scenes tell the beat writer the story.
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/Optional: the scenes already written/u)).toBeTruthy();
     // A new setup asks the beat writer for a draft straight away.
     await waitFor(() =>
       expect(proposeDiscoverStory).toHaveBeenCalledWith('gull-rock', {
@@ -235,6 +236,42 @@ describe('Story setup', () => {
     expect('opening' in input).toBe(false);
     await waitFor(() =>
       expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock/branches/play'),
+    );
+  });
+
+  it('needs the premise or the opening scene for a book with no chapters', async () => {
+    const fresh: DiscoverState = {
+      ...NO_DISCOVERY,
+      rules: '1. Default rule.',
+      writerReady: true,
+      writerProblem: null,
+    };
+    const proposeDiscoverStory = vi.fn<ApiClient['proposeDiscoverStory']>(() =>
+      Promise.resolve(fresh),
+    );
+    renderAt('/books/gull-rock/branches/discover', {
+      getBookTree: () => Promise.resolve({ book, files: [] }),
+      getDiscover: () => Promise.resolve(fresh),
+      proposeDiscoverStory,
+    });
+    const user = userEvent.setup();
+    const save = await screen.findByRole('button', { name: 'Save and start playing' });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Write the premise, or the opening scene, first.')).toBeTruthy();
+    await user.click(screen.getByLabelText('I will: here is the first scene'));
+    await user.type(screen.getByLabelText(/^First scene/u), 'The keeper climbs.');
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+
+    // A redraft reads the scene the writer is writing.
+    await waitFor(() => expect(proposeDiscoverStory).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'Draft with the beat writer' }));
+    await waitFor(() =>
+      expect(proposeDiscoverStory).toHaveBeenLastCalledWith('gull-rock', {
+        kernel: '',
+        shape: '',
+        endings: '',
+        opening: 'The keeper climbs.',
+      }),
     );
   });
 

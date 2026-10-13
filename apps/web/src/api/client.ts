@@ -15,7 +15,7 @@ import {
   type DraftBeatInput,
   type WriteBeatInput,
   type SomethingElseInput,
-  type StoryDraft,
+  type ProposeStoryInput,
   type ProposeVariablesInput,
   type ProposalDecision,
   pathReportSchema,
@@ -250,7 +250,7 @@ export interface ApiClient {
   getDiscover(slug: string, signal?: AbortSignal): Promise<DiscoverState>;
   saveDiscoverSetup(slug: string, input: SaveDiscoverSetupInput): Promise<DiscoverState>;
   /** Asks the beat writer to draft the premise, shape and tone, and endings; they arrive on a job. */
-  proposeDiscoverStory(slug: string, input: StoryDraft): Promise<DiscoverState>;
+  proposeDiscoverStory(slug: string, input: ProposeStoryInput): Promise<DiscoverState>;
   /** Asks the beat writer to propose variables; they arrive on a job. */
   proposeDiscoverVariables(slug: string, input: ProposeVariablesInput): Promise<DiscoverState>;
   decideDiscoverProposal(

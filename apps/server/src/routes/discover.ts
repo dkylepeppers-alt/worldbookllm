@@ -5,9 +5,9 @@ import {
   discoverPositionInputSchema,
   draftBeatInputSchema,
   proposalDecisionSchema,
+  proposeStoryInputSchema,
   proposeVariablesInputSchema,
   saveDiscoverSetupSchema,
-  storyDraftSchema,
   somethingElseInputSchema,
   writeBeatInputSchema,
 } from '@worldbookllm/shared';
@@ -40,7 +40,7 @@ export function registerDiscoverRoutes(app: FastifyInstance): void {
 
   app.post('/api/books/:book/discover/story', (request) => {
     const { book } = bookParamsSchema.parse(request.params);
-    return discover().proposeStory(book, storyDraftSchema.parse(request.body));
+    return discover().proposeStory(book, proposeStoryInputSchema.parse(request.body));
   });
 
   app.post('/api/books/:book/discover/proposals/:id', (request) => {
