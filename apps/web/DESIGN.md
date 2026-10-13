@@ -171,7 +171,7 @@ In Play, discovery adds:
 
 - a polite status line with a small pulsing accent dot (still under reduced motion) while the beat writer works, and failed jobs as warning blocks with Try again;
 - "Your path", a wrapping row of the choices taken, each a text button back to that moment, the current one in weight 620;
-- "Something else…" as a dashed, muted last choice that opens an inline form; a declined action shows the reason as a warning block with a "Try: …" text button;
+- "Something else…" as a dashed, muted last choice that opens an inline form; a declined action shows the reason as a warning block with a "Try: …" text button and a "Write it anyway" text button that overrules the decline;
 - at a beat not written yet, a dashed-border panel ("Not written yet") with how it is reached, Draft three directions / Write it now, Write it yourself, and its note; drafts are cards with the prose in the serif, the choices with their intent and where they lead, the ink folded away, and Use this draft;
 - "Write what happens next" at a beat that leads nowhere yet, a "Rewrite …" disclosure with a direction, and a card for variables the beat writer asks for.
 

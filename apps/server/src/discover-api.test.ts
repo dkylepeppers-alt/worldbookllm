@@ -474,8 +474,8 @@ describe('discovering an interactive book', () => {
     );
   }, 30_000);
 
-  it('turns the reader’s own action into a real choice, or declines it with a reason', async () => {
-    const { app, slug } = await boot([
+  it('turns the reader’s own action into a real choice, or declines it with a reason the writer can overrule', async () => {
+    const { app, slug, requests } = await boot([
       () =>
         sse(
           toolCall('decline', 'decline_action', {
@@ -496,6 +496,23 @@ describe('discovering an interactive book', () => {
               title: 'Aloud',
               summary: 'You read it to her.',
               ink: 'You read it aloud.',
+              ending: true,
+              choices: [],
+            },
+          }),
+        ),
+      () =>
+        sse(
+          toolCall('anyway', 'accept_action', {
+            choice: {
+              text: 'Row for the mainland',
+              intent: 'escape',
+              consequence: 'the rock is left dark',
+            },
+            beat: {
+              title: 'The Crossing',
+              summary: 'You find a boat after all.',
+              ink: 'The old skiff was still under the tarp.',
               ending: true,
               choices: [],
             },
@@ -525,6 +542,7 @@ describe('discovering an interactive book', () => {
       status: 'done',
       outcome: {
         accepted: false,
+        action: 'Row a boat to the mainland',
         reason: 'There is no boat on the rock.',
         suggestion: 'Signal the passing ship',
       },
@@ -544,6 +562,23 @@ describe('discovering an interactive book', () => {
       '* [Wait] -> END\n* [Read the letter aloud to her]\n    ~ trust += 1\n    -> chapter_02\n',
     );
     expect(chapter(app, slug, 'chapter-02')).toContain('You read it aloud.');
+
+    // The writer overrules the decline: the beat writer is not offered decline_action.
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/something-else`,
+      payload: { position, action: 'Row a boat to the mainland', force: true },
+    });
+    state = await settle(app, slug);
+    expect(state.jobs.at(-1)).toMatchObject({
+      title: 'Writing "Row a boat to the mainland"',
+      status: 'done',
+      outcome: { accepted: true, chapterId: 'chapter-01', choice: 4 },
+    });
+    const forced = requests.at(-1) as { tools: Array<{ function: { name: string } }> };
+    expect(forced.tools.map((tool) => tool.function.name)).not.toContain('decline_action');
+    expect(JSON.stringify(forced)).toContain('The writer has decided this happens here');
+    expect(chapter(app, slug, 'chapter-03')).toContain('The old skiff was still under the tarp.');
   }, 30_000);
 
   it('rewrites stale beats no one read, lists read ones for review, and records variable proposals', async () => {

@@ -125,7 +125,7 @@ type Task =
       force: boolean;
     }
   | { kind: 'drafts'; chapterId: string; position: PlayPosition | null; direction: string | null }
-  | { kind: 'something-else'; position: PlayPosition; action: string }
+  | { kind: 'something-else'; position: PlayPosition; action: string; force: boolean }
   | { kind: 'variables'; kernel: string; shape: string }
   | { kind: 'story'; draft: ProposeStoryInput };
 
@@ -607,9 +607,14 @@ export class DiscoverService {
 
   somethingElse(book: string, input: SomethingElseInput): Promise<DiscoverState> {
     return this.enqueueAndState(book, {
-      task: { kind: 'something-else', position: input.position, action: input.action },
+      task: {
+        kind: 'something-else',
+        position: input.position,
+        action: input.action,
+        force: input.force === true,
+      },
       chapterId: null,
-      title: `Trying "${input.action.length > 60 ? `${input.action.slice(0, 57)}…` : input.action}"`,
+      title: `${input.force === true ? 'Writing' : 'Trying'} "${input.action.length > 60 ? `${input.action.slice(0, 57)}…` : input.action}"`,
       lead: false,
     });
   }
@@ -1068,13 +1073,21 @@ export class DiscoverService {
     const handlers = this.readHandlers(book, currentId);
     const notes: string[] = [];
     const review = this.reviewer(model, context, notes);
-    handlers.decline_action = (args) => {
-      record.job = {
-        ...record.job,
-        outcome: { accepted: false, reason: args.reason, suggestion: args.suggestion },
+    // When the writer overrules a decline, declining is not offered.
+    if (!task.force) {
+      handlers.decline_action = (args) => {
+        record.job = {
+          ...record.job,
+          outcome: {
+            accepted: false,
+            action: task.action,
+            reason: args.reason,
+            suggestion: args.suggestion,
+          },
+        };
+        return Promise.resolve({ done: true });
       };
-      return Promise.resolve({ done: true });
-    };
+    }
     handlers.accept_action = async (args) => {
       const fresh = await this.bookService.discoverFiles(book);
       const parent = chapterOf(fresh, currentId);
@@ -1157,11 +1170,12 @@ export class DiscoverService {
       task: beatTaskPrompt(context, {
         kind: 'something-else',
         action: task.action,
+        force: task.force,
         ink: inkOf(current),
         title: current.title,
         choices: this.currentChoices(files, current),
       }),
-      tools: ['accept_action', 'decline_action'],
+      tools: task.force ? ['accept_action'] : ['accept_action', 'decline_action'],
       handlers,
     });
     if (record.job.outcome?.accepted === false) return record.job.outcome.reason;

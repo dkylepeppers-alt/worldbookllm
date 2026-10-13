@@ -372,7 +372,7 @@ export function RewriteBeat({
 /**
  * The reader's own action: typed, judged by the beat writer, and either
  * added as a real choice (play goes on into it) or declined with a reason
- * and the nearest action that works.
+ * and the nearest action that works. The writer can overrule a decline.
  */
 export function SomethingElse({
   discover,
@@ -414,6 +414,12 @@ export function SomethingElse({
     );
   }
   const working = mine !== undefined && active(mine);
+  const ask = (text: string, force: boolean) => {
+    onAsk(state.jobs.map((entry) => entry.id));
+    void discover.run((api) =>
+      api.somethingElse(slug, { position, action: text, ...(force ? { force } : {}) }),
+    );
+  };
   return (
     <li>
       <form
@@ -421,8 +427,7 @@ export function SomethingElse({
         onSubmit={(event) => {
           event.preventDefault();
           if (action.trim() === '') return;
-          onAsk(state.jobs.map((entry) => entry.id));
-          void discover.run((api) => api.somethingElse(slug, { position, action: action.trim() }));
+          ask(action.trim(), false);
         }}
       >
         <label>
@@ -445,15 +450,24 @@ export function SomethingElse({
         {outcome !== null && !outcome.accepted ? (
           <div className="branch-warning" role="status">
             <p>{outcome.reason}</p>
-            {outcome.suggestion.trim() === '' ? null : (
+            <div className="branch-actions">
+              {outcome.suggestion.trim() === '' ? null : (
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setAction(outcome.suggestion)}
+                >
+                  Try: {outcome.suggestion}
+                </button>
+              )}
               <button
                 type="button"
                 className="text-button"
-                onClick={() => setAction(outcome.suggestion)}
+                onClick={() => ask(outcome.action, true)}
               >
-                Try: {outcome.suggestion}
+                Write it anyway
               </button>
-            )}
+            </div>
           </div>
         ) : null}
         <div className="branch-actions">

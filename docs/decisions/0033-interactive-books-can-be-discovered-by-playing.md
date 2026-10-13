@@ -66,7 +66,7 @@ An interactive book can be written by hand in ink, or with the agent's plan-firs
 8. **Co-write mode drafts on request.** At a seed, Play offers _Write it yourself_ (the ink editor) or _Draft with the agent_. The second returns three proposals that go in different directions. Nothing is written until the writer picks one.
 9. **Every choice point in Play offers a fourth option, _Something else…_.** The reader types an action. The beat writer either:
    - accepts it: the action becomes a real choice on the beat, written in the book's voice, with a new beat after it, and play continues into it; or
-   - declines it with a reason and the nearest action that would work.
+   - declines it with a reason and the nearest action that would work. The reader in Play is the writer, so a decline is advice, not a veto: _Write it anyway_ sends the same action back with declining taken away, and the beat writer accepts it, letting the beat show how it happens or what it costs.
 
    _Something else_ exists only in Play while writing. It is never a choice in the ink or in an export.
 

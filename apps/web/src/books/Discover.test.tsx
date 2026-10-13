@@ -518,11 +518,16 @@ describe('Play while discovering', () => {
     );
   });
 
-  it("offers Something else at every choice, and shows the beat writer's reason when it declines", async () => {
+  it("offers Something else at every choice, shows the beat writer's reason when it declines, and lets the writer overrule it", async () => {
     const declined = job({
       kind: 'something-else',
       chapterId: 'chapter-01',
-      outcome: { accepted: false, reason: 'There is no boat here.', suggestion: 'Signal the ship' },
+      outcome: {
+        accepted: false,
+        action: 'Row away',
+        reason: 'There is no boat here.',
+        suggestion: 'Signal the ship',
+      },
     });
     const somethingElse = vi.fn<ApiClient['somethingElse']>(() =>
       Promise.resolve({ ...discovering, jobs: [declined] }),
@@ -542,6 +547,13 @@ describe('Play while discovering', () => {
     expect((screen.getByLabelText('What do you do?') as HTMLInputElement).value).toBe(
       'Signal the ship',
     );
+    // The writer overrules the decline: the declined action, not the edited one, is written.
+    await user.click(screen.getByRole('button', { name: 'Write it anyway' }));
+    expect(somethingElse).toHaveBeenLastCalledWith('gull-rock', {
+      position: { from: null, set: {}, seed: 1, path: [] },
+      action: 'Row away',
+      force: true,
+    });
   });
 
   it('offers Something else only at a beat’s closing choices, not inside a scene', async () => {
