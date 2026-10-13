@@ -8,6 +8,7 @@ import multipart from '@fastify/multipart';
 import { AgentService } from './agent/agent-service.js';
 import { AgentChangesetService } from './agent/changesets.js';
 import { CustomAgentService } from './agent/custom-agents.js';
+import { DiscoverService } from './agent/discover/discover-service.js';
 import { StorySkillsInstaller } from './agent/story-skills-installer.js';
 import { AgentToolRegistry } from './agent/tools.js';
 import { openDatabase } from './db/database.js';
@@ -17,6 +18,7 @@ import { ProviderHttpClient } from './providers/http-client.js';
 import { installErrorHandler } from './routes/helpers.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { registerBookRoutes } from './routes/books.js';
+import { registerDiscoverRoutes } from './routes/discover.js';
 import { registerSeriesRoutes } from './routes/series.js';
 import { registerProviderRoutes } from './routes/providers.js';
 import { registerSecretRoutes } from './routes/secrets.js';
@@ -55,6 +57,7 @@ interface AppServices {
   books: BookService;
   series: SeriesService;
   agent: AgentService;
+  discover: DiscoverService;
   customAgents: CustomAgentService;
   changesets: AgentChangesetService;
   storySkills: StorySkillsInstaller;
@@ -124,9 +127,18 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     (error) => app.log.error(error),
   );
   const storySkills = new StorySkillsInstaller(skills, skillsRoot);
+  const discover = new DiscoverService(db, books, settings, providers, (error) =>
+    app.log.error(error),
+  );
   books.attachChatLifecycle({
-    assertIdle: (book, action) => agent.assertBookIdle(book, action),
-    removeForBook: (book) => agent.removeChatsForBook(book),
+    assertIdle: (book, action) => {
+      agent.assertBookIdle(book, action);
+      discover.assertBookIdle(book, action);
+    },
+    removeForBook: (book) => {
+      agent.removeChatsForBook(book);
+      discover.removeForBook(book);
+    },
   });
   const notebookMigration = new NotebookMigrationService(db, books, agent, settings, dataDir);
 
@@ -134,6 +146,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     books,
     series: new SeriesService(books),
     agent,
+    discover,
     customAgents,
     changesets,
     storySkills,
@@ -192,6 +205,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.get('/api/health', () => ({ status: 'ok' }));
 
   registerBookRoutes(app);
+  registerDiscoverRoutes(app);
   registerSeriesRoutes(app);
   registerAgentRoutes(app);
   registerSecretRoutes(app);

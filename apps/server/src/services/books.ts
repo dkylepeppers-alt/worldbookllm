@@ -1762,7 +1762,22 @@ export class BookService {
                 ];
         writeBuildFile(root, name, content);
         const file = listBuildFiles(root).find((entry) => entry.name === name)!;
-        const notes = play.warnings.length === 0 ? '' : `\n${play.warnings.join('\n')}`;
+        // Seeds end the story where a branch is not written yet (ADR 0033).
+        const seeds = this.index
+          .list(slug)
+          .filter(
+            (entry) =>
+              entry.kind === 'chapter' &&
+              this.index.frontmatter(slug, entry.path)?.discover === 'seed',
+          );
+        const unwritten =
+          seeds.length === 0
+            ? []
+            : [
+                `${seeds.length} ${seeds.length === 1 ? 'branch is' : 'branches are'} not written yet, so ${seeds.length === 1 ? 'it ends' : 'they end'} the story: ${seeds.map((entry) => entry.title).join(', ')}.`,
+              ];
+        const warnings = [...unwritten, ...play.warnings];
+        const notes = warnings.length === 0 ? '' : `\n${warnings.join('\n')}`;
         return { file, output: `Wrote dist/${name}.${notes}` };
       }
       const options: StoryOptions = { format: input.format };

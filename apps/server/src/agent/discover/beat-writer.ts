@@ -2,6 +2,7 @@ import type { ChatMessage, ToolDefinition } from '@worldbookllm/providers';
 import type { AgentGeneration, ProviderConfig } from '@worldbookllm/shared';
 import type { z } from 'zod';
 
+import { ConflictError, NotFoundError } from '../../errors.js';
 import type { ProviderService } from '../../services/providers.js';
 import { providerToolArguments, streamStep } from '../provider-step.js';
 import {
@@ -177,6 +178,8 @@ export async function runBeatWriter(
         }
       } catch (error) {
         if (model.signal.aborted) throw new BeatWriterError('Stopped.');
+        // The book changed under the job, or the chapter is gone: nothing the model can fix.
+        if (error instanceof ConflictError || error instanceof NotFoundError) throw error;
         reply(`Error: ${error instanceof Error ? error.message : String(error)}`);
       }
     }

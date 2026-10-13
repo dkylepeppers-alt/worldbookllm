@@ -17,7 +17,7 @@ export interface ReplayKnot {
   title: string;
 }
 
-export interface ReplaySegment {
+interface ReplaySegment {
   chapterId: string | null;
   title: string | null;
   lines: string[];

@@ -397,7 +397,7 @@ export function leadFrontier(
 }
 
 /** Where one of a beat's choices leads. */
-export type ChoiceTarget =
+type ChoiceTarget =
   { kind: 'new'; note: string } | { kind: 'existing'; chapterId: string } | { kind: 'end' };
 
 /** A choice as the beat writer proposes it. */
@@ -498,10 +498,7 @@ function choiceNote(choice: BeatChoice, leads: string): string {
 }
 
 /** Where a choice leads, in words. */
-export function leadsTo(
-  target: ChoiceTarget,
-  titleOf: (chapterId: string) => string | undefined,
-): string {
+function leadsTo(target: ChoiceTarget, titleOf: (chapterId: string) => string | undefined): string {
   if (target.kind === 'end') return 'the end';
   if (target.kind === 'new') return 'a new beat';
   return `rejoins ${titleOf(target.chapterId) ?? target.chapterId}`;
@@ -577,7 +574,8 @@ export function choicesFiles(input: {
   let planning = head;
   for (const note of notes) planning = withChoiceNote(planning, note);
   let text = `${planning}${body}`;
-  if (beatFields(input.chapter.text).discover === 'written') {
+  // Still the beat writer's beat if it was; one the writer wrote or edited stays theirs.
+  if (beatFields(input.chapter.text).ink === inkHash(ink)) {
     text = setFrontmatterField(text, 'discover-ink', JSON.stringify(inkHash(body)));
   }
   return { chapter: { path: input.chapter.path, text }, seeds };
@@ -632,7 +630,7 @@ export function beatFiles(input: {
   set('discover-ink', JSON.stringify(inkHash(ink)));
   if (proposal.ending) set('discover-ending', 'true');
   else frontmatter = removeFrontmatterField(frontmatter, 'discover-ending');
-  const front = /^﻿?---[\s\S]*?\n---[ \t]*\n?/u.exec(frontmatter)?.[0] ?? '';
+  const front = /^\uFEFF?---[\s\S]*?\n---[ \t]*\n?/u.exec(frontmatter)?.[0] ?? '';
 
   const planning = [
     '## Beat',
@@ -661,7 +659,7 @@ export function withAddedChoice(text: string, choice: ClosingChoice, note: strin
   const body = `${read.before.trimEnd() === '' ? '' : `${read.before.trimEnd()}\n\n`}${lines.join('\n')}\n`;
   const planning = withChoiceNote(head, note);
   let result = `${planning}${body}`;
-  if (beatFields(text).discover === 'written') {
+  if (beatFields(text).ink === inkHash(ink)) {
     result = setFrontmatterField(result, 'discover-ink', JSON.stringify(inkHash(body)));
   }
   return result;

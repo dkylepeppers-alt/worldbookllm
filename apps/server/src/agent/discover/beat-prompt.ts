@@ -55,7 +55,7 @@ export function beatSystemPrompt(input: {
   ].join('\n');
 }
 
-export interface BeatPlace {
+interface BeatPlace {
   /** The chapter being written or continued. */
   chapterId: string;
   /** The choice that leads here, for a seed. */
