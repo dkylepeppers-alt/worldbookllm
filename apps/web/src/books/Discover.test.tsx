@@ -117,6 +117,7 @@ function job(change: Partial<DiscoverJob>): DiscoverJob {
     drafts: [],
     outcome: null,
     variables: [],
+    story: null,
     createdAt: book.updatedAt,
     ...change,
   };
@@ -185,20 +186,32 @@ describe('Story setup', () => {
     const saveDiscoverSetup = vi.fn<ApiClient['saveDiscoverSetup']>(() =>
       Promise.resolve(discovering),
     );
+    const fresh: DiscoverState = {
+      ...NO_DISCOVERY,
+      rules: '1. Default rule.',
+      writerReady: true,
+      writerProblem: null,
+    };
+    const proposeDiscoverStory = vi.fn<ApiClient['proposeDiscoverStory']>(() =>
+      Promise.resolve(fresh),
+    );
     renderAt('/books/gull-rock/branches/discover', {
-      getDiscover: () =>
-        Promise.resolve({
-          ...NO_DISCOVERY,
-          rules: '1. Default rule.',
-          writerReady: true,
-          writerProblem: null,
-        }),
+      getDiscover: () => Promise.resolve(fresh),
       saveDiscoverSetup,
+      proposeDiscoverStory,
     });
     const user = userEvent.setup();
     const save = await screen.findByRole('button', { name: 'Save and start playing' });
     expect((save as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('Write the premise first.')).toBeTruthy();
+    // A new setup asks the beat writer for a draft straight away.
+    await waitFor(() =>
+      expect(proposeDiscoverStory).toHaveBeenCalledWith('gull-rock', {
+        kernel: '',
+        shape: '',
+        endings: '',
+      }),
+    );
     await user.type(screen.getByLabelText(/^Premise/u), 'A keeper and a letter.');
     await user.click(screen.getByLabelText('Two steps: about three times as many model calls'));
     await user.click(screen.getByRole('button', { name: 'Add a variable' }));
@@ -222,6 +235,58 @@ describe('Story setup', () => {
     expect('opening' in input).toBe(false);
     await waitFor(() =>
       expect(screen.getByTestId('location').textContent).toBe('/books/gull-rock/branches/play'),
+    );
+  });
+
+  it('fills the story fields from the beat writer, keeping what the writer typed meanwhile', async () => {
+    const fresh: DiscoverState = {
+      ...NO_DISCOVERY,
+      rules: '1. Default rule.',
+      writerReady: true,
+      writerProblem: null,
+    };
+    let finish: (state: DiscoverState) => void = () => undefined;
+    const proposeDiscoverStory = vi.fn<ApiClient['proposeDiscoverStory']>(
+      () => new Promise((resolve) => (finish = resolve)),
+    );
+    const dismissDiscoverJob = vi.fn<ApiClient['dismissDiscoverJob']>(() => Promise.resolve(fresh));
+    renderAt('/books/gull-rock/branches/discover', {
+      getDiscover: () => Promise.resolve(fresh),
+      proposeDiscoverStory,
+      dismissDiscoverJob,
+    });
+    const user = userEvent.setup();
+    const endings = await screen.findByLabelText('Endings');
+    await waitFor(() => expect(proposeDiscoverStory).toHaveBeenCalled());
+    await user.type(endings, 'Just one');
+    finish({
+      ...fresh,
+      jobs: [
+        job({
+          kind: 'story',
+          story: { kernel: 'A keeper finds a letter.', shape: 'Short and cold.', endings: 'Three' },
+        }),
+      ],
+    });
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(/^Premise/u) as HTMLTextAreaElement).value).toBe(
+        'A keeper finds a letter.',
+      ),
+    );
+    expect((screen.getByLabelText(/^Shape and tone/u) as HTMLTextAreaElement).value).toBe(
+      'Short and cold.',
+    );
+    expect((endings as HTMLInputElement).value).toBe('Just one');
+    expect(dismissDiscoverJob).toHaveBeenCalledWith(
+      'gull-rock',
+      '11111111-1111-4111-8111-111111111111',
+    );
+
+    // The writer can still edit what the beat writer drafted.
+    await user.type(screen.getByLabelText(/^Premise/u), ' Then a storm.');
+    expect((screen.getByLabelText(/^Premise/u) as HTMLTextAreaElement).value).toBe(
+      'A keeper finds a letter. Then a storm.',
     );
   });
 

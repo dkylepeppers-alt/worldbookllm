@@ -5,6 +5,7 @@ import type Database from 'better-sqlite3';
 import { supportsTools } from '@worldbookllm/providers';
 import {
   discoverVariableSchema,
+  storyDraftSchema,
   type BeatDraft,
   type DiscoverJob,
   type DiscoverSetup,
@@ -13,9 +14,11 @@ import {
   type DraftBeatInput,
   type PlayPosition,
   type ProposalDecision,
+  type ProposeStoryInput,
   type ProposeVariablesInput,
   type SaveDiscoverSetupInput,
   type SomethingElseInput,
+  type StoryDraft,
   type VariableProposal,
   type WriteBeatInput,
 } from '@worldbookllm/shared';
@@ -113,7 +116,8 @@ type Task =
     }
   | { kind: 'drafts'; chapterId: string; position: PlayPosition | null; direction: string | null }
   | { kind: 'something-else'; position: PlayPosition; action: string }
-  | { kind: 'variables'; kernel: string; shape: string };
+  | { kind: 'variables'; kernel: string; shape: string }
+  | { kind: 'story'; draft: StoryDraft };
 
 interface JobRecord {
   job: DiscoverJob;
@@ -297,6 +301,24 @@ export class DiscoverService {
     return this.enqueueAndState(book, {
       task: { kind: 'variables', kernel: input.kernel, shape: input.shape },
       title: 'Proposing story variables',
+      chapterId: null,
+      lead: false,
+    });
+  }
+
+  /**
+   * Asks the beat writer to draft the premise, shape and tone, and endings
+   * from the bible and story.md, for the setup form, where the writer edits
+   * them before saving.
+   */
+  proposeStory(book: string, input: ProposeStoryInput): Promise<DiscoverState> {
+    const jobs = this.jobs(book);
+    jobs.records = jobs.records.filter(
+      (record) => record.task.kind !== 'story' || record.job.status === 'running',
+    );
+    return this.enqueueAndState(book, {
+      task: { kind: 'story', draft: input },
+      title: 'Drafting the premise',
       chapterId: null,
       lead: false,
     });
@@ -641,6 +663,7 @@ export class DiscoverService {
         drafts: [],
         outcome: null,
         variables: [],
+        story: null,
         createdAt: new Date().toISOString(),
       },
       task: input.task,
@@ -724,6 +747,10 @@ export class DiscoverService {
     if (task.kind === 'variables') {
       record.job = { ...record.job, variables: await this.suggestVariables(book, model, task) };
       return 'Proposed.';
+    }
+    if (task.kind === 'story') {
+      record.job = { ...record.job, story: await this.suggestStory(book, model, task.draft) };
+      return 'Drafted.';
     }
     const files = await this.bookService.discoverFiles(book);
     const setup = readSetup(files.setup, files.story);
@@ -1528,6 +1555,63 @@ export class DiscoverService {
     if (variables.length === 0)
       throw new BeatWriterError('The model did not propose any usable variables.');
     return variables;
+  }
+
+  private async suggestStory(
+    book: string,
+    model: ModelAccess,
+    draft: StoryDraft,
+  ): Promise<StoryDraft> {
+    const files = await this.bookService.discoverFiles(book);
+    const title = parseFrontmatter(files.story)
+      .body.match(/^\s*#\s+([^\n]+)/u)?.[1]
+      ?.trim();
+    const notes = storyNotes(files.story);
+    const given = (label: string, text: string) =>
+      text.trim() === '' ? [] : ['', `## ${label} (the writer's, so far)`, text.trim()];
+    const prompt = [
+      "You help a writer set up an interactive book written in ink, discovered by playing it: a beat writer writes each scene and the choices it ends with. Draft the story setup from the book's bible and notes. Where the writer has written a field already, keep their ideas and their words, and only fill out what is missing. Ground everything in the bible and notes; where they say little, propose something specific rather than generic.",
+      '',
+      '- kernel: the premise, one paragraph: a character in a situation, what they want, what stands in the way, and the tone.',
+      '- shape: shape and tone, a few sentences: length, mood, what kind of choices the reader faces, anything the beat writer should keep in mind.',
+      '- endings: the endings wanted, one short line ("Three, one of them bittersweet").',
+      '',
+      `## Book: ${title ?? book}`,
+      ...given('Premise', draft.kernel),
+      ...given('Shape and tone', draft.shape),
+      ...given('Endings', draft.endings),
+      ...(notes === '' ? [] : ['', '## Notes from story.md', notes]),
+      '',
+      '## Bible',
+      this.bible(book, draft.kernel).slice(0, 12_000) || '(no entries yet)',
+      '',
+      'Reply with JSON only: {"kernel": "…", "shape": "…", "endings": "…"}',
+    ].join('\n');
+    const request = model.providers.createChatRequest(
+      model.config,
+      [{ role: 'user', content: prompt }],
+      { ...model.controls, thinking: false },
+    );
+    const { text } = await streamStep(model.providers, model.config, request, model.signal);
+    const json = /\{[\s\S]*\}/u.exec(text)?.[0];
+    let parsed: unknown;
+    try {
+      parsed = json === undefined ? undefined : JSON.parse(json);
+    } catch {
+      parsed = undefined;
+    }
+    const fields = typeof parsed === 'object' && parsed !== null ? parsed : {};
+    const field = (key: 'kernel' | 'shape' | 'endings', max: number) => {
+      const value = (fields as Record<string, unknown>)[key];
+      return typeof value === 'string' ? value.trim().slice(0, max).trim() : '';
+    };
+    const story = storyDraftSchema.parse({
+      kernel: field('kernel', 4000),
+      shape: field('shape', 8000),
+      endings: field('endings', 300).replace(/\s+/gu, ' '),
+    });
+    if (story.kernel === '') throw new BeatWriterError('The model did not draft a premise.');
+    return story;
   }
 
   // ---- Stored state ---------------------------------------------------------

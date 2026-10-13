@@ -3,7 +3,12 @@ import { join } from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
-import { STUB_BEAT_CHOICES, STUB_MODEL_ID, STUB_VARIABLE } from '../stub-provider/stub-provider.js';
+import {
+  STUB_BEAT_CHOICES,
+  STUB_MODEL_ID,
+  STUB_STORY,
+  STUB_VARIABLE,
+} from '../stub-provider/stub-provider.js';
 
 // Discovering an interactive book by playing it (ADR 0033), on a phone: set
 // the story up with a premise and a proposed variable, let lead mode write
@@ -47,6 +52,9 @@ test('discover an interactive book by playing it', async ({ page, request }) => 
 
   await test.step('set the story up, with a variable the beat writer proposes', async () => {
     await page.getByRole('link', { name: 'Set up discovery' }).click();
+    // The beat writer drafts the premise, shape, and endings; the writer edits them.
+    await expect(page.getByLabel(/^Premise/u)).toHaveValue(STUB_STORY.kernel);
+    await expect(page.getByLabel('Endings')).toHaveValue(STUB_STORY.endings);
     await page
       .getByLabel(/^Premise/u)
       .fill('A lighthouse keeper receives a letter she cannot read.');

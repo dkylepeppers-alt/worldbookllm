@@ -504,6 +504,33 @@ describe('discovering an interactive book', () => {
     });
   }, 30_000);
 
+  it('drafts the premise, shape and tone, and endings for the setup form', async () => {
+    const { app, slug } = await boot([
+      () =>
+        sse(
+          text(
+            '{"kernel": "A keeper finds a letter.", "shape": "Short and cold.", "endings": "Two,\\n one kind"}',
+          ),
+        ),
+    ]);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/story`,
+      payload: { kernel: '', shape: 'Short.', endings: '' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const state = await settle(app, slug);
+    expect(state.jobs[0]).toMatchObject({
+      kind: 'story',
+      status: 'done',
+      story: {
+        kernel: 'A keeper finds a letter.',
+        shape: 'Short and cold.',
+        endings: 'Two, one kind',
+      },
+    });
+  }, 30_000);
+
   it('keeps drafts when the one picked no longer compiles, and stops lead work on switching to co-write', async () => {
     const draft = () =>
       sse(

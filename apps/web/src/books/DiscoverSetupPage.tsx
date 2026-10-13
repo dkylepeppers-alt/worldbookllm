@@ -1,5 +1,10 @@
-import type { DiscoverSetup, DiscoverState, DiscoverVariable } from '@worldbookllm/shared';
-import { useState, type FormEvent } from 'react';
+import type {
+  DiscoverSetup,
+  DiscoverState,
+  DiscoverVariable,
+  StoryDraft,
+} from '@worldbookllm/shared';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { ErrorState, LoadingState } from '../components/RequestState.js';
@@ -22,6 +27,8 @@ const DEFAULT_SETUP: DiscoverSetup = {
  * it. The premise, the shape, the variables the story tracks and what each
  * means, the rules every set of choices follows, and how much the beat
  * writer does on its own. For a book with no chapters, the opening too.
+ * The beat writer drafts the premise, shape and tone, and endings from the
+ * bible when the book is first set up; the writer edits them from there.
  */
 export function DiscoverSetupPage() {
   const { slug } = useBook();
@@ -70,7 +77,53 @@ function SetupForm({
   const hasChapters = tree.files.some((file) => file.kind === 'chapter');
   const [openingKind, setOpeningKind] = useState<'agent' | 'writer'>('agent');
   const [opening, setOpening] = useState('');
-  const update = (change: Partial<DiscoverSetup>) => setSetup({ ...setup, ...change });
+  const update = (change: Partial<DiscoverSetup>) =>
+    setSetup((current) => ({ ...current, ...change }));
+
+  // The story fields the writer changed since the last draft was asked for, which it leaves alone.
+  const touched = useRef(new Set<keyof StoryDraft>());
+  const editStory = (change: Partial<StoryDraft>) => {
+    for (const key of Object.keys(change)) touched.current.add(key as keyof StoryDraft);
+    update(change);
+  };
+  const drafting = state.jobs.find((job) => job.kind === 'story');
+  const draftingNow = drafting?.status === 'queued' || drafting?.status === 'running';
+  const draftStory = () => {
+    touched.current.clear();
+    void discover.run((api) =>
+      api.proposeDiscoverStory(slug, {
+        kernel: setup.kernel,
+        shape: setup.shape,
+        endings: setup.endings,
+      }),
+    );
+  };
+
+  // A new book's story is drafted as soon as the form opens.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    if (state.setup === null && state.writerReady && drafting === undefined) draftStory();
+  });
+
+  // A finished draft fills the fields the writer has not changed meanwhile, then is cleared.
+  const applied = useRef<string | null>(null);
+  useEffect(() => {
+    if (drafting?.status !== 'done' || drafting.story === null) return;
+    if (applied.current === drafting.id) return;
+    applied.current = drafting.id;
+    const story = drafting.story;
+    setSetup((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        (['kernel', 'shape', 'endings'] as const)
+          .filter((key) => !touched.current.has(key))
+          .map((key) => [key, story[key]]),
+      ),
+    }));
+    void discover.run((api) => api.dismissDiscoverJob(slug, drafting.id));
+  }, [drafting, discover, slug]);
 
   const proposing = state.jobs.find((job) => job.kind === 'variables');
   const proposed = proposing?.status === 'done' ? proposing.variables : [];
@@ -101,6 +154,26 @@ function SetupForm({
 
       <fieldset className="branch-card">
         <legend>The story</legend>
+        <div className="branch-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={!state.writerReady || draftingNow}
+            onClick={draftStory}
+          >
+            {draftingNow
+              ? 'Drafting…'
+              : setup.kernel.trim() === ''
+                ? 'Draft from the bible'
+                : 'Redraft from the bible'}
+          </button>
+          <span className="coordinate-label" role="status">
+            {draftingNow
+              ? 'The beat writer is drafting the premise, shape, and endings from your bible. Anything you type meanwhile is kept.'
+              : 'The beat writer drafts these from your bible and keeps what you have written. Edit them freely.'}
+          </span>
+        </div>
+        {drafting?.status === 'failed' ? <p className="form-error">{drafting.message}</p> : null}
         <label>
           Premise
           <span className="coordinate-label">
@@ -112,7 +185,7 @@ function SetupForm({
             rows={5}
             value={setup.kernel}
             maxLength={4000}
-            onChange={(event) => update({ kernel: event.target.value })}
+            onChange={(event) => editStory({ kernel: event.target.value })}
           />
         </label>
         <label>
@@ -126,7 +199,7 @@ function SetupForm({
             rows={4}
             value={setup.shape}
             maxLength={8000}
-            onChange={(event) => update({ shape: event.target.value })}
+            onChange={(event) => editStory({ shape: event.target.value })}
           />
         </label>
         <label>
@@ -135,7 +208,7 @@ function SetupForm({
             value={setup.endings}
             maxLength={300}
             placeholder="Three, one of them bittersweet"
-            onChange={(event) => update({ endings: event.target.value })}
+            onChange={(event) => editStory({ endings: event.target.value })}
           />
         </label>
         <fieldset className="discover-options">
