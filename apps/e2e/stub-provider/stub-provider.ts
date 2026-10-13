@@ -28,9 +28,15 @@ export const STUB_ASK_REPLY = 'Answer received.';
 export const SLOW_MARKER = '[slow]';
 
 // Discovery's beat writer (ADR 0033): every beat is written at once with
-// three different choices, the reader's own action is always accepted, and
-// variables proposed from the premise are always this one.
+// three different choices, the reader's own action is always accepted, the
+// drafted story setup is always STUB_STORY, and variables proposed from the
+// premise are always this one.
 export const STUB_BEAT_CHOICES = ['Climb to the lamp', 'Wait for the tide', 'Signal the ship'];
+export const STUB_STORY = {
+  kernel: 'A keeper on a rock finds a letter washed ashore and must decide who to trust.',
+  shape: 'Short, cold, and quiet.',
+  endings: 'Two, one of them kind',
+};
 export const STUB_VARIABLE = {
   name: 'courage',
   initial: '0',
@@ -181,6 +187,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (body.stream === true && prompt.includes('Reply with JSON only, no prose')) {
       // The beat writer's review pass: every set of choices follows the rules.
       streamChunks(res, [{ choices: [{ index: 0, delta: { content: '{"pass": true}' } }] }]);
+      return;
+    }
+    if (body.stream === true && prompt.includes('Reply with JSON only: {"kernel"')) {
+      streamChunks(res, [
+        { choices: [{ index: 0, delta: { content: JSON.stringify(STUB_STORY) } }] },
+      ]);
       return;
     }
     if (body.stream === true && prompt.includes('Reply with JSON only: {"variables"')) {

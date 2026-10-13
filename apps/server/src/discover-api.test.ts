@@ -504,6 +504,98 @@ describe('discovering an interactive book', () => {
     });
   }, 30_000);
 
+  it('drafts the premise, shape and tone, and endings for the setup form', async () => {
+    const { app, slug } = await boot([
+      () =>
+        sse(
+          text(
+            '{"kernel": "A keeper finds a letter.", "shape": "", "endings": "Two,\\n one kind"}',
+          ),
+        ),
+    ]);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/story`,
+      payload: { kernel: '', shape: 'Short.', endings: '' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const state = await settle(app, slug);
+    expect(state.jobs[0]).toMatchObject({
+      kind: 'story',
+      status: 'done',
+      // A field the model leaves blank keeps what the writer sent.
+      story: {
+        kernel: 'A keeper finds a letter.',
+        shape: 'Short.',
+        endings: 'Two, one kind',
+      },
+    });
+  }, 30_000);
+
+  it('drafts the setup from the scenes already written, where the premise is optional', async () => {
+    const { app, slug, requests } = await boot([
+      () => sse(text('{"kernel": "A keeper climbs.", "shape": "Cold.", "endings": "Two"}')),
+    ]);
+    const blank = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/discover/setup`,
+      payload: {
+        setup: {
+          mode: 'cowrite',
+          lookahead: 1,
+          choices: 3,
+          beatLength: 'scene',
+          rejoin: 'sometimes',
+          endings: '',
+          kernel: '',
+          shape: '',
+        },
+        rules: '1. Different intents.',
+        variables: [],
+        opening: null,
+      },
+    });
+    // With no chapters and no opening scene, the beat writer would write the opening from nothing.
+    expect(blank.statusCode, blank.body).toBe(400);
+
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/books/${slug}/discover/setup`,
+      payload: {
+        setup: {
+          mode: 'cowrite',
+          lookahead: 1,
+          choices: 3,
+          beatLength: 'scene',
+          rejoin: 'sometimes',
+          endings: '',
+          kernel: '',
+          shape: '',
+        },
+        rules: '1. Different intents.',
+        variables: [],
+        opening: '# The Rock\n\nThe keeper climbs the stairs with the letter.',
+      },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    await settle(app, slug);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/story`,
+      payload: { kernel: '', shape: '', endings: '' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const state = await settle(app, slug);
+    expect(state.jobs.find((job) => job.kind === 'story')).toMatchObject({
+      status: 'done',
+      story: { kernel: 'A keeper climbs.', shape: 'Cold.', endings: 'Two' },
+    });
+    const prompt = JSON.stringify(requests.at(-1));
+    expect(prompt).toContain('## Written so far');
+    expect(prompt).toContain('The keeper climbs the stairs with the letter.');
+  }, 30_000);
+
   it('keeps drafts when the one picked no longer compiles, and stops lead work on switching to co-write', async () => {
     const draft = () =>
       sse(

@@ -1,5 +1,10 @@
-import type { DiscoverSetup, DiscoverState, DiscoverVariable } from '@worldbookllm/shared';
-import { useState, type FormEvent } from 'react';
+import type {
+  DiscoverSetup,
+  DiscoverState,
+  DiscoverVariable,
+  StoryDraft,
+} from '@worldbookllm/shared';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { ErrorState, LoadingState } from '../components/RequestState.js';
@@ -22,6 +27,8 @@ const DEFAULT_SETUP: DiscoverSetup = {
  * it. The premise, the shape, the variables the story tracks and what each
  * means, the rules every set of choices follows, and how much the beat
  * writer does on its own. For a book with no chapters, the opening too.
+ * The beat writer drafts the premise, shape and tone, and endings from the
+ * bible when the book is first set up; the writer edits them from there.
  */
 export function DiscoverSetupPage() {
   const { slug } = useBook();
@@ -70,7 +77,57 @@ function SetupForm({
   const hasChapters = tree.files.some((file) => file.kind === 'chapter');
   const [openingKind, setOpeningKind] = useState<'agent' | 'writer'>('agent');
   const [opening, setOpening] = useState('');
-  const update = (change: Partial<DiscoverSetup>) => setSetup({ ...setup, ...change });
+  // The beat writer writes a new book's opening from the premise; a scene already there tells it the story.
+  const writesOpening = !hasChapters && (openingKind === 'agent' || opening.trim() === '');
+  const update = (change: Partial<DiscoverSetup>) =>
+    setSetup((current) => ({ ...current, ...change }));
+
+  // The story fields the writer changed since the last draft was asked for, which it leaves alone.
+  const touched = useRef(new Set<keyof StoryDraft>());
+  const editStory = (change: Partial<StoryDraft>) => {
+    for (const key of Object.keys(change)) touched.current.add(key as keyof StoryDraft);
+    update(change);
+  };
+  const drafting = state.jobs.find((job) => job.kind === 'story');
+  const source = hasChapters ? 'the story so far and your bible' : 'your bible';
+  const draftingNow = drafting?.status === 'queued' || drafting?.status === 'running';
+  const draftStory = () => {
+    touched.current.clear();
+    void discover.run((api) =>
+      api.proposeDiscoverStory(slug, {
+        kernel: setup.kernel,
+        shape: setup.shape,
+        endings: setup.endings,
+        ...(!hasChapters && openingKind === 'writer' ? { opening } : {}),
+      }),
+    );
+  };
+
+  // A new book's story is drafted as soon as the form opens.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    if (state.setup === null && state.writerReady && drafting === undefined) draftStory();
+  });
+
+  // A finished draft fills the fields the writer has not changed meanwhile, then is cleared.
+  const applied = useRef<string | null>(null);
+  useEffect(() => {
+    if (drafting?.status !== 'done' || drafting.story === null) return;
+    if (applied.current === drafting.id) return;
+    applied.current = drafting.id;
+    const story = drafting.story;
+    setSetup((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        (['kernel', 'shape', 'endings'] as const)
+          .filter((key) => !touched.current.has(key))
+          .map((key) => [key, story[key]]),
+      ),
+    }));
+    void discover.run((api) => api.dismissDiscoverJob(slug, drafting.id));
+  }, [drafting, discover, slug]);
 
   const proposing = state.jobs.find((job) => job.kind === 'variables');
   const proposed = proposing?.status === 'done' ? proposing.variables : [];
@@ -101,18 +158,41 @@ function SetupForm({
 
       <fieldset className="branch-card">
         <legend>The story</legend>
+        <div className="branch-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={!state.writerReady || draftingNow || discover.busy}
+            onClick={draftStory}
+          >
+            {draftingNow
+              ? 'Drafting…'
+              : setup.kernel.trim() === ''
+                ? 'Draft with the beat writer'
+                : 'Redraft with the beat writer'}
+          </button>
+          <span className="coordinate-label" role="status">
+            {draftingNow
+              ? `The beat writer is drafting the premise, shape, and endings from ${source}. Anything you type meanwhile is kept.`
+              : `The beat writer drafts these from ${source} and keeps what you have written. Edit them freely.`}
+          </span>
+        </div>
+        {drafting?.status === 'failed' ? <p className="form-error">{drafting.message}</p> : null}
         <label>
           Premise
           <span className="coordinate-label">
             One paragraph: a character in a situation, what they want, what stands in the way, and
-            the tone. It is saved as the story kernel in story.md.
+            the tone. It is saved as the story kernel in story.md.{' '}
+            {writesOpening
+              ? 'The beat writer writes the opening from it.'
+              : 'Optional: the scenes already written tell the beat writer the story, and this says where it is going.'}
           </span>
           <textarea
             className="prose-input"
             rows={5}
             value={setup.kernel}
             maxLength={4000}
-            onChange={(event) => update({ kernel: event.target.value })}
+            onChange={(event) => editStory({ kernel: event.target.value })}
           />
         </label>
         <label>
@@ -126,7 +206,7 @@ function SetupForm({
             rows={4}
             value={setup.shape}
             maxLength={8000}
-            onChange={(event) => update({ shape: event.target.value })}
+            onChange={(event) => editStory({ shape: event.target.value })}
           />
         </label>
         <label>
@@ -135,7 +215,7 @@ function SetupForm({
             value={setup.endings}
             maxLength={300}
             placeholder="Three, one of them bittersweet"
-            onChange={(event) => update({ endings: event.target.value })}
+            onChange={(event) => editStory({ endings: event.target.value })}
           />
         </label>
         <fieldset className="discover-options">
@@ -428,12 +508,14 @@ function SetupForm({
         <button
           type="submit"
           className="button-primary"
-          disabled={discover.busy || setup.kernel.trim() === '' || rules.trim() === ''}
+          disabled={
+            discover.busy || (writesOpening && setup.kernel.trim() === '') || rules.trim() === ''
+          }
         >
           {state.setup === null ? 'Save and start playing' : 'Save and go to Play'}
         </button>
-        {setup.kernel.trim() === '' ? (
-          <span className="coordinate-label">Write the premise first.</span>
+        {writesOpening && setup.kernel.trim() === '' ? (
+          <span className="coordinate-label">Write the premise, or the opening scene, first.</span>
         ) : null}
       </div>
     </form>

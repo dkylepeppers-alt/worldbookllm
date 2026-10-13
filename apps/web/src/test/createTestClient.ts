@@ -59,6 +59,7 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     getPlay: unused,
     getDiscover: () => Promise.resolve(NO_DISCOVERY),
     saveDiscoverSetup: unused,
+    proposeDiscoverStory: unused,
     proposeDiscoverVariables: unused,
     decideDiscoverProposal: unused,
     setDiscoverPosition: () => Promise.resolve(NO_DISCOVERY),

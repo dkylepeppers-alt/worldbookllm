@@ -18,6 +18,10 @@ An interactive book can be written by hand in ink, or with the agent's plan-firs
 
    Its body holds the shape and tone notes. The premise is story-skills' story kernel (`## Story Kernel` in story.md, with `draft-mode: discovered`). The bible is the book's own.
 
+   The beat writer drafts the premise, the shape and tone, and the endings from the bible and story.md when the setup form first opens, and again whenever the writer asks. It builds on anything the writer has already written, and reads the scenes already written (or the opening scene the writer is typing), so the premise describes the story that is there. The drafts fill the form's fields and nothing is saved until the writer saves the setup, so the writer edits them like their own words. A field the writer changes while a draft is running is left as they typed it.
+
+   The premise is required only when the beat writer writes the opening from it. A book that already has chapters, or whose writer writes the opening scene, can leave it empty. The scenes then tell the beat writer the story, and the premise says where it is going.
+
 2. **State is agreed at setup.** The variables live in `ink/variables.md`. Each `VAR` has a `//` comment line above it that says what it means, and the beat writer reads that comment. The beat writer only uses declared variables. A new one is proposed, and it is declared once the writer approves it.
 3. **Choices follow written rules.** The rules are in `adaptations/interactive/choice-rules.md`, which setup writes with the defaults and the writer can edit:
    - different intents, not different wording

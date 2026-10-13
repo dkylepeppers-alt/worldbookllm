@@ -15,6 +15,7 @@ import {
   type DraftBeatInput,
   type WriteBeatInput,
   type SomethingElseInput,
+  type ProposeStoryInput,
   type ProposeVariablesInput,
   type ProposalDecision,
   pathReportSchema,
@@ -248,6 +249,8 @@ export interface ApiClient {
   /** Discovery's state for a book: setup, beats, open threads, and the beat writer's jobs (ADR 0033). */
   getDiscover(slug: string, signal?: AbortSignal): Promise<DiscoverState>;
   saveDiscoverSetup(slug: string, input: SaveDiscoverSetupInput): Promise<DiscoverState>;
+  /** Asks the beat writer to draft the premise, shape and tone, and endings; they arrive on a job. */
+  proposeDiscoverStory(slug: string, input: ProposeStoryInput): Promise<DiscoverState>;
   /** Asks the beat writer to propose variables; they arrive on a job. */
   proposeDiscoverVariables(slug: string, input: ProposeVariablesInput): Promise<DiscoverState>;
   decideDiscoverProposal(
@@ -589,6 +592,12 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
     saveDiscoverSetup: (slug, input) =>
       request(`${book(slug)}/discover/setup`, {
         method: 'PUT',
+        body: input,
+        schema: discoverStateSchema,
+      }),
+    proposeDiscoverStory: (slug, input) =>
+      request(`${book(slug)}/discover/story`, {
+        method: 'POST',
         body: input,
         schema: discoverStateSchema,
       }),
