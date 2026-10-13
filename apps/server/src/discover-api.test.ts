@@ -344,9 +344,13 @@ describe('discovering an interactive book', () => {
     ]);
   }, 30_000);
 
-  it('writes beats as the custom agent the setup picks, with the skills it names', async () => {
+  it('writes beats as the custom agent the setup picks, loading its skills as a chat does', async () => {
     const { app, slug, requests } = await boot(
-      [() => sse(toolCall('choices', 'write_choices', { choices: THREE })), PASS],
+      [
+        () => sse(toolCall('skill', 'activate_skill', { name: 'cold-prose' })),
+        () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
+        PASS,
+      ],
       ['The keeper waits.'],
     );
     const skill = await app.inject({
@@ -355,7 +359,8 @@ describe('discovering an interactive book', () => {
       payload: {
         name: 'cold-prose',
         description: 'Spare, cold prose.',
-        content: '# Cold prose\n\nShort sentences. No adverbs.',
+        // Longer than the beat writer's 16,000-character cap on other tool results, as skills can be.
+        content: `# Cold prose\n\n${'Keep it spare. '.repeat(1_200)}Short sentences. No adverbs.`,
       },
     });
     expect(skill.statusCode, skill.body).toBe(201);
@@ -403,8 +408,10 @@ describe('discovering an interactive book', () => {
     const system = JSON.stringify(requests[0]);
     expect(system).toContain('## Your role: Gothic narrator');
     expect(system).toContain('Let the sea feel watchful.');
-    expect(system).toContain('### Skill: cold-prose');
-    expect(system).toContain('Short sentences. No adverbs.');
+    expect(system).toContain('- cold-prose: Spare, cold prose.');
+    expect(system).not.toContain('Short sentences. No adverbs.');
+    // The skill it loaded came back as the tool's answer.
+    expect(JSON.stringify(requests[1])).toContain('Short sentences. No adverbs.');
 
     // An agent that no longer exists cannot be picked.
     await app.inject({ method: 'DELETE', url: `/api/agents/${agent.id}` });
