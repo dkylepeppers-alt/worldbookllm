@@ -88,7 +88,12 @@ import { parseFrontmatter, type BookIndex } from '../story/book-index.js';
 import { classifyBookPath } from '../story/book-paths.js';
 import { exportManuscript } from '../story/book-manuscript.js';
 import { convertToInk, type ConvertedFile } from '../story/interactive/convert.js';
-import { RULES_FILE, SETUP_FILE, type DiscoverChapter } from '../story/interactive/discover.js';
+import {
+  RULES_FILE,
+  SETUP_FILE,
+  discoverBeats,
+  type DiscoverChapter,
+} from '../story/interactive/discover.js';
 import { readEnding, writeEnding } from '../story/interactive/ending.js';
 import { describeDiagnostic, storyFindings } from '../story/interactive/findings.js';
 import { INK_VARIABLES_FILE, inkSection, isIfid, isInkFile } from '../story/interactive/format.js';
@@ -1763,13 +1768,23 @@ export class BookService {
         writeBuildFile(root, name, content);
         const file = listBuildFiles(root).find((entry) => entry.name === name)!;
         // Seeds end the story where a branch is not written yet (ADR 0033).
-        const seeds = this.index
-          .list(slug)
-          .filter(
-            (entry) =>
-              entry.kind === 'chapter' &&
-              this.index.frontmatter(slug, entry.path)?.discover === 'seed',
-          );
+        // A seed written over by hand counts as written, as discovery reads it.
+        const seeds = discoverBeats(
+          this.index
+            .list(slug)
+            .filter((entry) => entry.kind === 'chapter' && entry.entityId !== null)
+            .map((entry) => {
+              const text = this.files.readBytes(slug, entry.path)?.toString('utf8') ?? '';
+              return {
+                id: entry.entityId!,
+                path: entry.path,
+                title: entry.title,
+                number: parseFrontmatter(text).frontmatter?.number,
+                text,
+              };
+            }),
+          new Set(),
+        ).filter((beat) => beat.state === 'seed');
         const unwritten =
           seeds.length === 0
             ? []

@@ -166,6 +166,29 @@ function summaryOf(chapter: DiscoverChapter): string {
   return prose.length <= 140 ? prose : `${prose.slice(0, 137)}…`;
 }
 
+/** The text of each closing choice a chapter ends with, when its ending is one the choices screen reads. */
+function closingTexts(chapter: DiscoverChapter): string[] {
+  const read = readEnding(inkOf(chapter));
+  return read.editable ? read.ending.choices.map((choice) => choice.text.trim()) : [];
+}
+
+/**
+ * Whether the reader stands at a chapter's closing choices, where the
+ * reader's own action can be added, rather than at choices inside a scene.
+ */
+function atClosingChoices(
+  replayed: ReplayedPosition,
+  knot: string,
+  closing: readonly string[],
+): boolean {
+  return (
+    closing.length > 0 &&
+    replayed.choices.every(
+      (choice) => choice.sourcePath.split('.')[0] === knot && closing.includes(choice.text.trim()),
+    )
+  );
+}
+
 function hashOf(files: DiscoverFiles, path: string): string | null {
   return files.hashes.get(path) ?? null;
 }
@@ -205,6 +228,12 @@ export class DiscoverService {
         (beat) => beat.state === 'written' && beat.stale && (beat.read || beat.edited),
       ),
       jobs: this.jobs(book).records.map((record) => record.job),
+      closingChoices: Object.fromEntries(
+        files.chapters.flatMap((chapter) => {
+          const texts = closingTexts(chapter);
+          return texts.length === 0 ? [] : [[chapter.id, texts]];
+        }),
+      ),
       writerReady: problem === null,
       writerProblem: problem,
     };
@@ -335,7 +364,13 @@ export class DiscoverService {
     }
     const setup = readSetup(files.setup, files.story);
     const jobs = this.jobs(book);
-    if (setup === null || setup.mode !== 'lead' || this.writerProblem() !== null) return;
+    if (setup === null || setup.mode !== 'lead' || this.writerProblem() !== null) {
+      // Co-write mode (or no setup, or no writer) writes nothing on its own: drop what lead mode queued.
+      jobs.records = jobs.records.filter(
+        (record) => !record.lead || record.job.status !== 'queued',
+      );
+      return;
+    }
     const structure = files.reading.structure;
     if (structure === null) return;
     const position = jobs.position ?? START;
@@ -477,7 +512,13 @@ export class DiscoverService {
       throw new NotFoundError(`Draft ${draftId} was not found`);
     }
     const files = await this.bookService.discoverFiles(book);
-    await this.commitBeat(book, files, record.task.chapterId, proposal, 'seed');
+    const outcome = await this.commitBeat(book, files, record.task.chapterId, proposal, 'seed');
+    if (!outcome.done) {
+      // The book changed since the draft was made and it no longer compiles; keep the drafts to pick another.
+      throw new ValidationError(
+        `This draft no longer fits the book:\n${outcome.problems.join('\n')}`,
+      );
+    }
     this.jobs(book).records = this.jobs(book).records.filter((entry) => entry !== record);
     await this.planLead(book);
     return this.state(book);
@@ -724,30 +765,7 @@ export class DiscoverService {
       rules: readRules(files.rules),
     });
     const notes: string[] = [];
-    let reviews = REVIEW_ROUNDS;
-    const review = async (fresh: DiscoverFiles, prose: string, choices: readonly BeatChoice[]) => {
-      if (choices.length === 0) return [];
-      const problems = await reviewChoices(
-        model,
-        reviewPrompt({
-          rules: readRules(fresh.rules),
-          bible: context.bible.slice(0, 8_000),
-          transcript: (context.transcript ?? '').slice(-6_000),
-          beat: prose,
-          choices: describeChoices(
-            choices,
-            (id) => fresh.chapters.find((entry) => entry.id === id)?.title,
-          ),
-        }),
-      );
-      if (problems.length === 0) return [];
-      if (reviews > 0) {
-        reviews -= 1;
-        return problems.map((problem) => `Review: ${problem}`);
-      }
-      notes.push(...problems);
-      return [];
-    };
+    const review = this.reviewer(model, context, notes);
     const handlers = this.readHandlers(book, task.chapterId);
     let tools: BeatToolName[];
     let prompt: string;
@@ -937,7 +955,7 @@ export class DiscoverService {
     if (
       !ending.editable ||
       ending.ending.choices.length === 0 ||
-      replayed.choices.some((choice) => choice.sourcePath.split('.')[0] !== knot)
+      !atClosingChoices(replayed, knot, closingTexts(current))
     ) {
       throw new ConflictError(
         'no_choices_here',
@@ -952,6 +970,8 @@ export class DiscoverService {
       rules: readRules(files.rules),
     });
     const handlers = this.readHandlers(book, currentId);
+    const notes: string[] = [];
+    const review = this.reviewer(model, context, notes);
     handlers.decline_action = (args) => {
       record.job = {
         ...record.job,
@@ -975,14 +995,17 @@ export class DiscoverService {
         effects: entry.effects,
         to: { kind: 'existing', chapterId: entry.to },
       }));
-      const context = this.checkContext(fresh, setup, currentId);
+      const checks = this.checkContext(fresh, setup, currentId);
       const problems = [
-        ...checkChoices([...existing, choice], { ...context, count: existing.length + 1 }).filter(
+        ...checkChoices([...existing, choice], { ...checks, count: existing.length + 1 }).filter(
           (problem) => problem.includes(`"${choice.text}"`),
         ),
-        ...checkBeat(beat, context),
+        ...checkBeat(beat, checks),
       ];
       if (problems.length > 0) return { done: false, problems };
+      // The new beat's own choices pass the same review as any other beat's.
+      const reviewed = await review(fresh, projectInk(beat.ink), beat.choices);
+      if (reviewed.length > 0) return { done: false, problems: reviewed };
       const number = nextChapterNumber(fresh.chapters);
       const id = `chapter-${String(number).padStart(2, '0')}`;
       const path = `chapters/${id}.md`;
@@ -1045,7 +1068,41 @@ export class DiscoverService {
       tools: ['accept_action', 'decline_action'],
       handlers,
     });
-    return record.job.outcome?.accepted === false ? record.job.outcome.reason : undefined;
+    if (record.job.outcome?.accepted === false) return record.job.outcome.reason;
+    return notes.length === 0 ? undefined : `Written. The review still noted: ${notes.join(' ')}`;
+  }
+
+  /**
+   * The review pass for one job: the rules applied to a set of choices
+   * before it is written. It sends a failing set back REVIEW_ROUNDS times;
+   * after that the set is written and what the review still found goes in
+   * `notes`, for the writer to see.
+   */
+  private reviewer(model: ModelAccess, context: BeatPromptInput, notes: string[]) {
+    let reviews = REVIEW_ROUNDS;
+    return async (fresh: DiscoverFiles, prose: string, choices: readonly BeatChoice[]) => {
+      if (choices.length === 0) return [];
+      const problems = await reviewChoices(
+        model,
+        reviewPrompt({
+          rules: readRules(fresh.rules),
+          bible: context.bible.slice(0, 8_000),
+          transcript: (context.transcript ?? '').slice(-6_000),
+          beat: prose,
+          choices: describeChoices(
+            choices,
+            (id) => fresh.chapters.find((entry) => entry.id === id)?.title,
+          ),
+        }),
+      );
+      if (problems.length === 0) return [];
+      if (reviews > 0) {
+        reviews -= 1;
+        return problems.map((problem) => `Review: ${problem}`);
+      }
+      notes.push(...problems);
+      return [];
+    };
   }
 
   /** A beat's files, built from the book as it is now. */

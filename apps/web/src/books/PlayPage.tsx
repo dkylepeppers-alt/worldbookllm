@@ -18,6 +18,7 @@ import {
   SeedPanel,
   SomethingElse,
 } from './PlayDiscover.js';
+import { useSomethingElseOutcome } from './useSomethingElseOutcome.js';
 import { useDiscover, type Discover } from './useDiscover.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
@@ -307,14 +308,29 @@ function InkPlayer({
     () => ({ from: start.from, set: start.set, seed: start.seed, path: [...path] }),
     [start, path],
   );
+  // `position` is memoized on the address and `run` is stable, so each place
+  // in each book is reported once.
   const report = discover === null ? null : discover.run;
-  const positionKey = JSON.stringify(position);
+  const playable = typeof turn === 'object' && turn !== null && !turn.stale;
   useEffect(() => {
-    if (report === null || typeof turn !== 'object' || turn === null || turn.stale) return;
+    if (report === null || !playable) return;
     void report((api) => api.setDiscoverPosition(slug, position));
-    // Report each place once, not on every state change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positionKey, report === null, typeof turn === 'object' && turn !== null && !turn.stale]);
+  }, [slug, position, report, playable]);
+
+  // The reader's own action, asked at one place: kept here so the answer is
+  // played even if the form remounts while the story reloads.
+  const step = `${fromParam ?? ''}:${setParam ?? ''}:${seedParam ?? ''}:${path.join('.')}`;
+  const [asked, setAsked] = useState<{ step: string; known: string[] } | null>(null);
+  const askedHere = asked?.step === step ? asked.known : null;
+  useSomethingElseOutcome({
+    discover,
+    asked: askedHere,
+    offered: typeof turn === 'object' && turn !== null && !turn.stale ? turn.choices.length : 0,
+    onChoose: (index) => {
+      setAsked(null);
+      setParams({ ...startParams(start), path: [...path, index].join('.') });
+    },
+  });
 
   if (loadError !== null) {
     return <ErrorState title="The ink runtime could not load" message={loadError} />;
@@ -386,7 +402,9 @@ function InkPlayer({
         turn={turn}
         discover={discover}
         position={position}
-        step={`${fromParam ?? ''}:${setParam ?? ''}:${seedParam ?? ''}:${path.join('.')}`}
+        step={step}
+        asked={askedHere}
+        onAsk={(known) => setAsked(known === null ? null : { step, known })}
         atStart={path.length === 0}
         onChoose={(index) => setParams({ ...startParams(start), path: [...path, index].join('.') })}
         onRestart={() => setParams(startParams({ ...start, seed: newSeed() }))}
@@ -577,6 +595,8 @@ function Passage({
   discover,
   position,
   step,
+  asked,
+  onAsk,
   atStart,
   onChoose,
   onRestart,
@@ -586,6 +606,9 @@ function Passage({
   discover: Discover | null;
   position: PlayPosition;
   step: string;
+  /** The jobs that existed when the reader asked for something else here. */
+  asked: readonly string[] | null;
+  onAsk: (known: string[] | null) => void;
   atStart: boolean;
   onChoose: (index: number) => void;
   onRestart: () => void;
@@ -609,6 +632,10 @@ function Passage({
   );
   const state = discover?.state ?? null;
   const beat = state?.beats.find((entry) => entry.chapterId === last?.chapterId);
+  // The reader's own action is added to a beat's closing choices, so it is offered there, not inside a scene.
+  const closing = last == null ? undefined : state?.closingChoices[last.chapterId];
+  const atClosingChoices =
+    closing !== undefined && turn.choices.every((text) => closing.includes(text.trim()));
 
   return (
     <article ref={passage} tabIndex={-1} className="play-passage" aria-label="Story">
@@ -639,14 +666,14 @@ function Passage({
               </button>
             </li>
           ))}
-          {state === null ? null : (
+          {state === null || !atClosingChoices ? null : (
             <SomethingElse
               key={step}
               discover={discover!}
               state={state}
               position={position}
-              offered={turn.choices.length}
-              onChoose={onChoose}
+              asked={asked}
+              onAsk={onAsk}
             />
           )}
         </ul>

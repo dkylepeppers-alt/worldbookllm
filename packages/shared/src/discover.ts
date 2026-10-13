@@ -192,6 +192,11 @@ export const discoverStateSchema = z.strictObject({
   /** Beats written from a chapter that changed since, which the writer read or edited. */
   needsReview: z.array(discoverBeatSchema),
   jobs: z.array(discoverJobSchema),
+  /**
+   * Each chapter's closing choices, by chapter id: where Play offers
+   * "Something else" (not at choices inside a scene).
+   */
+  closingChoices: z.record(z.string(), z.array(z.string())),
   /** Whether the configured provider can run the beat writer (it needs tool calling). */
   writerReady: z.boolean(),
   /** Why it cannot, when it cannot. */

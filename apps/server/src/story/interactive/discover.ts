@@ -156,6 +156,13 @@ export function withKernel(storyText: string, kernel: string): string {
 
 const VAR_LINE = /^\s*VAR\s+([A-Za-z_]\w*)\s*=\s*(.+?)\s*$/u;
 const COMMENT_LINE = /^\s*\/\/\s?(.*)$/u;
+// A literal a VAR starts with: a number, true or false, or quoted text (which may hold //).
+const LITERAL = /^(?:-?\d+(?:\.\d+)?|true|false|"(?:[^"\\]|\\.)*")/u;
+
+/** A VAR's starting value, without a comment after it; a quoted // stays. */
+function initialOf(value: string): string {
+  return LITERAL.exec(value)?.[0] ?? value.replace(/\s*\/\/.*$/u, '');
+}
 
 /** The `VAR`s of `ink/variables.md`, each with the `//` comment above it as its meaning. */
 export function readVariables(variablesText: string | null): DiscoverVariable[] {
@@ -168,7 +175,7 @@ export function readVariables(variablesText: string | null): DiscoverVariable[] 
     const comment = index > 0 ? COMMENT_LINE.exec(lines[index - 1]!) : null;
     variables.push({
       name: match[1]!,
-      initial: match[2]!.replace(/\s*\/\/.*$/u, ''),
+      initial: initialOf(match[2]!),
       meaning: comment?.[1]?.trim() ?? '',
     });
   });

@@ -14,6 +14,7 @@ export const NO_DISCOVERY = {
   openThreads: [],
   needsReview: [],
   jobs: [],
+  closingChoices: {},
   writerReady: false,
   writerProblem: 'Configure a provider in Settings to write with the beat writer.',
 };

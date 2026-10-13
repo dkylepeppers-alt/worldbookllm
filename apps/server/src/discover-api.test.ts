@@ -57,7 +57,7 @@ const THREE = [
 ];
 
 /** Boots the app with a scripted model and an empty interactive book. */
-async function boot(script: Array<() => Response>) {
+async function boot(script: Array<() => Response | Promise<Response>>) {
   dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-discover-'));
   const requests: Array<Record<string, unknown>> = [];
   let turn = 0;
@@ -223,6 +223,20 @@ describe('discovering an interactive book', () => {
     });
     expect(build.json<{ output: string }>().output).toContain(
       '2 branches are not written yet, so they end the story: Open the letter, Burn it unread.',
+    );
+    // A seed written by hand is written, though its frontmatter still says seed.
+    const seed = app.services.books.readFile(slug, 'chapters/chapter-02.md');
+    await app.services.books.writeFile(slug, 'chapters/chapter-02.md', {
+      content: seed.content.replace(/TODO:[^\n]*\n/u, 'It is from Tom.\n'),
+      expectedHash: seed.hash,
+    });
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/builds`,
+      payload: { format: 'ink' },
+    });
+    expect(again.json<{ output: string }>().output).toContain(
+      '1 branch is not written yet, so it ends the story: Burn it unread.',
     );
   }, 30_000);
 
@@ -487,6 +501,123 @@ describe('discovering an interactive book', () => {
       kind: 'variables',
       status: 'done',
       variables: [{ name: 'courage', initial: '0', meaning: 'How brave' }],
+    });
+  }, 30_000);
+
+  it('keeps drafts when the one picked no longer compiles, and stops lead work on switching to co-write', async () => {
+    const draft = () =>
+      sse(
+        toolCall('d', 'write_beat', {
+          title: 'Kindness',
+          summary: 'You are kind.',
+          ink: 'You smile.',
+          ending: false,
+          choices: [
+            choice('Thank her', 'gratitude', { effects: ['trust += 1'] }),
+            choice('Say nothing', 'silence'),
+            choice('Leave', 'flight', { leads_to: 'end' }),
+          ],
+        }),
+      );
+    const { app, slug } = await boot([draft, PASS, draft, PASS, draft, PASS]);
+    await setUp(app, slug, { mode: 'cowrite', opening: null });
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/drafts`,
+      payload: { chapterId: 'chapter-01', position: null },
+    });
+    const job = (await settle(app, slug)).jobs[0]!;
+    expect(job.drafts).toHaveLength(3);
+
+    // The writer drops the variable the drafts set, then picks one.
+    const files = app.services.books;
+    const variables = files.readFile(slug, 'ink/variables.md');
+    await files.writeFile(slug, 'ink/variables.md', {
+      content: variables.content.replace(/\/\/[^\n]*\nVAR trust = 0\n/u, ''),
+      expectedHash: variables.hash,
+    });
+    const picked = await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/jobs/${job.id}/drafts/${job.drafts[0]!.id}`,
+    });
+    expect(picked.statusCode).toBe(400);
+    expect(picked.body).toContain('This draft no longer fits the book');
+    const state = (
+      await app.inject({ method: 'GET', url: `/api/books/${slug}/discover` })
+    ).json<DiscoverState>();
+    expect(state.jobs.map((entry) => entry.id)).toEqual([job.id]);
+    expect(chapter(app, slug, 'chapter-01')).toContain('TODO:');
+  }, 30_000);
+
+  it('drops queued lead work when the setup switches to co-write', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const beat = (title: string) => () =>
+      sse(
+        toolCall(title, 'write_beat', {
+          title,
+          summary: '',
+          ink: `${title}.`,
+          ending: true,
+          choices: [],
+        }),
+      );
+    const { app, slug } = await boot([
+      () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
+      PASS,
+      // The first beat after the choices is held until the setup has switched.
+      async () => {
+        await gate;
+        return beat('First')();
+      },
+      beat('Second'),
+      beat('Third'),
+    ]);
+    await setUp(app, slug, { mode: 'lead', opening: 'Wind.' });
+    let state: DiscoverState | null = null;
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      state = (
+        await app.inject({ method: 'GET', url: `/api/books/${slug}/discover` })
+      ).json<DiscoverState>();
+      if (state.jobs.filter((entry) => entry.status === 'queued').length === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(state?.jobs.map((entry) => entry.status)).toEqual(['running', 'queued', 'queued']);
+    await setUp(app, slug, { mode: 'cowrite', opening: null });
+    release();
+    state = await settle(app, slug);
+    // The beat already being written finishes; the two queued are not written.
+    expect(chapter(app, slug, 'chapter-02')).toContain('First.');
+    expect(state.openThreads.map((thread) => thread.chapterId)).toEqual([
+      'chapter-03',
+      'chapter-04',
+    ]);
+  }, 30_000);
+
+  it('offers the reader’s own action only at a beat’s closing choices, not inside a scene', async () => {
+    const { app, slug } = await boot([PASS]);
+    await setUp(app, slug, { mode: 'cowrite', opening: 'The keeper waits.' });
+    const files = app.services.books;
+    const first = files.readFile(slug, 'chapters/chapter-01.md');
+    await files.writeFile(slug, 'chapters/chapter-01.md', {
+      content: first.content.replace(
+        '-> END',
+        '* [Look around] You look.\n- She is still there.\n\n* [Stay] -> END\n* [Go] -> END',
+      ),
+      expectedHash: first.hash,
+    });
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/something-else`,
+      payload: { position: { from: null, set: {}, seed: 1, path: [] }, action: 'Shout' },
+    });
+    const state = await settle(app, slug);
+    expect(state.closingChoices).toEqual({ 'chapter-01': ['Stay', 'Go'] });
+    expect(state.jobs[0]).toMatchObject({
+      status: 'failed',
+      message: 'Something else works where a beat ends in its choices, not inside a scene.',
     });
   }, 30_000);
 });

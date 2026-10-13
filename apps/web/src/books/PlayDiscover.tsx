@@ -1,5 +1,5 @@
 import type { DiscoverBeat, DiscoverJob, DiscoverState, PlayPosition } from '@worldbookllm/shared';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
@@ -96,8 +96,9 @@ export function SeedPanel({
   const [direction, setDirection] = useState('');
   const [note, setNote] = useState(beat.note.split('\n\n').slice(1).join('\n\n'));
   const jobs = state.jobs.filter((job) => job.chapterId === beat.chapterId);
-  const writing = jobs.find((job) => active(job) && job.kind !== 'drafts');
-  const drafting = jobs.find((job) => job.kind === 'drafts');
+  const writing = jobs.findLast((job) => active(job) && job.kind !== 'drafts');
+  // The newest drafts job: a retry after a failure is the one to show.
+  const drafting = jobs.findLast((job) => job.kind === 'drafts');
   const file = tree.files.find((entry) => entry.path === beat.path);
   const reached = beat.note.split('\n\n')[0] ?? '';
   const lead = state.setup?.mode === 'lead';
@@ -362,21 +363,19 @@ export function SomethingElse({
   discover,
   state,
   position,
-  offered,
-  onChoose,
+  asked,
+  onAsk,
 }: {
   discover: Discover;
   state: DiscoverState;
   position: PlayPosition;
-  /** How many choices Play offers now. */
-  offered: number;
-  onChoose: (index: number) => void;
+  /** The jobs that existed when the reader asked here, or null before they ask. */
+  asked: readonly string[] | null;
+  onAsk: (known: string[] | null) => void;
 }) {
   const { slug } = useBook();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(asked !== null);
   const [action, setAction] = useState('');
-  // The jobs that existed when the reader asked, so an earlier answer is never taken for this one.
-  const [asked, setAsked] = useState<string[] | null>(null);
   const mine =
     asked === null
       ? undefined
@@ -384,18 +383,6 @@ export function SomethingElse({
           (entry) => entry.kind === 'something-else' && !asked.includes(entry.id),
         );
   const outcome = mine?.status === 'done' ? mine.outcome : null;
-
-  // Play the new choice once the story Play runs has it. Choosing moves to a
-  // new step, which mounts a fresh form, so nothing here needs resetting.
-  const chosen = useRef(false);
-  useEffect(() => {
-    if (mine === undefined || outcome === null || !outcome.accepted || chosen.current) return;
-    if (offered > outcome.choice) {
-      chosen.current = true;
-      void discover.run((api) => api.dismissDiscoverJob(slug, mine.id));
-      onChoose(outcome.choice);
-    }
-  }, [mine, outcome, offered, discover, slug, onChoose]);
 
   if (!state.writerReady) return null;
   if (!open) {
@@ -419,7 +406,7 @@ export function SomethingElse({
         onSubmit={(event) => {
           event.preventDefault();
           if (action.trim() === '') return;
-          setAsked(state.jobs.map((entry) => entry.id));
+          onAsk(state.jobs.map((entry) => entry.id));
           void discover.run((api) => api.somethingElse(slug, { position, action: action.trim() }));
         }}
       >
@@ -468,7 +455,7 @@ export function SomethingElse({
             disabled={working}
             onClick={() => {
               setOpen(false);
-              setAsked(null);
+              onAsk(null);
             }}
           >
             Cancel

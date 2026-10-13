@@ -122,6 +122,10 @@ describe('story variables', () => {
       { name: 'trust', initial: '0', meaning: 'How much Mara trusts you' },
       { name: 'met', initial: 'false', meaning: '' },
     ]);
+    // A quoted // is part of the value; a comment after it is not.
+    expect(
+      readVariables('VAR site = "https://example.com" // where the letter came from\n'),
+    ).toEqual([{ name: 'site', initial: '"https://example.com"', meaning: '' }]);
   });
 
   it('rewrites the agreed VARs in place, adds new ones, drops removed ones, and keeps other ink', () => {

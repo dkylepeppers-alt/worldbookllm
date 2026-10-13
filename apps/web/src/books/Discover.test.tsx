@@ -147,6 +147,7 @@ const discovering: DiscoverState = {
   openThreads: [
     { chapterId: 'chapter-02', title: 'Open the letter', from: 'chapter-01', playPath: [0] },
   ],
+  closingChoices: { 'chapter-01': ['Open the letter', 'Burn it'] },
   writerReady: true,
   writerProblem: null,
 };
@@ -331,6 +332,39 @@ describe('Play while discovering', () => {
     expect((screen.getByLabelText('What do you do?') as HTMLInputElement).value).toBe(
       'Signal the ship',
     );
+  });
+
+  it('offers Something else only at a beat’s closing choices, not inside a scene', async () => {
+    const inScene = { ...discovering, closingChoices: {} };
+    renderAt('/books/gull-rock/branches/play', {
+      getDiscover: () => Promise.resolve(inScene),
+      setDiscoverPosition: () => Promise.resolve(inScene),
+    });
+    const choices = await screen.findByRole('list', { name: 'Choices' });
+    expect(within(choices).getByRole('button', { name: 'Open the letter' })).toBeTruthy();
+    expect(within(choices).queryByRole('button', { name: 'Something else…' })).toBeNull();
+  });
+
+  it('shows the newest drafts job at a seed, so a retry replaces a failure', async () => {
+    const failed = job({
+      kind: 'drafts',
+      chapterId: 'chapter-02',
+      status: 'failed',
+      message: 'Old failure',
+    });
+    const retry = job({
+      id: '55555555-5555-4555-8555-555555555555',
+      kind: 'drafts',
+      chapterId: 'chapter-02',
+      status: 'running',
+    });
+    const retrying = { ...discovering, jobs: [failed, retry] };
+    renderAt('/books/gull-rock/branches/play?seed=1&path=0', {
+      getDiscover: () => Promise.resolve(retrying),
+      setDiscoverPosition: () => Promise.resolve(retrying),
+    });
+    expect(await screen.findByText(/Drafting three directions/u)).toBeTruthy();
+    expect(screen.queryByText('Old failure')).toBeNull();
   });
 
   it('plays the reader’s own action once it is a choice', async () => {
