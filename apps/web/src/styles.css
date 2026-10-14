@@ -2997,6 +2997,19 @@ ol.inspector-sections {
   margin: 0;
 }
 
+/* What the beat writer is doing, with the button that stops it. */
+.discover-working {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.discover-working p {
+  margin: 0;
+}
+
 .discover-dot {
   display: inline-block;
   width: 0.5rem;

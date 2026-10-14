@@ -78,6 +78,16 @@ export function registerDiscoverRoutes(app: FastifyInstance): void {
     return discover().retry(book, job);
   });
 
+  app.post('/api/books/:book/discover/stop', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return discover().stop(book);
+  });
+
+  app.post('/api/books/:book/discover/resume', (request) => {
+    const { book } = bookParamsSchema.parse(request.params);
+    return discover().resume(book);
+  });
+
   app.delete('/api/books/:book/discover/jobs/:job', (request) => {
     const { book, job } = jobParamsSchema.parse(request.params);
     return discover().dismiss(book, job);

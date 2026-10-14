@@ -153,6 +153,7 @@ const discovering: DiscoverState = {
   closingChoices: { 'chapter-01': ['Open the letter', 'Burn it'] },
   writerReady: true,
   writerProblem: null,
+  paused: false,
 };
 
 function Location() {
@@ -678,6 +679,59 @@ describe('Play while discovering', () => {
     });
     expect(await screen.findByText(/Drafting three directions/u)).toBeTruthy();
     expect(screen.queryByText('Old failure')).toBeNull();
+    // Drafting can be stopped like anything else the beat writer does.
+    expect(screen.getAllByRole('button', { name: 'Stop' }).length).toBeGreaterThan(0);
+  });
+
+  it('stops the beat writer, and in lead mode resumes writing ahead when asked', async () => {
+    const lead: DiscoverState = { ...discovering, setup: { ...discovering.setup!, mode: 'lead' } };
+    const writing = {
+      ...lead,
+      jobs: [
+        job({
+          kind: 'beat',
+          chapterId: 'chapter-02',
+          title: 'Writing "Open the letter"',
+          status: 'running',
+        }),
+      ],
+    };
+    const stopDiscover = vi.fn<ApiClient['stopDiscover']>(() =>
+      Promise.resolve({ ...lead, paused: true }),
+    );
+    const resumeDiscover = vi.fn<ApiClient['resumeDiscover']>(() => Promise.resolve(lead));
+    renderAt('/books/gull-rock/branches/play', {
+      getDiscover: () => Promise.resolve(writing),
+      setDiscoverPosition: () => Promise.resolve(writing),
+      stopDiscover,
+      resumeDiscover,
+    });
+    const user = userEvent.setup();
+    expect(await screen.findByText(/Writing "Open the letter"…/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(stopDiscover).toHaveBeenCalledWith('gull-rock');
+    await user.click(await screen.findByRole('button', { name: 'Resume writing ahead' }));
+    expect(resumeDiscover).toHaveBeenCalledWith('gull-rock');
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Resume writing ahead' })).toBeNull(),
+    );
+  });
+
+  it('stops the beat writer while it writes the reader’s own action', async () => {
+    const working = job({ kind: 'something-else', chapterId: 'chapter-01', status: 'running' });
+    const stopDiscover = vi.fn<ApiClient['stopDiscover']>(() => Promise.resolve(discovering));
+    renderAt('/books/gull-rock/branches/play', {
+      somethingElse: () => Promise.resolve({ ...discovering, jobs: [working] }),
+      stopDiscover,
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Something else…' }));
+    await user.type(screen.getByLabelText('What do you do?'), 'burn it');
+    await user.click(screen.getByRole('button', { name: 'Try it' }));
+    expect(await screen.findByText('Writing what happens…')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(stopDiscover).toHaveBeenCalledWith('gull-rock');
+    await waitFor(() => expect(screen.queryByText('Writing what happens…')).toBeNull());
   });
 
   it('plays the reader’s own action once it is a choice', async () => {
@@ -841,5 +895,33 @@ describe('Discovery on the Branches tab and Health', () => {
     ).toBe('/books/gull-rock/branches/play?seed=1&path=0');
     await user.click(screen.getByRole('button', { name: 'Mark reviewed' }));
     expect(markDiscoverReviewed).toHaveBeenCalledWith('gull-rock', 'chapter-03');
+  });
+
+  it('says on Branches when lead mode is stopped, and resumes it', async () => {
+    const lead: DiscoverState = { ...discovering, setup: { ...discovering.setup!, mode: 'lead' } };
+    const resumeDiscover = vi.fn<ApiClient['resumeDiscover']>(() => Promise.resolve(lead));
+    renderAt('/books/gull-rock/branches', {
+      getInteractiveStory: () =>
+        Promise.resolve({
+          title: book.title,
+          ifid: null,
+          chapters: [],
+          compiled: false,
+          start: null,
+          nodes: [],
+          variables: [],
+          diagnostics: [],
+        }),
+      getDiscover: () => Promise.resolve({ ...lead, paused: true }),
+      resumeDiscover,
+    });
+    const user = userEvent.setup();
+    expect(await screen.findByText(/Lead mode, stopped/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Resume writing ahead' }));
+    expect(resumeDiscover).toHaveBeenCalledWith('gull-rock');
+    expect(
+      await screen.findByText(/Lead mode: the beat writer stays one step ahead/u),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Resume writing ahead' })).toBeNull();
   });
 });

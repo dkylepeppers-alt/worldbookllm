@@ -17,6 +17,7 @@ export const NO_DISCOVERY = {
   closingChoices: {},
   writerReady: false,
   writerProblem: 'Configure a provider in Settings to write with the beat writer.',
+  paused: false,
 };
 
 export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient {
@@ -69,6 +70,8 @@ export function createTestClient(overrides: Partial<ApiClient> = {}): ApiClient 
     somethingElse: unused,
     retryDiscoverJob: unused,
     dismissDiscoverJob: unused,
+    stopDiscover: unused,
+    resumeDiscover: unused,
     markDiscoverReviewed: unused,
     setSeedNote: unused,
     pinIfid: unused,

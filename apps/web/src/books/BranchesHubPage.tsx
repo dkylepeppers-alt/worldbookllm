@@ -8,7 +8,8 @@ import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { BranchMap } from './BranchMap.js';
-import { useDiscover } from './useDiscover.js';
+import { ResumeWriter, StopWriter } from './PlayDiscover.js';
+import { useDiscover, type Discover } from './useDiscover.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
 /**
@@ -106,7 +107,9 @@ function Hub({ slug, story }: { slug: string; story: InteractiveStory }) {
           to edit it. Variables and shared ink live in <code>ink/</code>.
         </p>
       </div>
-      {discover.state === null ? null : <DiscoverCard slug={slug} state={discover.state} />}
+      {discover.state === null ? null : (
+        <DiscoverCard slug={slug} discover={discover} state={discover.state} />
+      )}
       {story.compiled ? (
         <BranchMap slug={slug} story={story} seeds={seeds} />
       ) : (
@@ -120,7 +123,15 @@ function Hub({ slug, story }: { slug: string; story: InteractiveStory }) {
  * Discovery (ADR 0033) on the hub: the way in for a book not set up for it,
  * and for one that is, its mode and what is waiting on the writer.
  */
-function DiscoverCard({ slug, state }: { slug: string; state: DiscoverState }) {
+function DiscoverCard({
+  slug,
+  discover,
+  state,
+}: {
+  slug: string;
+  discover: Discover;
+  state: DiscoverState;
+}) {
   const base = `/books/${encodeURIComponent(slug)}/branches`;
   if (state.setup === null) {
     return (
@@ -145,7 +156,9 @@ function DiscoverCard({ slug, state }: { slug: string; state: DiscoverState }) {
       <h3 id="discover-heading">Discovery</h3>
       <p>
         {state.setup.mode === 'lead'
-          ? `Lead mode: the beat writer stays ${state.setup.lookahead === 1 ? 'one step' : 'two steps'} ahead of you.`
+          ? state.paused
+            ? 'Lead mode, stopped: the beat writer writes nothing ahead until you resume it.'
+            : `Lead mode: the beat writer stays ${state.setup.lookahead === 1 ? 'one step' : 'two steps'} ahead of you.`
           : 'Co-write mode: the beat writer drafts when you ask.'}{' '}
         {threads === 0
           ? 'Every branch is written.'
@@ -153,10 +166,12 @@ function DiscoverCard({ slug, state }: { slug: string; state: DiscoverState }) {
         {review === 0 ? '' : ` ${review} ${review === 1 ? 'beat needs' : 'beats need'} review.`}
       </p>
       {working.length === 0 ? null : (
-        <p className="coordinate-label" role="status">
-          {working[0]!.title}…
-        </p>
+        <div className="discover-working" role="status">
+          <p className="coordinate-label">{working[0]!.title}…</p>
+          <StopWriter discover={discover} />
+        </div>
       )}
+      {state.setup.mode === 'lead' && state.paused ? <ResumeWriter discover={discover} /> : null}
       <div className="branch-actions">
         <Link className="button-primary" to={`${base}/play`}>
           Play and write

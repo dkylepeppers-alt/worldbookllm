@@ -64,7 +64,7 @@ const THREE = [
 
 /** Boots the app with a scripted model and an interactive book, converted from these chapters' prose. */
 async function boot(
-  script: Array<() => Response | Promise<Response>>,
+  script: Array<(init: RequestInit | undefined) => Response | Promise<Response>>,
   chapters: readonly string[] = [],
 ) {
   dataDir = mkdtempSync(join(tmpdir(), 'worldbookllm-discover-'));
@@ -77,7 +77,7 @@ async function boot(
       requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       const next = script[Math.min(turn, script.length - 1)];
       turn += 1;
-      return Promise.resolve(next ? next() : sse(text('…')));
+      return Promise.resolve(next ? next(init) : sse(text('…')));
     },
   });
   await app.inject({
@@ -1084,6 +1084,106 @@ describe('discovering an interactive book', () => {
       'chapter-03',
       'chapter-04',
     ]);
+  }, 30_000);
+
+  it('stops the beat writer, and lead mode writes nothing ahead until the writer resumes it', async () => {
+    const beat = (title: string) => () =>
+      sse(
+        toolCall(title, 'write_beat', {
+          title,
+          summary: '',
+          ink: `${title}.`,
+          ending: true,
+          choices: [],
+        }),
+      );
+    let aborted = false;
+    const { app, slug } = await boot([
+      () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
+      PASS,
+      // The first beat after the choices runs until the writer stops it.
+      (init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            aborted = true;
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+      beat('First'),
+      beat('Second'),
+      beat('Third'),
+    ]);
+    await setUp(app, slug, { mode: 'lead', opening: 'Wind.' });
+    let state: DiscoverState | null = null;
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      state = (
+        await app.inject({ method: 'GET', url: `/api/books/${slug}/discover` })
+      ).json<DiscoverState>();
+      if (state.jobs.filter((entry) => entry.status === 'queued').length === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(state?.jobs.map((entry) => entry.status)).toEqual(['running', 'queued', 'queued']);
+
+    const stopped = await app.inject({ method: 'POST', url: `/api/books/${slug}/discover/stop` });
+    expect(stopped.statusCode, stopped.body).toBe(200);
+    expect(stopped.json<DiscoverState>()).toMatchObject({ paused: true, jobs: [] });
+    state = await settle(app, slug);
+    expect(aborted).toBe(true);
+    expect(state.jobs).toEqual([]);
+    expect(state.openThreads).toHaveLength(3);
+
+    // Moving on in Play does not start it again.
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/position`,
+      payload: { position: { from: null, set: {}, seed: 1, path: [] } },
+    });
+    state = await settle(app, slug);
+    expect(state.jobs).toEqual([]);
+    expect(state.paused).toBe(true);
+
+    const resumed = await app.inject({ method: 'POST', url: `/api/books/${slug}/discover/resume` });
+    expect(resumed.json<DiscoverState>().paused).toBe(false);
+    state = await settle(app, slug);
+    expect(state.openThreads).toEqual([]);
+    expect(chapter(app, slug, 'chapter-02')).toContain('First.');
+  }, 30_000);
+
+  it('writes nothing once stopped, even when the model answers after the stop', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { app, slug, requests } = await boot([
+      () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
+      PASS,
+      () =>
+        sse(
+          toolCall('first', 'write_beat', {
+            title: 'First',
+            summary: '',
+            ink: 'First.',
+            ending: false,
+            choices: THREE,
+          }),
+        ),
+      // The review of that beat answers only after the writer has stopped the job, ignoring the abort.
+      async () => {
+        await gate;
+        return PASS();
+      },
+    ]);
+    await setUp(app, slug, { mode: 'lead', opening: 'Wind.' });
+    for (let attempt = 0; attempt < 400 && requests.length < 4; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(requests).toHaveLength(4);
+    await app.inject({ method: 'POST', url: `/api/books/${slug}/discover/stop` });
+    release();
+    const state = await settle(app, slug);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(chapter(app, slug, 'chapter-02')).not.toContain('First.');
+    expect(state.openThreads.map((thread) => thread.chapterId)).toContain('chapter-02');
   }, 30_000);
 
   it('offers the reader’s own action only at a beat’s closing choices, not inside a scene', async () => {

@@ -268,6 +268,10 @@ export interface ApiClient {
   somethingElse(slug: string, input: SomethingElseInput): Promise<DiscoverState>;
   retryDiscoverJob(slug: string, jobId: string): Promise<DiscoverState>;
   dismissDiscoverJob(slug: string, jobId: string): Promise<DiscoverState>;
+  /** Stops every job the beat writer has queued or running, and pauses lead mode. */
+  stopDiscover(slug: string): Promise<DiscoverState>;
+  /** Lets lead mode write ahead again after a stop. */
+  resumeDiscover(slug: string): Promise<DiscoverState>;
   markDiscoverReviewed(slug: string, chapterId: string): Promise<DiscoverState>;
   setSeedNote(slug: string, chapterId: string, note: string): Promise<DiscoverState>;
   pinIfid(slug: string, signal?: AbortSignal): Promise<PinnedIfid>;
@@ -655,6 +659,10 @@ export function createApiClient(fetchImpl: typeof fetch = globalThis.fetch): Api
         method: 'DELETE',
         schema: discoverStateSchema,
       }),
+    stopDiscover: (slug) =>
+      request(`${book(slug)}/discover/stop`, { method: 'POST', schema: discoverStateSchema }),
+    resumeDiscover: (slug) =>
+      request(`${book(slug)}/discover/resume`, { method: 'POST', schema: discoverStateSchema }),
     markDiscoverReviewed: (slug, chapterId) =>
       request(`${book(slug)}/discover/chapters/${encodeURIComponent(chapterId)}/reviewed`, {
         method: 'POST',
