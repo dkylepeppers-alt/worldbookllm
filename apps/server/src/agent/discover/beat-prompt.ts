@@ -272,7 +272,11 @@ export function beatTaskPrompt(
       '',
       task.force
         ? 'The writer has decided this happens here, even if it does not fit what the scene has set up. Call accept_action: rewrite it as a choice in the book voice (keep what the reader meant, and do not water it down) and write the beat it leads to, with its own choices. Where it strains the scene, the character, or what they know, let the beat show how it happens or what it costs.'
-        : 'Judge it by the rules for choices: is it possible in this scene, with what the character knows, and true to the character? If it is, call accept_action: rewrite it as a choice in the book voice (keep what the reader meant) and write the beat it leads to, with its own choices. If it is not, call decline_action with a short reason addressed to the reader and the nearest action that would work.',
+        : [
+            'The reader is almost always the writer trying an idea for their own book, so accept it by default: call accept_action, rewrite it as a choice in the book voice (keep what the reader meant, and do not water it down), and write the beat it leads to, with its own choices.',
+            'The rules for choices are for the choices you write, not for judging the reader. Unusual, risky, unwise, surprising, or unlike what the character has done so far is never a reason to decline: unwise choices make stories. If it nearly works, accept it and let the beat show how it goes or what it costs.',
+            'Call decline_action only when it truly cannot happen: it contradicts a fact the bible or this path has established (the bridge fell two beats ago), or it depends on something the character has not learned on this path. Then give a short reason naming that fact, and the nearest action that would work.',
+          ].join(' '),
       '',
       '## The choices offered now',
       task.choices,

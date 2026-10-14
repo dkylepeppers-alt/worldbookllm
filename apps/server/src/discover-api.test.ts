@@ -699,6 +699,10 @@ describe('discovering an interactive book', () => {
         suggestion: 'Signal the passing ship',
       },
     });
+    // The beat writer accepts by default and declines only what contradicts the story so far.
+    const judged = JSON.stringify(requests.at(-1));
+    expect(judged).toContain('accept it by default');
+    expect(judged).not.toContain('true to the character');
 
     await app.inject({
       method: 'POST',

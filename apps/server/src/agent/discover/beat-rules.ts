@@ -201,7 +201,7 @@ export const BEAT_TOOLS = {
   },
   decline_action: {
     description:
-      "The reader's action cannot happen here (impossible in the scene, out of character, or beyond what they know). Say why, and suggest the nearest action that would work.",
+      "Only for a reader's action that truly cannot happen here: it contradicts a fact the bible or the story so far has established, or depends on something the character has not learned on this path. Never for an action that is merely unusual, risky, unwise, or unlike the character so far; accept those and let the beat show the cost. Name the fact it contradicts, and suggest the nearest action that would work.",
     parameters: {
       required: ['reason', 'suggestion'],
       properties: {
