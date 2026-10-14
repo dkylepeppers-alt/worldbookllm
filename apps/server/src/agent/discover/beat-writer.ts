@@ -29,7 +29,10 @@ import {
  * fix. Reading tools answer and the loop goes on.
  */
 
-const MAX_STEPS = 10;
+/** Room for the reading budget, two review rounds, and fixes the checks ask for. */
+const MAX_STEPS = 14;
+/** Steps the beat writer may spend reading before it is told to write and offered only the writing tools. */
+const READ_STEPS = 4;
 const RESULT_MAX_CHARS = 16_000;
 
 /** What a writing tool's handler says: done, or the problems to fix. */
@@ -122,13 +125,23 @@ export async function runBeatWriter(
   ];
   let nudges = 0;
   let lastProblems: string[] = [];
+  // Whether the model has tried a writing tool yet; until it does, reading has a budget.
+  let attempted = false;
   for (let step = 0; step < MAX_STEPS; step += 1) {
     if (model.signal.aborted) throw new BeatWriterError('Stopped.');
+    const reading = !attempted && step >= READ_STEPS;
+    if (!attempted && step === READ_STEPS) {
+      messages.push({
+        role: 'user',
+        content: `You have read enough to write this. Call ${input.tools.join(' or ')} now, with the full arguments.`,
+      });
+    }
+    const offered = reading ? [...input.tools] : tools;
     const request = model.providers.createChatRequest(
       model.config,
       messages,
       model.controls,
-      definitions(tools),
+      definitions(offered),
     );
     const streamed = await streamStep(model.providers, model.config, request, model.signal);
     const { text } = streamed;
@@ -168,7 +181,8 @@ export async function runBeatWriter(
         continue;
       }
       const name = call.name as BeatToolName;
-      if (!tools.includes(name)) {
+      if (input.tools.includes(name)) attempted = true;
+      if (!offered.includes(name)) {
         reply(`Error: ${call.name} is not available. Use ${input.tools.join(' or ')}.`);
         continue;
       }

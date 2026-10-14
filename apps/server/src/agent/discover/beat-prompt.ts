@@ -299,6 +299,7 @@ export function reviewPrompt(input: {
     input.beat.trim(),
     '',
     '## Its choices',
+    "Only the quoted text of each choice is shown to the reader. Its intent, consequence, where it leads, and what it sets are the writer's notes for judging the rules: they are never spoilers, and a rejoin's title is not shown to the reader.",
     input.choices,
     '',
     'Reply with JSON only, no prose: {"pass": true} if the set follows every rule, or {"pass": false, "problems": ["…", "…"]} naming each rule broken, which choice, and why, in one sentence each.',

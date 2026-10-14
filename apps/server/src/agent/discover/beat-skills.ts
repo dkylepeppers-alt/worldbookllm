@@ -12,7 +12,7 @@ import { StorySkillsInstaller } from '../story-skills-installer.js';
  * file there changes, so unedited installs move to the new text; a test
  * keeps the two in step.
  */
-export const BEAT_SKILLS_PACKAGE = 'beat-skills@1.0.0';
+export const BEAT_SKILLS_PACKAGE = 'beat-skills@1.1.0';
 
 /** The agent the install makes, which names every beat writer skill. */
 const BEAT_WRITER_AGENT = {

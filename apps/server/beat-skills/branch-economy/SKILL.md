@@ -27,7 +27,8 @@ doubles with every choice and never finishes. Shape it on purpose.
 - When a difference should survive the rejoin, carry it in a variable the
   rejoined beat already reads, or in `effects` that later beats can read. Never
   count on the rejoined beat being rewritten.
-- Read the beat you rejoin (read_file) if you are not sure what it assumes.
+- Each beat you could rejoin is summarised in your task; read it (read_file)
+  only if the summary does not say what it assumes.
 
 ## Endings
 

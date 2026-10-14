@@ -89,7 +89,7 @@ function stepsFor(files: readonly BookFile[]): { steps: Step[]; needed: boolean 
           ? `Read ${reports.join(' and ')} for the names the manuscript repeats.`
           : 'Find the names the chapters repeat.',
         'Ask me about them with ask_user, a few at a time, with choices for what each one is: character, location, faction, artifact, or not one.',
-        'When I am unsure about a name, show me where it appears with story mentions.',
+        'When I am unsure about a name, show me where it appears with search.',
         'Create the ones I approve with story add, then run story check.',
         'Follow the character-management and worldbuilding skills, and do not change the prose.',
       ].join(' '),

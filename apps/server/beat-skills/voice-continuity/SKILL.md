@@ -10,8 +10,8 @@ reader reads them as one story. Make them sound like it.
 
 ## Match the beat before
 
-- Read the beat before and the path the reader played. Match its sentence
-  length, paragraph length, and how much it lets characters say.
+- The beat before and the path the reader played are in your task. Match its
+  sentence length, paragraph length, and how much it lets characters say.
 - Keep its person and tense exactly. If the book says "she", so does every line
   of this beat.
 - Carry its motifs forward: a recurring object, a sound, a phrase a character
@@ -20,8 +20,11 @@ reader reads them as one story. Make them sound like it.
 
 ## Names and facts
 
-- Before naming a new person, place, or object, `search` the book for it. Use
-  the name the bible already gives, spelled exactly the same.
+- Before naming a new person, place, or object, look for it in the bible in
+  your task, and `search` only when it is not there. Use the name the bible
+  gives, spelled exactly the same.
+- Your task already holds what you need to write. Read a file only for a fact
+  it is missing, then write.
 - Keep facts from the bible and from the path: what a character knows, what
   they carry, where they are, what time it is.
 - Keep invented details small and consistent. A new minor character or object

@@ -9,6 +9,7 @@ import { BEAT_SKILLS_PACKAGE, beatSkillsDir } from './beat-skills.js';
 /** The hash of every file in apps/server/beat-skills, for each version. */
 const RELEASED: Record<string, string> = {
   'beat-skills@1.0.0': '1e2d743f8636072d76f87d84161ba13989e97eee04dc5cd899b36e706a4d0636',
+  'beat-skills@1.1.0': '631128918693f09e630aa4aef5ca855b26669a15ce37f6db739cfbe05ef1f263',
 };
 
 function files(dir: string): string[] {
