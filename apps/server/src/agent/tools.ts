@@ -556,6 +556,12 @@ export function splitFlags(
     const arg = args[index]!;
     const match = /^--([a-z][\w-]*)(?:=(.*))?$/u.exec(arg);
     if (match === null) {
+      // Anything else shaped like a flag (-r, --Role) would also end up in a name.
+      if (/^--?[A-Za-z]/u.test(arg)) {
+        throw new Error(
+          `story ${command} does not accept ${arg}. Pass options in options, not args.`,
+        );
+      }
       positional.push(arg);
       continue;
     }

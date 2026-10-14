@@ -26,6 +26,13 @@ describe('run_story arguments', () => {
     expect(() => splitFlags('add', ['character', 'Mara', '--colour', 'red'], {})).toThrow(
       'story add does not accept --colour',
     );
+    expect(() => splitFlags('add', ['character', 'Mara', '-r', 'minor'], {})).toThrow(
+      'story add does not accept -r',
+    );
+    expect(() => splitFlags('add', ['character', 'Mara', '--Role', 'minor'], {})).toThrow(
+      'story add does not accept --Role',
+    );
+    expect(splitFlags('add', ['matter', '-1'], {}).args).toEqual(['matter', '-1']);
     expect(() => splitFlags('add', ['character', 'Mara', '--role'], {})).toThrow(
       '--role needs a value.',
     );
