@@ -273,7 +273,7 @@ describe('discovering an interactive book', () => {
           choices: [],
         }),
       );
-    const { app, slug } = await boot([
+    const { app, slug, requests } = await boot([
       () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
       PASS,
       ending('Inside the letter'),
@@ -302,6 +302,10 @@ describe('discovering an interactive book', () => {
       ['chapter-04', 'written', true, false],
     ]);
     expect(state.openThreads).toEqual([]);
+    // Each beat is told how far along its path it is, to pace toward the endings.
+    expect(JSON.stringify(requests[0])).toContain('This is beat 1 on its path from the start.');
+    expect(JSON.stringify(requests[2])).toContain('This is beat 2 on its path from the start.');
+    expect(JSON.stringify(requests[2])).toContain('Pace each path by the length');
   }, 30_000);
 
   it('goes on from the end of a chapter the writer wrote before converting the book', async () => {

@@ -405,9 +405,13 @@ export function checkChoices(
     if (choice.to.kind === 'existing') {
       if (choice.to.chapterId === context.self) {
         problems.push(`${label} leads back to this same beat; lead somewhere else.`);
+      } else if (choice.to.chapterId === '') {
+        problems.push(
+          `${label} rejoins without saying where: give "chapter" (an id from Beats a choice could rejoin, like "chapter-04"), or lead to "new".`,
+        );
       } else if (!context.chapters.has(choice.to.chapterId)) {
         problems.push(
-          `${label} rejoins ${choice.to.chapterId || '(no chapter)'}, which is not a chapter in this book.`,
+          `${label} rejoins ${choice.to.chapterId}, which is not a chapter in this book. Use an id from Beats a choice could rejoin, or lead to "new".`,
         );
       }
     }
@@ -462,6 +466,12 @@ export function checkBeat(proposal: BeatProposal, context: ChoiceCheckContext): 
   }
   if (proposal.ending) {
     if (proposal.choices.length > 0) problems.push('An ending has no choices.');
+    // A rewrite keeps where the choices lead; ending here would strand the beats after them.
+    if (context.keepTargets !== undefined && context.keepTargets.length > 0) {
+      problems.push(
+        "Keep this beat's choices: the beats after them are already written, so it cannot become an ending.",
+      );
+    }
     return problems;
   }
   return [...problems, ...checkChoices(proposal.choices, context)];
