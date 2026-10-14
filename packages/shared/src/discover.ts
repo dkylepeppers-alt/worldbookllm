@@ -252,6 +252,8 @@ export const proposeVariablesInputSchema = z.strictObject({
 export const proposeStoryInputSchema = storyDraftSchema.extend({
   /** For a book with no chapters, the opening scene the writer is writing, if any. */
   opening: z.string().max(200_000).optional(),
+  /** The custom agent picked to write the beats, whose instructions shape the draft; null for the default. */
+  agentId: z.uuid().nullable().optional(),
 });
 
 export const proposalDecisionSchema = z.strictObject({

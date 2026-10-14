@@ -699,6 +699,10 @@ describe('discovering an interactive book', () => {
         suggestion: 'Signal the passing ship',
       },
     });
+    // The beat writer accepts by default and declines only what contradicts the story so far.
+    const judged = JSON.stringify(requests.at(-1));
+    expect(judged).toContain('accept it by default');
+    expect(judged).not.toContain('true to the character');
 
     await app.inject({
       method: 'POST',
@@ -888,7 +892,7 @@ describe('discovering an interactive book', () => {
   }, 30_000);
 
   it('drafts the premise, shape and tone, and endings for the setup form', async () => {
-    const { app, slug } = await boot([
+    const { app, slug, requests } = await boot([
       () =>
         sse(
           text(
@@ -896,10 +900,17 @@ describe('discovering an interactive book', () => {
           ),
         ),
     ]);
+    const agent = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/agents',
+        payload: { name: 'Gothic narrator', instructions: 'Let the sea feel watchful.' },
+      })
+    ).json<{ id: string }>();
     const response = await app.inject({
       method: 'POST',
       url: `/api/books/${slug}/discover/story`,
-      payload: { kernel: '', shape: 'Short.', endings: '' },
+      payload: { kernel: '', shape: 'Short.', endings: '', agentId: agent.id },
     });
     expect(response.statusCode, response.body).toBe(200);
     const state = await settle(app, slug);
@@ -913,6 +924,10 @@ describe('discovering an interactive book', () => {
         endings: 'Two, one kind',
       },
     });
+    // The agent picked to write the beats shapes the draft.
+    const prompt = JSON.stringify(requests.at(-1));
+    expect(prompt).toContain("The beat writer's role: Gothic narrator");
+    expect(prompt).toContain('Let the sea feel watchful.');
   }, 30_000);
 
   it('drafts the setup from the scenes already written, where the premise is optional', async () => {

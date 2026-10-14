@@ -18,7 +18,7 @@ An interactive book can be written by hand in ink, or with the agent's plan-firs
 
    Its body holds the shape and tone notes. The premise is story-skills' story kernel (`## Story Kernel` in story.md, with `draft-mode: discovered`). The bible is the book's own.
 
-   The beat writer drafts the premise, the shape and tone, and the endings from the bible and story.md when the setup form first opens, and again whenever the writer asks. It builds on anything the writer has already written, and reads the scenes already written (or the opening scene the writer is typing), so the premise describes the story that is there. The drafts fill the form's fields and nothing is saved until the writer saves the setup, so the writer edits them like their own words. A field the writer changes while a draft is running is left as they typed it.
+   The beat writer drafts the premise, the shape and tone, and the endings from the bible and story.md when the writer asks, never on its own when the form opens, so the writer can first pick the agent that writes the beats, whose instructions shape the draft. A draft that is running can be stopped. It builds on anything the writer has already written, and reads the scenes already written (or the opening scene the writer is typing), so the premise describes the story that is there. The drafts fill the form's fields and nothing is saved until the writer saves the setup, so the writer edits them like their own words. A field the writer changes while a draft is running is left as they typed it.
 
    The premise is required only when the beat writer writes the opening from it. A book that already has chapters, or whose writer writes the opening scene, can leave it empty. The scenes then tell the beat writer the story, and the premise says where it is going.
 
@@ -66,7 +66,7 @@ An interactive book can be written by hand in ink, or with the agent's plan-firs
 8. **Co-write mode drafts on request.** At a seed, Play offers _Write it yourself_ (the ink editor) or _Draft with the agent_. The second returns three proposals that go in different directions. Nothing is written until the writer picks one.
 9. **Every choice point in Play offers a fourth option, _Something else…_.** The reader types an action. The beat writer either:
    - accepts it: the action becomes a real choice on the beat, written in the book's voice, with a new beat after it, and play continues into it; or
-   - declines it with a reason and the nearest action that would work. The reader in Play is the writer, so a decline is advice, not a veto: _Write it anyway_ sends the same action back with declining taken away, and the beat writer accepts it, letting the beat show how it happens or what it costs.
+   - declines it with a reason and the nearest action that would work. It accepts by default and declines only an action that truly cannot happen: one that contradicts a fact the bible or the path has established, or depends on something the character has not learned on that path. The rules for choices govern the choices the beat writer writes, not the reader's actions, and an action that is unusual, risky, unwise, or unlike the character so far is accepted, with the beat showing what it costs. The reader in Play is the writer, so a decline is advice, not a veto: _Write it anyway_ sends the same action back with declining taken away, and the beat writer accepts it, letting the beat show how it happens or what it costs.
 
    _Something else_ exists only in Play while writing. It is never a choice in the ink or in an export.
 

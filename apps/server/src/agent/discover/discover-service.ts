@@ -235,11 +235,11 @@ export class DiscoverService {
    * skill gets the list to load from, as in a chat. A deleted agent leaves
    * the default beat writer.
    */
-  private role(setup: DiscoverSetup): BeatRole | null {
-    if (setup.agentId === null) return null;
+  private role(agentId: string | null): BeatRole | null {
+    if (agentId === null) return null;
     let agent: CustomAgent;
     try {
-      agent = this.roles.agents.get(setup.agentId);
+      agent = this.roles.agents.get(agentId);
     } catch {
       return null;
     }
@@ -889,7 +889,7 @@ export class DiscoverService {
       bookTitle: files.title,
       setup,
       rules: readRules(files.rules),
-      role: this.role(setup),
+      role: this.role(setup.agentId),
     });
     const notes: string[] = [];
     const review = this.reviewer(model, context, notes);
@@ -993,7 +993,7 @@ export class DiscoverService {
       bookTitle: files.title,
       setup,
       rules: readRules(files.rules),
-      role: this.role(setup),
+      role: this.role(setup.agentId),
     });
     const avoid: string[] = [];
     for (let index = 0; index < DRAFT_COUNT; index += 1) {
@@ -1096,7 +1096,7 @@ export class DiscoverService {
       bookTitle: files.title,
       setup,
       rules: readRules(files.rules),
-      role: this.role(setup),
+      role: this.role(setup.agentId),
     });
     const handlers = this.readHandlers(book, currentId, setup);
     const notes: string[] = [];
@@ -1324,7 +1324,7 @@ export class DiscoverService {
   // ---- Context --------------------------------------------------------------
 
   private readHandlers(book: string, chapterId: string, setup: DiscoverSetup): BeatHandlers {
-    const role = this.role(setup);
+    const role = this.role(setup.agentId);
     return {
       // The picked agent's skills, loaded the way a chat loads them.
       ...(role === null || role.skills.length === 0
@@ -1714,6 +1714,9 @@ export class DiscoverService {
     const scenes = this.writtenScenes(files, draft.opening ?? '');
     const given = (label: string, text: string) =>
       text.trim() === '' ? [] : ['', `## ${label} (the writer's, so far)`, text.trim()];
+    // The agent the writer picked to write the beats shapes the setup it will write from.
+    const role = this.role(draft.agentId ?? null);
+    const instructions = role?.instructions.trim() ?? '';
     const prompt = [
       "You help a writer set up an interactive book written in ink, discovered by playing it: a beat writer writes each scene and the choices it ends with. Draft the story setup from the book's bible and notes. Where the writer has written a field already, keep their ideas and their words, and only fill out what is missing. When scenes are already written, the setup describes that story: its protagonist, situation, and tone, and where it can go from there. Ground everything in the scenes, bible, and notes; where they say little, propose something specific rather than generic.",
       '',
@@ -1727,6 +1730,14 @@ export class DiscoverService {
       ...given('Endings', draft.endings),
       ...(scenes === '' ? [] : ['', '## Written so far', scenes]),
       ...(notes === '' ? [] : ['', '## Notes from story.md', notes]),
+      ...(role === null
+        ? []
+        : [
+            '',
+            `## The beat writer's role: ${role.name}`,
+            'The writer chose this role to write the beats. Draft a setup it suits.',
+            ...(instructions === '' ? [] : ['', instructions]),
+          ]),
       '',
       '## Bible',
       this.bible(book, `${draft.kernel}\n${scenes}`).slice(0, 12_000) || '(no entries yet)',

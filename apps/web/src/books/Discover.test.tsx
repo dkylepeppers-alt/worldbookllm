@@ -207,12 +207,15 @@ describe('Story setup', () => {
     // The book has chapters, so the premise is optional: the scenes tell the beat writer the story.
     expect((save as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText(/Optional: your chapters tell the story so far/u)).toBeTruthy();
-    // A new setup asks the beat writer for a draft straight away.
+    // Nothing is drafted until the writer asks, so they can pick the beat writer first.
+    expect(proposeDiscoverStory).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Draft with the beat writer' }));
     await waitFor(() =>
       expect(proposeDiscoverStory).toHaveBeenCalledWith('gull-rock', {
         kernel: '',
         shape: '',
         endings: '',
+        agentId: null,
       }),
     );
     await user.type(screen.getByLabelText(/^Premise/u), 'A keeper and a letter.');
@@ -264,8 +267,7 @@ describe('Story setup', () => {
     await user.type(screen.getByLabelText(/^First scene/u), 'The keeper climbs.');
     expect((save as HTMLButtonElement).disabled).toBe(false);
 
-    // A redraft reads the scene the writer is writing.
-    await waitFor(() => expect(proposeDiscoverStory).toHaveBeenCalledTimes(1));
+    // A draft reads the scene the writer is writing.
     await user.click(screen.getByRole('button', { name: 'Draft with the beat writer' }));
     await waitFor(() =>
       expect(proposeDiscoverStory).toHaveBeenLastCalledWith('gull-rock', {
@@ -273,6 +275,7 @@ describe('Story setup', () => {
         shape: '',
         endings: '',
         opening: 'The keeper climbs.',
+        agentId: null,
       }),
     );
   });
@@ -296,6 +299,7 @@ describe('Story setup', () => {
     });
     const user = userEvent.setup();
     const endings = await screen.findByLabelText('Endings');
+    await user.click(screen.getByRole('button', { name: 'Draft with the beat writer' }));
     await waitFor(() => expect(proposeDiscoverStory).toHaveBeenCalled());
     await user.type(endings, 'Just one');
     finish({
@@ -329,6 +333,28 @@ describe('Story setup', () => {
     );
   });
 
+  it('stops a draft that is running', async () => {
+    const fresh: DiscoverState = {
+      ...NO_DISCOVERY,
+      rules: '1. Default rule.',
+      writerReady: true,
+      writerProblem: null,
+    };
+    const running = { ...fresh, jobs: [job({ kind: 'story', status: 'running' })] };
+    const dismissDiscoverJob = vi.fn<ApiClient['dismissDiscoverJob']>(() => Promise.resolve(fresh));
+    renderAt('/books/gull-rock/branches/discover', {
+      getDiscover: () => Promise.resolve(running),
+      dismissDiscoverJob,
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Stop drafting' }));
+    expect(dismissDiscoverJob).toHaveBeenCalledWith(
+      'gull-rock',
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(await screen.findByRole('button', { name: 'Draft with the beat writer' })).toBeTruthy();
+  });
+
   it('keeps unsaved changes when the writer leaves and comes back, until they discard them', async () => {
     const fresh: DiscoverState = {
       ...NO_DISCOVERY,
@@ -349,8 +375,8 @@ describe('Story setup', () => {
     renderAt('/books/gull-rock/branches/discover', overrides);
     const endings = await screen.findByLabelText('Endings');
     expect((endings as HTMLInputElement).value).toBe('Just one');
-    // The writer has started, so opening the form again does not ask for a new draft.
-    expect(proposeDiscoverStory).toHaveBeenCalledTimes(1);
+    // Opening the form never asks for a draft on its own.
+    expect(proposeDiscoverStory).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect((endings as HTMLInputElement).value).toBe('');
