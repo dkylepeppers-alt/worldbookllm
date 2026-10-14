@@ -2,6 +2,7 @@ import {
   isBeatWriterSkill,
   type CustomAgent,
   type DiscoverSetup,
+  type DiscoverJob,
   type DiscoverState,
   type DiscoverVariable,
   type SkillMetadata,
@@ -78,7 +79,8 @@ function writeDraft(slug: string, values: FormValues | null): void {
  * means, the rules every set of choices follows, and how much the beat
  * writer does on its own. For a book with no chapters, the opening too.
  * The beat writer drafts the premise, shape and tone, and endings from the
- * bible when the book is first set up; the writer edits them from there.
+ * bible when the writer asks, as the agent they picked; the writer edits
+ * them from there.
  * Unsaved changes are kept in the browser until saved or discarded.
  */
 export function DiscoverSetupPage() {
@@ -196,18 +198,13 @@ function SetupForm({
         shape: setup.shape,
         endings: setup.endings,
         ...(!hasChapters && openingKind === 'writer' ? { opening } : {}),
+        agentId,
       }),
     );
   };
-
-  // A new book's story is drafted as soon as the form opens, unless the writer has started on it.
-  const started = useRef(false);
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    const blank = [setup.kernel, setup.shape, setup.endings].every((text) => text.trim() === '');
-    if (state.setup === null && state.writerReady && drafting === undefined && blank) draftStory();
-  });
+  // Stopping a draft or a suggestion drops it; the fields keep what they hold.
+  const stop = (job: DiscoverJob) =>
+    void discover.run((api) => api.dismissDiscoverJob(slug, job.id));
 
   // A finished draft fills the fields the writer has not changed meanwhile, then is cleared.
   const applied = useRef<string | null>(null);
@@ -282,25 +279,44 @@ function SetupForm({
 
       <fieldset className="branch-card">
         <legend>The story</legend>
+        <BeatWriterPicker
+          agents={agentList}
+          skills={skills.status === 'ready' ? skills.data : null}
+          agentId={setup.agentId}
+          onChange={pickAgent}
+        />
+        {agentList === null || agentList.some((agent) => agent.name === 'Beat writer') ? null : (
+          <AddBeatWriter
+            onAdded={(agent) => {
+              setAdded(agent);
+              agents.reload();
+              pickAgent(agent.id);
+            }}
+          />
+        )}
         <div className="discover-draft">
           <p className="field-hint" role="status">
             {draftingNow ? <span className="discover-dot" aria-hidden="true" /> : null}
             {draftingNow
               ? `Drafting from ${source}. Anything you type meanwhile is kept.`
-              : `The beat writer drafts these from ${source}. Edit them freely.`}
+              : `The beat writer can draft these from ${source}, or write them yourself. Edit them freely.`}
           </p>
-          <button
-            type="button"
-            className="button-secondary"
-            disabled={!state.writerReady || draftingNow || discover.busy}
-            onClick={draftStory}
-          >
-            {draftingNow
-              ? 'Drafting…'
-              : setup.kernel.trim() === ''
+          {draftingNow && drafting !== undefined ? (
+            <button type="button" className="button-secondary" onClick={() => stop(drafting)}>
+              Stop drafting
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={!state.writerReady || discover.busy}
+              onClick={draftStory}
+            >
+              {setup.kernel.trim() === ''
                 ? 'Draft with the beat writer'
                 : 'Redraft with the beat writer'}
-          </button>
+            </button>
+          )}
         </div>
         {drafting?.status === 'failed' ? <p className="form-error">{drafting.message}</p> : null}
         <label>
@@ -406,21 +422,6 @@ function SetupForm({
             Co-write: it drafts a beat only when you ask
           </label>
         </fieldset>
-        <BeatWriterPicker
-          agents={agentList}
-          skills={skills.status === 'ready' ? skills.data : null}
-          agentId={setup.agentId}
-          onChange={pickAgent}
-        />
-        {agentList === null || agentList.some((agent) => agent.name === 'Beat writer') ? null : (
-          <AddBeatWriter
-            onAdded={(agent) => {
-              setAdded(agent);
-              agents.reload();
-              pickAgent(agent.id);
-            }}
-          />
-        )}
         <details className="discover-more">
           <summary>
             More options <span className="field-hint">{options}</span>
@@ -564,18 +565,24 @@ function SetupForm({
           </ul>
         )}
         <div className="branch-actions">
-          <button
-            type="button"
-            className="button-secondary"
-            disabled={!state.writerReady || proposingNow}
-            onClick={() =>
-              void discover.run((api) =>
-                api.proposeDiscoverVariables(slug, { kernel: setup.kernel, shape: setup.shape }),
-              )
-            }
-          >
-            {proposingNow ? 'Suggesting…' : 'Suggest variables'}
-          </button>
+          {proposingNow && proposing !== undefined ? (
+            <button type="button" className="button-secondary" onClick={() => stop(proposing)}>
+              Stop suggesting
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={!state.writerReady}
+              onClick={() =>
+                void discover.run((api) =>
+                  api.proposeDiscoverVariables(slug, { kernel: setup.kernel, shape: setup.shape }),
+                )
+              }
+            >
+              Suggest variables
+            </button>
+          )}
           <button
             type="button"
             className="button-secondary"
@@ -763,8 +770,9 @@ function BeatWriterPicker({
     <label>
       Beat writer
       <span className="field-hint">
-        A custom agent writes with its own instructions and follows the beat writer skills and your
-        own skills it names on every beat. <Link to="/agents">Make or edit agents</Link>.
+        A custom agent drafts the story below and writes with its own instructions, following the
+        beat writer skills and your own skills it names on every beat.{' '}
+        <Link to="/agents">Make or edit agents</Link>.
       </span>
       <select
         value={gone ? '' : (agentId ?? '')}

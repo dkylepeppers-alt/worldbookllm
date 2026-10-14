@@ -52,7 +52,8 @@ test('discover an interactive book by playing it', async ({ page, request }) => 
 
   await test.step('set the story up, with a variable the beat writer proposes', async () => {
     await page.getByRole('link', { name: 'Set up discovery' }).click();
-    // The beat writer drafts the premise, shape, and endings; the writer edits them.
+    // The beat writer drafts the premise, shape, and endings when asked; the writer edits them.
+    await page.getByRole('button', { name: 'Draft with the beat writer' }).click();
     await expect(page.getByLabel(/^Premise/u)).toHaveValue(STUB_STORY.kernel);
     await expect(page.getByLabel('Endings')).toHaveValue(STUB_STORY.endings);
     await page
