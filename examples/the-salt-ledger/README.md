@@ -6,7 +6,7 @@ An interactive mystery made end to end in worldbookllm with Kimi K2.6 (NanoGPT),
 
 - `source-chapter.md` — the one chapter imported to start the book ("The Margery Lane", about 1,660 words, written by hand).
 - `book/` — the whole book as the app keeps it on disk: the bible (`characters/`, `worldbuilding/`, `continuity/`, `scenes/`), the chapters written in ink, the discovery setup and choice rules (`adaptations/interactive/`), and the variables (`ink/variables.md`).
-- `the-salt-ledger.html` — the web player export (also in `book/dist/`). Open it in a browser to play.
+- `the-salt-ledger.html` — the web player export. Open it in a browser to play. (The book's own `dist/` is not committed.)
 - `screenshots/` — the run, step by step, numbered in order.
 
 To open the book in the app, copy `book/` to `data/projects/the-salt-ledger/` and start the server.
@@ -31,8 +31,9 @@ To open the book in the app, copy `book/` to `data/projects/the-salt-ledger/` an
 ## The book
 
 - 140 chapters, 136 choices, 7 variables; the longest path is 17 beats deep.
-- One ending: "The Succession", where Wren takes Varga's heron ring and sits down at the tithe desk.
-- Health → Paths plays every path without errors.
+- 46 chapters are written: the imported chapter and 45 discovered beats. The other 94 are open threads (seeds): branches the beat writer has not written yet, whose chapter is a `TODO` that ends the story. The export warns about them, and in the web player most routes stop at one.
+- One written ending: "The Succession", where Wren takes Varga's heron ring and sits down at the tithe desk.
+- Health → Paths plays every path without runtime errors; it counts seeds as open threads, not as finished endings.
 
 Known rough edges, left as found:
 
