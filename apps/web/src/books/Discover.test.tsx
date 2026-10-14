@@ -896,4 +896,32 @@ describe('Discovery on the Branches tab and Health', () => {
     await user.click(screen.getByRole('button', { name: 'Mark reviewed' }));
     expect(markDiscoverReviewed).toHaveBeenCalledWith('gull-rock', 'chapter-03');
   });
+
+  it('says on Branches when lead mode is stopped, and resumes it', async () => {
+    const lead: DiscoverState = { ...discovering, setup: { ...discovering.setup!, mode: 'lead' } };
+    const resumeDiscover = vi.fn<ApiClient['resumeDiscover']>(() => Promise.resolve(lead));
+    renderAt('/books/gull-rock/branches', {
+      getInteractiveStory: () =>
+        Promise.resolve({
+          title: book.title,
+          ifid: null,
+          chapters: [],
+          compiled: false,
+          start: null,
+          nodes: [],
+          variables: [],
+          diagnostics: [],
+        }),
+      getDiscover: () => Promise.resolve({ ...lead, paused: true }),
+      resumeDiscover,
+    });
+    const user = userEvent.setup();
+    expect(await screen.findByText(/Lead mode, stopped/u)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Resume writing ahead' }));
+    expect(resumeDiscover).toHaveBeenCalledWith('gull-rock');
+    expect(
+      await screen.findByText(/Lead mode: the beat writer stays one step ahead/u),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Resume writing ahead' })).toBeNull();
+  });
 });

@@ -954,6 +954,7 @@ export class DiscoverService {
           built,
           `Discover: choices for ${current.title}`,
           current.path,
+          { signal: model.signal },
         );
       };
     } else {
@@ -998,6 +999,7 @@ export class DiscoverService {
           task.chapterId,
           proposal,
           task.kind === 'beat' ? 'seed' : 'rewrite',
+          model.signal,
         );
       };
     }
@@ -1201,7 +1203,7 @@ export class DiscoverService {
         { chapter: built.chapter, seeds: built.seeds },
         `Discover: "${choice.text}"`,
         null,
-        new Map([[parent.path, parentText]]),
+        { extra: new Map([[parent.path, parentText]]), signal: model.signal },
       );
       if (!outcome.done) return outcome;
       const after = await this.bookService.discoverFiles(book);
@@ -1300,6 +1302,7 @@ export class DiscoverService {
     chapterId: string,
     proposal: BeatProposal,
     expect: 'seed' | 'rewrite',
+    signal?: AbortSignal,
   ): Promise<HandlerOutcome> {
     const beat = discoverBeats(files.chapters, this.reads(book)).find(
       (entry) => entry.chapterId === chapterId,
@@ -1311,7 +1314,9 @@ export class DiscoverService {
       );
     }
     const built = this.buildBeat(files, chapterId, proposal);
-    return this.write(book, files, built, `Discover: write ${proposal.title}`, built.chapter.path);
+    return this.write(book, files, built, `Discover: write ${proposal.title}`, built.chapter.path, {
+      ...(signal === undefined ? {} : { signal }),
+    });
   }
 
   private async write(
@@ -1320,8 +1325,13 @@ export class DiscoverService {
     built: BeatFiles,
     label: string,
     chapterExpected: string | null,
-    extra: ReadonlyMap<string, string> = new Map(),
+    options: {
+      extra?: ReadonlyMap<string, string>;
+      /** A job's signal: once the writer stops the job, nothing more is written. */
+      signal?: AbortSignal;
+    } = {},
   ): Promise<HandlerOutcome> {
+    const extra = options.extra ?? new Map<string, string>();
     const writes = new Map<string, string>([
       [built.chapter.path, built.chapter.text],
       ...built.seeds.map((seed) => [seed.path, seed.text] as const),
@@ -1332,6 +1342,8 @@ export class DiscoverService {
       ...built.seeds.map((seed) => [seed.path, null] as const),
       ...[...extra.keys()].map((path) => [path, hashOf(files, path)] as const),
     ]);
+    // A stop can land while a handler is reading or reviewing; it wins over the write.
+    options.signal?.throwIfAborted();
     try {
       await this.bookService.writeDiscover(book, {
         label,

@@ -34,6 +34,20 @@ export function StopWriter({ discover }: { discover: Discover }) {
   );
 }
 
+/** Lets lead mode write ahead again after the writer stopped the beat writer. */
+export function ResumeWriter({ discover }: { discover: Discover }) {
+  const { slug } = useBook();
+  return (
+    <button
+      type="button"
+      className="button-secondary"
+      onClick={() => void discover.run((api) => api.resumeDiscover(slug))}
+    >
+      Resume writing ahead
+    </button>
+  );
+}
+
 /** The beat writer's work, in one line, and any job that failed. */
 export function DiscoverStatus({ discover, state }: { discover: Discover; state: DiscoverState }) {
   const { slug } = useBook();
@@ -63,13 +77,7 @@ export function DiscoverStatus({ discover, state }: { discover: Discover; state:
       {paused ? (
         <div className="discover-working">
           <p>Stopped. The beat writer writes nothing ahead until you resume it.</p>
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={() => void discover.run((api) => api.resumeDiscover(slug))}
-          >
-            Resume writing ahead
-          </button>
+          <ResumeWriter discover={discover} />
         </div>
       ) : null}
       {failed.map((job) => (

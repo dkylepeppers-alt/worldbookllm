@@ -1149,6 +1149,43 @@ describe('discovering an interactive book', () => {
     expect(chapter(app, slug, 'chapter-02')).toContain('First.');
   }, 30_000);
 
+  it('writes nothing once stopped, even when the model answers after the stop', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { app, slug, requests } = await boot([
+      () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
+      PASS,
+      () =>
+        sse(
+          toolCall('first', 'write_beat', {
+            title: 'First',
+            summary: '',
+            ink: 'First.',
+            ending: false,
+            choices: THREE,
+          }),
+        ),
+      // The review of that beat answers only after the writer has stopped the job, ignoring the abort.
+      async () => {
+        await gate;
+        return PASS();
+      },
+    ]);
+    await setUp(app, slug, { mode: 'lead', opening: 'Wind.' });
+    for (let attempt = 0; attempt < 400 && requests.length < 4; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(requests).toHaveLength(4);
+    await app.inject({ method: 'POST', url: `/api/books/${slug}/discover/stop` });
+    release();
+    const state = await settle(app, slug);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(chapter(app, slug, 'chapter-02')).not.toContain('First.');
+    expect(state.openThreads.map((thread) => thread.chapterId)).toContain('chapter-02');
+  }, 30_000);
+
   it('offers the reader’s own action only at a beat’s closing choices, not inside a scene', async () => {
     const { app, slug } = await boot([PASS]);
     await setUp(app, slug, { mode: 'cowrite', opening: 'The keeper waits.' });

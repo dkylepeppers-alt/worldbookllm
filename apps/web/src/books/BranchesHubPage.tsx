@@ -8,7 +8,7 @@ import { useApi } from '../api/useApi.js';
 import { ErrorState, LoadingState } from '../components/RequestState.js';
 import { useBook } from './book-context.js';
 import { BranchMap } from './BranchMap.js';
-import { StopWriter } from './PlayDiscover.js';
+import { ResumeWriter, StopWriter } from './PlayDiscover.js';
 import { useDiscover, type Discover } from './useDiscover.js';
 import { errorMessage, useLoad } from './useLoad.js';
 
@@ -156,7 +156,9 @@ function DiscoverCard({
       <h3 id="discover-heading">Discovery</h3>
       <p>
         {state.setup.mode === 'lead'
-          ? `Lead mode: the beat writer stays ${state.setup.lookahead === 1 ? 'one step' : 'two steps'} ahead of you.`
+          ? state.paused
+            ? 'Lead mode, stopped: the beat writer writes nothing ahead until you resume it.'
+            : `Lead mode: the beat writer stays ${state.setup.lookahead === 1 ? 'one step' : 'two steps'} ahead of you.`
           : 'Co-write mode: the beat writer drafts when you ask.'}{' '}
         {threads === 0
           ? 'Every branch is written.'
@@ -169,6 +171,7 @@ function DiscoverCard({
           <StopWriter discover={discover} />
         </div>
       )}
+      {state.setup.mode === 'lead' && state.paused ? <ResumeWriter discover={discover} /> : null}
       <div className="branch-actions">
         <Link className="button-primary" to={`${base}/play`}>
           Play and write
