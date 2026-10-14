@@ -1730,14 +1730,13 @@ export class DiscoverService {
       ...given('Endings', draft.endings),
       ...(scenes === '' ? [] : ['', '## Written so far', scenes]),
       ...(notes === '' ? [] : ['', '## Notes from story.md', notes]),
-      ...(role === null || instructions === ''
+      ...(role === null
         ? []
         : [
             '',
             `## The beat writer's role: ${role.name}`,
             'The writer chose this role to write the beats. Draft a setup it suits.',
-            '',
-            instructions,
+            ...(instructions === '' ? [] : ['', instructions]),
           ]),
       '',
       '## Bible',
