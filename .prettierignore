@@ -9,3 +9,6 @@ apps/server/src/services/converters/__fixtures__/
 
 # Vendored upstream skills stay verbatim (see apps/server/skills-starter/ATTRIBUTION.md).
 apps/server/skills-starter/
+
+# Example books are the app's own output; keep them exactly as it wrote them.
+examples/
