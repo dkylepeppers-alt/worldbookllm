@@ -17,6 +17,23 @@ import type { Discover } from './useDiscover.js';
 
 const active = (job: DiscoverJob) => job.status === 'queued' || job.status === 'running';
 
+/**
+ * Stops the beat writer: everything it has queued or running, and in lead
+ * mode the writing ahead, until the writer resumes it.
+ */
+export function StopWriter({ discover }: { discover: Discover }) {
+  const { slug } = useBook();
+  return (
+    <button
+      type="button"
+      className="button-secondary"
+      onClick={() => void discover.run((api) => api.stopDiscover(slug))}
+    >
+      Stop
+    </button>
+  );
+}
+
 /** The beat writer's work, in one line, and any job that failed. */
 export function DiscoverStatus({ discover, state }: { discover: Discover; state: DiscoverState }) {
   const { slug } = useBook();
@@ -30,15 +47,31 @@ export function DiscoverStatus({ discover, state }: { discover: Discover; state:
       job.message !== null &&
       ['beat', 'choices', 'rewrite'].includes(job.kind),
   );
-  if (working.length === 0 && failed.length === 0 && noted.length === 0) return null;
+  const paused = state.paused && state.setup?.mode === 'lead';
+  if (working.length === 0 && failed.length === 0 && noted.length === 0 && !paused) return null;
   return (
     <div className="discover-status" role="status" aria-live="polite">
       {working.length === 0 ? null : (
-        <p>
-          <span className="discover-dot" aria-hidden="true" />
-          {working[0]!.title}…{working.length > 1 ? ` (${working.length - 1} more queued)` : ''}
-        </p>
+        <div className="discover-working">
+          <p>
+            <span className="discover-dot" aria-hidden="true" />
+            {working[0]!.title}…{working.length > 1 ? ` (${working.length - 1} more queued)` : ''}
+          </p>
+          <StopWriter discover={discover} />
+        </div>
       )}
+      {paused ? (
+        <div className="discover-working">
+          <p>Stopped. The beat writer writes nothing ahead until you resume it.</p>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => void discover.run((api) => api.resumeDiscover(slug))}
+          >
+            Resume writing ahead
+          </button>
+        </div>
+      ) : null}
       {failed.map((job) => (
         <div key={job.id} className="branch-warning">
           <p>
@@ -108,16 +141,22 @@ export function SeedPanel({
       <h3 id="seed-heading">Not written yet</h3>
       <p className="coordinate-label">{reached}</p>
       {writing !== undefined ? (
-        <p role="status">
-          <span className="discover-dot" aria-hidden="true" />
-          The beat writer is writing this beat…
-        </p>
+        <div className="discover-working" role="status">
+          <p>
+            <span className="discover-dot" aria-hidden="true" />
+            The beat writer is writing this beat…
+          </p>
+          <StopWriter discover={discover} />
+        </div>
       ) : drafting !== undefined && active(drafting) ? (
-        <p role="status">
-          <span className="discover-dot" aria-hidden="true" />
-          Drafting three directions…{' '}
-          {drafting.drafts.length > 0 ? `(${drafting.drafts.length} of 3)` : ''}
-        </p>
+        <div className="discover-working" role="status">
+          <p>
+            <span className="discover-dot" aria-hidden="true" />
+            Drafting three directions…{' '}
+            {drafting.drafts.length > 0 ? `(${drafting.drafts.length} of 3)` : ''}
+          </p>
+          <StopWriter discover={discover} />
+        </div>
       ) : null}
       {drafting?.status === 'failed' ? <p className="form-error">{drafting.message}</p> : null}
       {drafting !== undefined && drafting.drafts.length > 0 ? (
@@ -284,10 +323,13 @@ export function EndPanel({
   const job = state.jobs.find((entry) => entry.chapterId === chapterId && active(entry));
   if (job !== undefined) {
     return (
-      <p role="status" className="discover-status">
-        <span className="discover-dot" aria-hidden="true" />
-        {job.title}…
-      </p>
+      <div role="status" className="discover-status discover-working">
+        <p>
+          <span className="discover-dot" aria-hidden="true" />
+          {job.title}…
+        </p>
+        <StopWriter discover={discover} />
+      </div>
     );
   }
   if (!state.writerReady) return yours ? <p>The end.</p> : null;
@@ -441,10 +483,13 @@ export function SomethingElse({
           />
         </label>
         {working ? (
-          <p role="status">
-            <span className="discover-dot" aria-hidden="true" />
-            Writing what happens…
-          </p>
+          <div className="discover-working" role="status">
+            <p>
+              <span className="discover-dot" aria-hidden="true" />
+              Writing what happens…
+            </p>
+            <StopWriter discover={discover} />
+          </div>
         ) : null}
         {mine?.status === 'failed' ? <p className="form-error">{mine.message}</p> : null}
         {outcome !== null && !outcome.accepted ? (

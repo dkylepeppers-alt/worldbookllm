@@ -218,6 +218,8 @@ export const discoverStateSchema = z.strictObject({
   writerReady: z.boolean(),
   /** Why it cannot, when it cannot. */
   writerProblem: z.string().nullable(),
+  /** The writer stopped the beat writer: lead mode writes nothing ahead until resumed. */
+  paused: z.boolean(),
 });
 
 export const discoverPositionInputSchema = z.strictObject({ position: playPositionSchema });

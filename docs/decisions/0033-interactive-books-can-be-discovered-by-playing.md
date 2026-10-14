@@ -58,6 +58,8 @@ An interactive book can be written by hand in ink, or with the agent's plan-firs
 
 6. **Lead mode writes ahead of the reader.** The Play screen reports where the reader is. The server replays that path and marks the chapters it visits as read; reads are kept in SQLite. It then queues every seed within the look-ahead of the reader's position, nearest first, one book at a time. With the default look-ahead of 1, the beat after every choice the reader can see is always written. A look-ahead of 2 writes the layer after that too.
 
+   Wherever Play shows the beat writer working, it offers _Stop_. Stopping aborts the model call in progress and drops everything queued, and lead mode then writes nothing ahead, even as the reader moves on, until the writer chooses _Resume writing ahead_. What the writer asks for themselves (a draft, _Write it now_, _Something else_) still runs. The pause lives with the job queue, in memory, so restarting the server resumes lead mode.
+
    Lead mode leaves the writer's own chapters alone, such as those of a book converted to ink, because one that ends without choices may be an ending. When the reader reaches the end of such a chapter, Play offers _Write what happens next_. The beat writer then adds the chapter's closing choices, with a seed for each, and keeps the prose as written. From there discovery goes on as usual.
 
 7. **Edits upstream invalidate beats below them.** When a chapter's ink changes, the beats written from it are stale:

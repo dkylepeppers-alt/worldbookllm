@@ -146,6 +146,8 @@ interface BookJobs {
   records: JobRecord[];
   running: boolean;
   position: PlayPosition | null;
+  /** Lead mode writes nothing ahead on its own: the writer stopped the beat writer. */
+  paused: boolean;
 }
 
 interface ProposalRow {
@@ -312,6 +314,7 @@ export class DiscoverService {
       ),
       writerReady: problem === null,
       writerProblem: problem,
+      paused: this.jobs(book).paused,
     };
   }
 
@@ -473,8 +476,8 @@ export class DiscoverService {
     }
     const setup = readSetup(files.setup, files.story);
     const jobs = this.jobs(book);
-    if (setup === null || setup.mode !== 'lead' || this.writerProblem() !== null) {
-      // Co-write mode (or no setup, or no writer) writes nothing on its own: drop what lead mode queued.
+    if (setup === null || setup.mode !== 'lead' || jobs.paused || this.writerProblem() !== null) {
+      // Co-write mode (or no setup, a stopped writer, or no writer) writes nothing on its own: drop what lead mode queued.
       jobs.records = jobs.records.filter(
         (record) => !record.lead || record.job.status !== 'queued',
       );
@@ -683,6 +686,28 @@ export class DiscoverService {
     return this.state(book);
   }
 
+  /**
+   * Stops the beat writer: every job queued or running is stopped and
+   * removed, and lead mode writes nothing ahead until the writer resumes it.
+   * What the writer asks for themselves still runs.
+   */
+  stop(book: string): Promise<DiscoverState> {
+    const jobs = this.jobs(book);
+    jobs.paused = true;
+    for (const record of jobs.records) record.controller?.abort();
+    jobs.records = jobs.records.filter(
+      (record) => record.job.status !== 'queued' && record.job.status !== 'running',
+    );
+    return this.state(book);
+  }
+
+  /** Lets lead mode write ahead again after a stop. */
+  async resume(book: string): Promise<DiscoverState> {
+    this.jobs(book).paused = false;
+    await this.planLead(book);
+    return this.state(book);
+  }
+
   /** Stops a job if it is running and removes it. */
   dismiss(book: string, jobId: string): Promise<DiscoverState> {
     const record = this.record(book, jobId);
@@ -727,7 +752,7 @@ export class DiscoverService {
   private jobs(book: string): BookJobs {
     let jobs = this.books.get(book);
     if (jobs === undefined) {
-      jobs = { records: [], running: false, position: null };
+      jobs = { records: [], running: false, position: null, paused: false };
       this.books.set(book, jobs);
     }
     return jobs;
