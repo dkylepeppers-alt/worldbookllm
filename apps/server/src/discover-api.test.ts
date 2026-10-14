@@ -273,7 +273,7 @@ describe('discovering an interactive book', () => {
           choices: [],
         }),
       );
-    const { app, slug } = await boot([
+    const { app, slug, requests } = await boot([
       () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
       PASS,
       ending('Inside the letter'),
@@ -302,6 +302,10 @@ describe('discovering an interactive book', () => {
       ['chapter-04', 'written', true, false],
     ]);
     expect(state.openThreads).toEqual([]);
+    // Each beat is told how far along its path it is, to pace toward the endings.
+    expect(JSON.stringify(requests[0])).toContain('This is beat 1 on its path from the start.');
+    expect(JSON.stringify(requests[2])).toContain('This is beat 2 on its path from the start.');
+    expect(JSON.stringify(requests[2])).toContain('Pace each path by the length');
   }, 30_000);
 
   it('goes on from the end of a chapter the writer wrote before converting the book', async () => {
@@ -460,6 +464,41 @@ describe('discovering an interactive book', () => {
     // An agent that no longer exists cannot be picked.
     await app.inject({ method: 'DELETE', url: `/api/agents/${agent.id}` });
     expect((await save(agent.id)).statusCode).toBe(400);
+  }, 30_000);
+
+  it('tells a beat writer that keeps reading to write, and offers it only the writing tool', async () => {
+    const read = () => sse(toolCall('read', 'read_file', { path: 'story.md' }));
+    const { app, slug, requests } = await boot(
+      [
+        read,
+        read,
+        read,
+        read,
+        read,
+        () => sse(toolCall('choices', 'write_choices', { choices: THREE })),
+        PASS,
+      ],
+      ['The keeper waits.'],
+    );
+    await setUp(app, slug, { mode: 'cowrite', opening: null });
+    await app.inject({
+      method: 'POST',
+      url: `/api/books/${slug}/discover/write`,
+      payload: { chapterId: 'chapter-01', position: null },
+    });
+    const state = await settle(app, slug);
+    expect(state.jobs.filter((job) => job.status === 'failed')).toEqual([]);
+    const names = (index: number) =>
+      (requests[index]?.tools as Array<{ function: { name: string } }>).map(
+        (tool) => tool.function.name,
+      );
+    expect(names(3)).toContain('read_file');
+    // From the fifth step it may only write, and it is told so.
+    expect(names(4)).toEqual(['write_choices']);
+    expect(JSON.stringify(requests[4])).toContain('You have read enough to write this.');
+    expect(chapter(app, slug, 'chapter-01')).toContain('Open the letter');
+    // The review is told which parts of a choice the reader sees.
+    expect(JSON.stringify(requests[6])).toContain('they are never spoilers');
   }, 30_000);
 
   it('follows calls a model prints instead of making, as some do', async () => {

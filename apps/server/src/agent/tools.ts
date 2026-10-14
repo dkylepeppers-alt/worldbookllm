@@ -17,7 +17,7 @@ import { z } from 'zod';
 
 import type { SkillService } from '../services/skills.js';
 import { confine } from '../story/book-paths.js';
-import { isStoryCommand, type StoryCommandName } from '../story/story-commands.js';
+import { STORY_COMMANDS, isStoryCommand, type StoryCommandName } from '../story/story-commands.js';
 import {
   inkNoteAfterWrite,
   inkPaths,
@@ -521,7 +521,8 @@ export class AgentToolRegistry {
     if (!isStoryCommand(command) || !AGENT_STORY_COMMANDS.has(command)) {
       throw new Error(`story ${command} is not available to the agent.`);
     }
-    const result = await context.workspace.runStory(command, args, options);
+    const split = splitFlags(command, args, options);
+    const result = await context.workspace.runStory(command, split.args, split.options);
     const output = result.envelope
       ? JSON.stringify(result.envelope)
       : [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n');
@@ -533,4 +534,61 @@ export class AgentToolRegistry {
     }
     return rendered;
   }
+}
+
+/**
+ * Moves flags a model wrote into args (`["character", "Wren", "--role",
+ * "protagonist"]`) into options, where StoryCli expects them. Left in args
+ * they would follow StoryCli's `--` and become part of the entity's name.
+ */
+export function splitFlags(
+  command: StoryCommandName,
+  args: readonly string[],
+  options: Record<string, string | boolean | string[]>,
+): { args: string[]; options: Record<string, string | boolean | string[]> } {
+  const specs = STORY_COMMANDS[command].options as Record<
+    string,
+    { value: boolean; repeatable: boolean }
+  >;
+  const positional: string[] = [];
+  const flags: Record<string, string | boolean | string[]> = { ...options };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    const match = /^--([a-z][\w-]*)(?:=(.*))?$/u.exec(arg);
+    if (match === null) {
+      // Anything else shaped like a flag (-r, --Role) would also end up in a name.
+      if (/^--?[A-Za-z]/u.test(arg)) {
+        throw new Error(
+          `story ${command} does not accept ${arg}. Pass options in options, not args.`,
+        );
+      }
+      positional.push(arg);
+      continue;
+    }
+    const name = match[1]!;
+    const spec = specs[name];
+    if (spec === undefined) {
+      throw new Error(
+        `story ${command} does not accept --${name}. Pass options in options, not args.`,
+      );
+    }
+    let value: string | boolean = true;
+    if (spec.value) {
+      const next = match[2] ?? args[index + 1];
+      if (next === undefined) throw new Error(`--${name} needs a value.`);
+      if (match[2] === undefined) index += 1;
+      value = next;
+    } else if (match[2] !== undefined) {
+      value = match[2] !== 'false';
+    }
+    const current = flags[name];
+    flags[name] =
+      spec.repeatable && typeof value === 'string'
+        ? [
+            ...(Array.isArray(current) ? current : typeof current === 'string' ? [current] : []),
+            value,
+          ]
+        : value;
+  }
+  return { args: positional, options: flags };
 }

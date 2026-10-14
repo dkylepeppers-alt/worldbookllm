@@ -30,6 +30,36 @@ describe('ProviderHttpClient', () => {
     });
   });
 
+  it('tries a dropped connection again, and gives up after two retries', async () => {
+    let calls = 0;
+    const flaky = new ProviderHttpClient(async () => {
+      calls += 1;
+      if (calls < 3) throw new TypeError('fetch failed');
+      return new Response(JSON.stringify({ ok: true }));
+    }, 0);
+    await expect(flaky.fetchJson('nanogpt', request)).resolves.toEqual({ ok: true });
+    expect(calls).toBe(3);
+
+    calls = 0;
+    const down = new ProviderHttpClient(async () => {
+      calls += 1;
+      throw new TypeError('fetch failed');
+    }, 0);
+    await expect(down.fetchJson('nanogpt', request)).rejects.toThrow(
+      'Provider network request failed.',
+    );
+    expect(calls).toBe(3);
+
+    // A provider's own error response is an answer, not a dropped connection.
+    calls = 0;
+    const refused = new ProviderHttpClient(async () => {
+      calls += 1;
+      return new Response('{}', { status: 500 });
+    }, 0);
+    await expect(refused.fetchJson('nanogpt', request)).rejects.toThrow(ProviderError);
+    expect(calls).toBe(1);
+  });
+
   it('sanitizes credential values in provider errors', async () => {
     const client = new ProviderHttpClient(async () =>
       Promise.resolve(
@@ -75,7 +105,10 @@ describe('ProviderHttpClient', () => {
   });
 
   it('normalizes fetch rejections as provider errors', async () => {
-    const client = new ProviderHttpClient(async () => Promise.reject(new Error('socket failed')));
+    const client = new ProviderHttpClient(
+      async () => Promise.reject(new Error('socket failed')),
+      0,
+    );
     await expect(client.fetchJson('nanogpt', request)).rejects.toBeInstanceOf(ProviderError);
     await expect(
       client.fetchStream('nanogpt', request, new AbortController().signal),

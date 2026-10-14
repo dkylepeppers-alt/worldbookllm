@@ -34,7 +34,7 @@ export const DEFAULT_CHOICE_RULES = [
   '5. **No obvious right answer.** Each option has a real cost or a real appeal, unless the scene is meant as a trap or a test.',
   '6. **No spoilers.** The choice says what the character does, not what happens.',
   '7. **Variety across the book.** Rotate the kinds of decision (moral, tactical, social, personal) so the book does not ask the same question twice in a row.',
-  "8. **The book's voice.** Short, parallel in length, in the person and tense of the prose.",
+  '8. **The book\'s voice.** Short and parallel in length, written as what the reader does, in the book\'s person but as an action, not narration ("Open the letter", not "She opened the letter").',
 ].join('\n');
 
 const INK_RESERVED = new Set(['true', 'false', 'not', 'and', 'or', 'temp', 'return']);

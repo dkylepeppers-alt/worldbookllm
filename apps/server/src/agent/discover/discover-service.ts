@@ -1592,8 +1592,27 @@ export class DiscoverService {
             ? null
             : { chapterId: parent.id, title: parent.title, ink: inkOf(parent) },
         otherParents,
+        depth: this.depthOf(files, chapterId),
       },
     };
+  }
+
+  /** Which beat a chapter is on its path from the start, following discover-from back to a written chapter. */
+  private depthOf(files: DiscoverFiles, chapterId: string): number {
+    let depth = 1;
+    const seen = new Set<string>();
+    let id: string | undefined = chapterId;
+    while (id !== undefined && !seen.has(id)) {
+      seen.add(id);
+      const chapter = files.chapters.find((entry) => entry.id === id);
+      const from = chapter
+        ? parseFrontmatter(chapter.text).frontmatter?.['discover-from']
+        : undefined;
+      if (typeof from !== 'string') break;
+      depth += 1;
+      id = from;
+    }
+    return depth;
   }
 
   private styleSheet(book: string): string | null {

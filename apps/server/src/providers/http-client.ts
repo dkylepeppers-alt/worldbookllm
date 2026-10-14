@@ -77,19 +77,51 @@ function sanitize(message: string, request: ProviderHttpRequest): string {
   return safe;
 }
 
-export class ProviderHttpClient {
-  constructor(private readonly fetchImpl: typeof fetch) {}
+/** Tries after a connection fails before any response. */
+const NETWORK_RETRIES = 2;
 
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
+export class ProviderHttpClient {
+  constructor(
+    private readonly fetchImpl: typeof fetch,
+    /** The wait before the first retry; each later one waits longer. */
+    private readonly retryDelayMs = 1_000,
+  ) {}
+
+  /**
+   * Sends the request. A connection that fails before any response arrives
+   * (a reset, a connect timeout) is tried again after a short wait, up to
+   * NETWORK_RETRIES more times, so one dropped connection does not end a turn or
+   * a job; a provider's error response is never retried here.
+   */
   private async execute(
     source: ChatCompletionSource,
     request: ProviderHttpRequest,
     signal: AbortSignal,
   ): Promise<Response> {
-    try {
-      return await this.fetchImpl(request.url, requestInit(request, signal));
-    } catch (error) {
-      if (error instanceof ProviderError) throw error;
-      throw new ProviderError('Provider network request failed.', source);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.fetchImpl(request.url, requestInit(request, signal));
+      } catch (error) {
+        if (error instanceof ProviderError) throw error;
+        if (signal.aborted || attempt >= NETWORK_RETRIES) {
+          throw new ProviderError('Provider network request failed.', source);
+        }
+        await wait(this.retryDelayMs * (attempt + 1), signal);
+      }
     }
   }
 

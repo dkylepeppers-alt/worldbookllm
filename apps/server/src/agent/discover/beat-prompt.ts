@@ -52,6 +52,7 @@ export function beatSystemPrompt(input: {
     setup.endings.trim() === ''
       ? '- End the story only where it has earned an ending.'
       : `- Endings the writer wants: ${setup.endings.trim()}. End the story only where it has earned one of them.`,
+    '- Pace each path by the length the shape and tone asks for; the task says how far along this beat is. Past the middle, close threads and let choices lead toward an ending. Once a path has run about as long as the shape asks, end it (ending: true) or offer choices that lead to endings.',
     '- Open the beat by acknowledging the choice that led here, even in one line.',
     '- Before a choice rejoins an existing beat, make what differs between the paths agree in this beat (who is where, what they hold, what they know), or set a variable the rejoin reads. Never rely on the rejoined beat changing.',
     '- Stay true to the bible and to everything on the path so far. Do not invent major canon (new main characters, new rules of the world) unless the story kernel invites it; when you add a detail, keep it small and consistent.',
@@ -82,6 +83,8 @@ interface BeatPlace {
   parent: { chapterId: string; title: string; ink: string } | null;
   /** Other beats whose choices lead here, with their prose. */
   otherParents: Array<{ chapterId: string; title: string; prose: string; choice: string }>;
+  /** Which beat this is on its path from the start, the first chapter being 1. */
+  depth: number;
 }
 
 export interface BeatPromptInput {
@@ -193,6 +196,9 @@ function placeSection(input: BeatPromptInput): string[] {
           ),
           '',
         ]),
+    '## How far along',
+    `This is beat ${place.depth} on its path from the start.`,
+    '',
     '## Beats a choice could rejoin',
     chapters.length === 0
       ? '(none yet)'
@@ -299,6 +305,7 @@ export function reviewPrompt(input: {
     input.beat.trim(),
     '',
     '## Its choices',
+    "Only the quoted text of each choice is shown to the reader. Its intent, consequence, where it leads, and what it sets are the writer's notes for judging the rules: they are never spoilers, and a rejoin's title is not shown to the reader.",
     input.choices,
     '',
     'Reply with JSON only, no prose: {"pass": true} if the set follows every rule, or {"pass": false, "problems": ["…", "…"]} naming each rule broken, which choice, and why, in one sentence each.',
