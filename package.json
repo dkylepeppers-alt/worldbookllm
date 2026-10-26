@@ -28,9 +28,9 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
-    "knip": "^6.41.0",
+    "knip": "^6.42.1",
     "prettier": "^3.9.10",
     "typescript": "catalog:",
-    "typescript-eslint": "^8.71.1"
+    "typescript-eslint": "^8.72.0"
   }
 }
