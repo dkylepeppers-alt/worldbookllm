@@ -25,7 +25,7 @@
     "linkedom": "^0.18.14",
     "story-skills": "0.24.1",
     "turndown": "^7.2.4",
-    "unpdf": "^1.9.1",
+    "unpdf": "^2.1.0",
     "zod": "catalog:"
   },
   "devDependencies": {
