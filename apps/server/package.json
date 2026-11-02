@@ -23,7 +23,7 @@
     "gray-matter": "4.0.3",
     "inkjs": "catalog:",
     "linkedom": "^0.18.14",
-    "story-skills": "0.24.0",
+    "story-skills": "0.24.1",
     "turndown": "^7.2.4",
     "unpdf": "^1.9.1",
     "zod": "catalog:"
