@@ -6,12 +6,12 @@ packages:
 # "catalog:" in package.json so every package moves together.
 catalog:
   '@types/node': ^24.19.2
-  '@vitest/coverage-v8': ^5.0.5
+  '@vitest/coverage-v8': ^5.1.0
   # Exact: the server compiles ink to JSON that the web's runtime plays, so both
   # must read the same story format (ADR 0027).
   inkjs: 2.4.0
   typescript: ^6.0.3
-  vitest: ^5.0.5
+  vitest: ^5.1.0
   zod: ^4.6.7
 
 # Keep every copy of the Node types on the runtime's major (.nvmrc), including
